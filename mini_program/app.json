@@ -1,0 +1,11 @@
+{
+  "pages": ["pages/index/index"],
+  "window": {
+    "navigationBarTitleText": "电脑电源",
+    "navigationBarBackgroundColor": "#0b1729",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0b1729",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2"
+}

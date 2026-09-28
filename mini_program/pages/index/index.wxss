@@ -1,0 +1,39 @@
+.shell { padding: 44rpx 32rpx 60rpx; }
+.topbar { display: flex; align-items: center; margin-bottom: 40rpx; }
+.brand { display: flex; align-items: center; justify-content: center; width: 82rpx; height: 82rpx; margin-right: 22rpx; border-radius: 24rpx; background: #20456c; color: #a5e1ff; font-size: 54rpx; }
+.eyebrow { color: #83a5ca; letter-spacing: 5rpx; font-size: 18rpx; font-weight: 700; }
+.title { color: #f1f7ff; font-size: 42rpx; font-weight: 700; }
+.device-card { min-height: 420rpx; padding: 38rpx; border: 1rpx solid #46617f; border-radius: 40rpx; background: linear-gradient(145deg, #1e3856, #14283f); box-shadow: 0 24rpx 70rpx rgba(0, 0, 0, .22); }
+.card-top { display: flex; justify-content: space-between; align-items: center; gap: 20rpx; color: #c4d6e8; font-size: 24rpx; }
+.status { display: flex; align-items: center; padding: 10rpx 15rpx; border-radius: 100rpx; background: #677c913b; color: #d5e0ee; white-space: nowrap; font-size: 21rpx; }
+.dot { width: 12rpx; height: 12rpx; margin-right: 10rpx; border-radius: 50%; background: #adb8c7; }
+.status.online { background: #20c59434; color: #a4f4d7; }
+.status.online .dot { background: #5ee5b7; }
+.status.offline, .status.unpaired { background: #f0a14b29; color: #ffdaaa; }
+.status.offline .dot, .status.unpaired .dot { background: #f2b265; }
+.status.waking { background: #61a9ef36; color: #bbe2ff; }
+.status.waking .dot { background: #89ceff; }
+.screen { display: flex; align-items: center; justify-content: center; width: 225rpx; height: 138rpx; margin: 53rpx auto 32rpx; border: 11rpx solid #a8bfd4; border-radius: 17rpx; background: #0c2036; color: #96dfff; font-size: 72rpx; box-shadow: inset 0 0 30rpx #408fc550; }
+.device-name { color: #f4f8ff; text-align: center; font-size: 32rpx; font-weight: 700; overflow-wrap: anywhere; }
+.detail { margin-top: 10rpx; color: #adc5db; text-align: center; font-size: 23rpx; }
+.pair-card { margin-top: 34rpx; padding: 30rpx; border: 1rpx solid #74bce5; border-radius: 30rpx; background: #1a3650; }
+.section-title { color: #f2f7ff; font-size: 31rpx; font-weight: 700; }
+.muted { margin-top: 10rpx; color: #b1c7dc; font-size: 23rpx; line-height: 1.6; }
+.pair-button { margin-top: 27rpx; }
+button.primary { background: #65c9f8; color: #0e2638; font-weight: 700; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 46rpx 4rpx 22rpx; }
+.section-head text { color: #93aac1; font-size: 21rpx; }
+button.wake-button, button.action { display: flex; align-items: center; width: 100%; margin: 0; padding: 23rpx; border: 1rpx solid #4a6784; border-radius: 27rpx; background: #1c334a; color: #f4f8ff; text-align: left; line-height: 1.2; }
+button.wake-button { min-height: 116rpx; margin-bottom: 18rpx; border-color: #4da88e; background: #1c4a46; }
+button.wake-button[disabled], button.action[disabled] { opacity: .46; }
+.button-icon { display: flex; align-items: center; justify-content: center; width: 59rpx; height: 59rpx; margin-right: 18rpx; border-radius: 18rpx; background: #466b86; color: #aee4ff; font-size: 39rpx; flex-shrink: 0; }
+.wake-button .button-icon { background: #38816d; color: #b0ffe4; }
+.danger .button-icon { background: #754650; color: #ffc0c6; }
+.button-title { font-size: 27rpx; font-weight: 700; }
+.button-sub { margin-top: 7rpx; color: #b8cadd; font-size: 19rpx; }
+.action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 17rpx; }
+.action { min-height: 121rpx; }
+.action.danger { border-color: #8e555e; }
+.feedback { margin: 22rpx 5rpx; color: #a6edce; font-size: 23rpx; line-height: 1.5; }
+.footer { display: flex; justify-content: center; flex-wrap: wrap; gap: 28rpx; margin-top: 39rpx; color: #9bb1c9; font-size: 22rpx; }
+.address { margin-top: 25rpx; color: #6f8ba8; text-align: center; font-size: 18rpx; }

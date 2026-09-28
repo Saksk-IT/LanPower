@@ -1,0 +1,47 @@
+<view class="shell">
+  <view class="topbar">
+    <view class="brand">⏻</view>
+    <view>
+      <view class="eyebrow">LAN POWER</view>
+      <view class="title">电脑电源</view>
+    </view>
+  </view>
+
+  <view class="device-card">
+    <view class="card-top">
+      <text>我的 Windows 电脑</text>
+      <view class="status {{state}}"><view class="dot"></view>{{stateText}}</view>
+    </view>
+    <view class="screen"><text>⏻</text></view>
+    <view class="device-name">{{device}}</view>
+    <view class="detail">{{detail}}</view>
+  </view>
+
+  <view wx:if="{{!paired}}" class="pair-card">
+    <view class="section-title">连接这台电脑</view>
+    <view class="muted">在电脑上打开配对页面，然后用微信扫码。</view>
+    <button class="primary pair-button" bindtap="scanPairing">扫描配对二维码</button>
+  </view>
+
+  <view class="section-head">
+    <view class="section-title">电源控制</view>
+    <text>同一局域网</text>
+  </view>
+  <button class="wake-button" bindtap="wake" disabled="{{!paired || state === 'waking'}}">
+    <view class="button-icon">↟</view><view><view class="button-title">开机</view><view class="button-sub">发送局域网唤醒包</view></view>
+  </button>
+  <view class="action-grid">
+    <button class="action" data-action="sleep" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">☾</view><view><view class="button-title">睡眠</view><view class="button-sub">快速恢复</view></view></button>
+    <button class="action" data-action="hibernate" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">◐</view><view><view class="button-title">休眠</view><view class="button-sub">保存工作状态</view></view></button>
+    <button class="action" data-action="restart" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">↻</view><view><view class="button-title">重启</view><view class="button-sub">重新启动 Windows</view></view></button>
+    <button class="action danger" data-action="shutdown" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">⏻</view><view><view class="button-title">关机</view><view class="button-sub">完全关闭电脑</view></view></button>
+  </view>
+  <view wx:if="{{feedback}}" class="feedback">{{feedback}}</view>
+
+  <view class="footer">
+    <text bindtap="refresh">刷新状态</text>
+    <text wx:if="{{paired}}" bindtap="scanPairing">重新扫码</text>
+    <text wx:if="{{paired}}" bindtap="clearPairing">清除配对</text>
+  </view>
+  <view wx:if="{{paired}}" class="address">电脑地址：{{host}} · 网卡：{{mac}}</view>
+</view>
