@@ -12,4 +12,4 @@
 
 Windows 服务及局域网 WOL 保持原行为。Gateway 升级时先校验候选程序，启动健康检查失败会自动恢复旧程序及启动设置，配置和凭据保持原样。SSH 恢复由路由器上的 `maintenance.conf` 显式控制；新安装默认为关闭，旧 Gateway 升级时保留原来的恢复能力。Cloud 不保存 LAN Token，不转发任意 HTTP，也不要求路由器或 Windows 开放公网端口。
 
-自动化测试覆盖 Windows LAN API、Cloud、手机端状态和 WOL 路由、Gateway 安装回滚及 Go 程序；CI 还构建 Linux ARM64 静态二进制。2026 年 9 月 29 日，一套实际环境通过 Cloudflare 代理域名、Caddy 和 systemd 运行 Cloud，并在 AX3000T 上安装 Gateway。公网鉴权状态接口返回 Gateway 与 PC 在线；公网只读 `status` 命令经 Gateway 查询 Windows 后返回在线。Gateway 安装模拟测试通过，路由器自启动项和配置权限已检查。手机小程序仍需完成 AppID、HTTPS 合法域名、扫码预览和 5G 真机操作验证。部署步骤见 [Cloud 说明](../cloud_remote/README.md)、[Gateway 说明](../router_gateway/README.md)。
+自动化测试覆盖 Windows LAN API、Cloud、手机端状态和 WOL 路由、Gateway 安装回滚及 Go 程序；CI 还构建 Linux ARM64 静态二进制。2026 年 9 月 29 日，一套实际环境通过 Cloudflare 代理域名、Caddy 和 systemd 运行 Cloud，并在 AX3000T 上安装 Gateway。公网鉴权状态接口返回 Gateway 与 PC 在线；公网只读 `status` 命令经 Gateway 查询 Windows 后返回在线。Gateway 安装模拟测试通过，路由器自启动项和配置权限已检查。小程序已用本机私有 AppID 生成预览码，用户确认 HTTPS 域名已加入微信 `request` 合法域名；iPhone 关闭 Wi-Fi 后显示“在线 · 远程”，5G 下的睡眠和唤醒实测成功，电脑恢复在线，随后公网只读 `status` 再次返回在线。休眠、重启和关机等其他远程电源动作尚未逐项真机验证。部署步骤见 [Cloud 说明](../cloud_remote/README.md)、[Gateway 说明](../router_gateway/README.md)。

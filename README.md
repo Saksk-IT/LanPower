@@ -4,7 +4,7 @@
 
 ## 最新版本
 
-当前版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息，也尚未在实际 5G 环境完成端到端实测。
+当前版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息。一套实际部署已在 iPhone 5G 下完成远程状态、睡眠和唤醒实测。
 
 ## 安装
 
@@ -30,7 +30,7 @@
 
 ## 已验证
 
-2026 年 9 月 28 日，iPhone 微信预览版已实测配对显示在线、睡眠后唤醒并恢复在线、关机后重新开机。2026 年 9 月 29 日，AX3000T / RD03 上的 WOL、Windows API 调用、公网 HTTPS 和自启动已有实机验证；Cloudflare 代理入口、Cloud、Gateway 与 Windows 的在线状态及远程只读状态命令也已在实际部署中验证。手机 5G 下的小程序扫码和电源操作仍需真机验证，详见 [5G/外网控制说明](docs/remote-5g.md)。
+2026 年 9 月 28 日，iPhone 微信预览版已实测配对显示在线、睡眠后唤醒并恢复在线、关机后重新开机。2026 年 9 月 29 日，AX3000T / RD03 上的 WOL、Windows API 调用、公网 HTTPS 和自启动已有实机验证；Cloudflare 代理入口、Cloud、Gateway 与 Windows 的在线状态及远程只读状态命令也已在实际部署中验证。iPhone 关闭 Wi-Fi 后，小程序显示“在线 · 远程”；用户通过 5G 发出睡眠和唤醒操作，电脑恢复在线，随后远程只读状态命令再次返回在线。其他远程电源动作尚未逐项真机验证，详见 [5G/外网控制说明](docs/remote-5g.md)。
 
 ## 手机使用 5G 时
 

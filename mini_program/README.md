@@ -18,6 +18,6 @@
 - 电脑关机时，状态请求会失败，但小程序仍能打开并发送唤醒包；最多等待 60 秒显示开机状态。即使随后 Cloud 请求也失败，只要本地配对仍在，“开机”按钮就继续使用局域网 WOL，并提示远程不可用。
 - 当前唤醒包发送到 `255.255.255.255` 和 `192.168.1.255` 的 UDP 9 端口。如果以后更换网卡或局域网网段，要同步修改 `utils/wol.js` 并重新预览。
 - 电脑的电源操作走 `http://电脑局域网地址:48211`。本机 iPhone 微信预览版已实际验证局域网连接、睡眠唤醒和关机后开机。
-- 未配置远程配对时，仍只支持同一局域网。远程链路已在代码中实现，且 Cloud、Gateway 与 Windows 的只读状态命令已在实际部署中验证；仓库不包含实际 Cloud 域名与凭据，目前仍没有手机 5G 真机端到端验证。
+- 未配置远程配对时，仍只支持同一局域网。远程链路已在代码中实现，且一套实际部署已在 iPhone 5G 下验证远程在线、睡眠和唤醒；仓库不包含实际 Cloud 域名与凭据。其他远程电源动作尚未逐项真机验证。
 
 技术依据：[微信小程序网络说明](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)、[UDP 发送接口](https://developers.weixin.qq.com/miniprogram/dev/api/network/udp/UDPSocket.send.html)。
