@@ -1,10 +1,10 @@
 # LanPower：iPhone 与 Windows 电源控制
 
-这套方案使用 **微信小程序**完成开机、睡眠、休眠、重启和关机。电脑端运行在 Windows 11 上；Safari 网页可以作为电脑在线时的备用控制页。v1.1.1 包含 AX3000T Router Gateway 和 Remote Cloud 预览实现：家中优先使用原有局域网链路，离家后经 HTTPS Cloud 中继到常在线路由器，无需开放 Windows 或路由器的公网控制端口。
+这套方案使用 **微信小程序**完成开机、睡眠、休眠、重启和关机。电脑端运行在 Windows 11 上；Safari 网页可以作为电脑在线时的备用控制页。v1.1.2 包含 AX3000T Router Gateway 和 Remote Cloud 预览实现：家中优先使用原有局域网链路，离家后经 HTTPS Cloud 中继到常在线路由器，无需开放 Windows 或路由器的公网控制端口。
 
 ## 最新版本
 
-当前版本：**v1.1.1 Remote Gateway Preview**。从 [v1.1.1 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.1)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息，也尚未在实际 5G 环境完成端到端实测。
+当前版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息，也尚未在实际 5G 环境完成端到端实测。
 
 ## 安装
 
@@ -34,7 +34,7 @@
 
 ## 手机使用 5G 时
 
-部署 [Remote Cloud](cloud_remote/README.md) 和 [AX3000T Gateway](router_gateway/README.md)，在小程序中扫描远程配对码。小程序先检查局域网接口；不可达时自动查询 Cloud 的网关和电脑状态，并在远程模式下将六种枚举动作交给 Gateway。电脑关机时由路由器在 LAN 发 WOL；电脑在线时由路由器访问 Windows 本地 API。完整设计和当前验证边界见 [5G/外网控制说明](docs/remote-5g.md)。
+部署 [Remote Cloud](cloud_remote/README.md) 和 [AX3000T Gateway](router_gateway/README.md)，在小程序中扫描远程配对码。小程序先检查局域网接口；不可达时自动查询 Cloud 的网关和电脑状态，并在远程模式下将六种枚举动作交给 Gateway。Cloud 不可用时，只要本地配对仍在，“开机”仍可发送局域网 WOL；状态查询失败不会锁住唤醒按钮。电脑关机时由路由器在 LAN 发 WOL；电脑在线时由路由器访问 Windows 本地 API。完整设计和当前验证边界见 [5G/外网控制说明](docs/remote-5g.md)。
 
 ## 源码与构建
 
@@ -50,4 +50,4 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm LanPower.spec
 ```
 
-构建结果在 `source/dist/LanPower/`。将该目录内容复制到仓库根目录的 `LanPower/`，再运行 `Install.cmd` 更新电脑端。小程序测试从仓库根目录运行 `node tests/test_mini_program.js`；Cloud 测试运行 `python -m unittest discover -s cloud_remote/tests -v`。`source/server.py` 的 `--dry-run` 模式会接收电源指令，但不改变电脑电源状态。
+构建结果在 `source/dist/LanPower/`。将该目录内容复制到仓库根目录的 `LanPower/`，再运行 `Install.cmd` 更新电脑端。小程序测试从仓库根目录运行 `node tests/test_mini_program.js`；Cloud 测试运行 `python -m unittest discover -s cloud_remote/tests -v`；路由器安装模拟测试在 Linux 运行 `python -m unittest discover -s router_gateway/tests -v`。GitHub Actions CI 还执行 Gateway Go 测试、静态检查、Shell 语法检查和 Linux ARM64 静态构建。`source/server.py` 的 `--dry-run` 模式会接收电源指令，但不改变电脑电源状态。

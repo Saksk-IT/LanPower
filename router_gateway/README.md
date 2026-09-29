@@ -23,7 +23,13 @@ go build -trimpath -ldflags='-s -w' -o lanpower-gateway ./cmd/lanpower-gateway
 sh /tmp/install.sh /tmp/lanpower-gateway /tmp/gateway.json
 ```
 
-安装脚本检查 aarch64、配置和进程健康；文件只进入 `/data/lanpower/`，配置权限设为 `0600`。它保存原有 `startup.sh`，然后设置 UCI firewall include，包含实测必需的 `reload=1`。正式版 `startup.sh` 恢复原有 LAN SSH 启动行为，并监护 Gateway 进程。Gateway 自身用文件锁防重复实例，网络中断后自动重试。日志为 `gateway.log`，最大约 128 KB，加一个历史文件；重放记录在 `seen.json`。
+安装脚本检查 aarch64、配置和进程健康；程序与持久化配置保存在 `/data/lanpower/`，运行时 PID 文件在 `/tmp/`，配置权限设为 `0600`。升级前先对候选二进制执行 `-check-config`，保留现行程序和 `startup.sh`；安装后确认 supervisor 与 Gateway 子进程持续运行。若启动或健康检查失败，安装脚本停止新进程，恢复旧二进制、startup 和 UCI include，再重启旧 Gateway，并输出 `upgrade failed and rolled back`。首次安装没有旧程序时会明确报告失败，不声称回滚成功。`gateway.json`、LAN Token 和 Gateway Secret 在回滚期间不会被覆盖或删除。UCI firewall include 保留实测必需的 `reload=1`。Gateway 自身用文件锁防重复实例，网络中断后自动重试。日志为 `gateway.log`，最大约 128 KB，加一个历史文件；重放记录在 `seen.json`。
+
+## 可选 SSH 恢复
+
+Gateway 自身通过 outbound HTTPS 工作，不依赖 SSH。新安装在 `/data/lanpower/maintenance.conf` 写入 `maintenance_ssh=false`，启动脚本不会为 Gateway 自动开启 Dropbear。确需保留 LAN SSH 救援通道时，在路由器本机显式设为 `maintenance_ssh=true`，并限制 SSH 只从可信 LAN 访问；不要把 SSH 开到 WAN。
+
+升级已有 Gateway 时，如果旧 `startup.sh` 含有原先的 `nvram set ssh_en=1` 恢复逻辑且尚无 `maintenance.conf`，安装程序自动写入 `maintenance_ssh=true`，避免升级导致现有救援通道失效。确认无需 SSH 后，可自行改成 `maintenance_ssh=false`。安装程序不主动关闭已经运行的 SSH 服务，也不更改 WAN 防火墙规则。
 
 运行检查：
 
@@ -33,7 +39,7 @@ cat /tmp/lanpower-gateway-child.pid
 tail /data/lanpower/gateway.log
 ```
 
-检查 Cloud 的 heartbeat 与状态接口可确认公网链路。安装脚本的进程健康检查不代替远端凭据或 HTTPS 联通检查。
+检查 Cloud 的 heartbeat 与状态接口可确认公网链路。安装脚本的进程健康检查不代替远端凭据或 HTTPS 联通检查。安装与升级模拟测试可在 Linux 从仓库根目录运行 `python -m unittest discover -s router_gateway/tests -v`。
 
 ## 卸载
 

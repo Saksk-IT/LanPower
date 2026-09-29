@@ -12,3 +12,5 @@
 **/cloud.json
 **/*.db
 private/
+/AGENTS.md
+/router-gateway-implementation.md

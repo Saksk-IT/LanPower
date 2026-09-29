@@ -45,9 +45,10 @@ class RelayTests(unittest.TestCase):
 
     def heartbeat(self, state="offline"):
         return self.call("/api/v1/gateway/heartbeat", "gateway", {
-            "gateway_id": "home-router", "pc_state": state, "version": "1.1.1", "uptime": 3})
+            "gateway_id": "home-router", "pc_state": state, "version": "1.1.2", "uptime": 3})
 
     def test_auth_status_and_gateway_distinction(self):
+        self.assertEqual(self.call("/healthz")[1]["version"], "1.1.2")
         path = "/api/v1/client/status?gateway_id=home-router"
         self.assertEqual(self.call(path)[0], 401)
         self.assertEqual(self.call(path, "gateway")[0], 401)

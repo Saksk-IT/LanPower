@@ -34,8 +34,8 @@
     <view class="section-title">电源控制</view>
     <text>{{modeText}}</text>
   </view>
-  <button class="wake-button" bindtap="wake" disabled="{{(!paired &amp;&amp; !remotePaired) || mode === 'none' || state === 'waking'}}">
-    <view class="button-icon">↟</view><view><view class="button-title">开机</view><view class="button-sub">{{mode === 'remote' ? '通过家中路由器唤醒' : '发送局域网唤醒包'}}</view></view>
+  <button class="wake-button" bindtap="wake" disabled="{{!canWake || state === 'waking'}}">
+    <view class="button-icon">↟</view><view><view class="button-title">开机</view><view class="button-sub">{{wakeRoute === 'remote' ? '通过家中路由器唤醒' : '发送局域网唤醒包'}}</view></view>
   </button>
   <view class="action-grid">
     <button class="action" data-action="sleep" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">☾</view><view><view class="button-title">睡眠</view><view class="button-sub">快速恢复</view></view></button>

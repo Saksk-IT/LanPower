@@ -10,14 +10,15 @@ Page({
   data: {
     paired: false, remotePaired: false, host: '', device: '我的 Windows 电脑',
     state: 'unpaired', stateText: '未配对', detail: '先扫描电脑上的配对二维码',
-    feedback: '', busy: false, canControl: false, mode: 'none', modeText: '未连接', mac: PC_MAC
+    feedback: '', busy: false, canControl: false, canWake: false, wakeRoute: 'none',
+    mode: 'none', modeText: '未连接', mac: PC_MAC
   },
 
   onLoad() {
     const local = wx.getStorageSync(LOCAL_KEY);
     if (local && typeof local.host === 'string' && /^[0-9a-f]{64}$/i.test(local.token || '')) {
       this.pairing = local;
-      this.setData({paired: true, host: local.host});
+      this.setData({paired: true, host: local.host, canWake: true, wakeRoute: 'local'});
     }
     const remote = wx.getStorageSync(REMOTE_KEY);
     if (remote && typeof remote.url === 'string') {
@@ -35,8 +36,11 @@ Page({
 
   onHide() {
     this.stopTimers();
+    this.refreshSerial = (this.refreshSerial || 0) + 1;
+    this.refreshQueued = false;
     if (this.data.state === 'waking') {
-      this.setData({state: 'offline', stateText: '等待开机', detail: '返回页面后会重新检查电脑状态'});
+      this.setData({state: 'offline', stateText: '等待开机', detail: '返回页面后会重新检查电脑状态',
+        canWake: !!this.pairing || !!this.remote});
     }
   },
 
@@ -55,7 +59,8 @@ Page({
         const pairing = parsePairingLink(result.result);
         wx.setStorageSync(LOCAL_KEY, pairing);
         this.pairing = pairing;
-        this.setData({paired: true, host: pairing.host, feedback: '局域网配对信息已保存。'});
+        this.setData({paired: true, host: pairing.host, canWake: true, wakeRoute: 'local', feedback: '局域网配对信息已保存。'});
+        this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
       } catch (error) {
         wx.showModal({title: '配对失败', content: error.message, showCancel: false});
@@ -70,6 +75,7 @@ Page({
         wx.setStorageSync(REMOTE_KEY, remote);
         this.remote = remote;
         this.setData({remotePaired: true, feedback: '远程配对信息已保存。'});
+        this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
       } catch (error) {
         wx.showModal({title: '远程配对失败', content: error.message, showCancel: false});
@@ -83,7 +89,9 @@ Page({
         if (!confirm) return;
         wx.removeStorageSync(LOCAL_KEY);
         this.pairing = null;
-        this.setData({paired: false, host: '', feedback: '', canControl: false});
+        this.setData({paired: false, host: '', feedback: '', canControl: false,
+          canWake: !!this.remote, wakeRoute: this.remote ? 'remote' : 'none'});
+        this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
       }
     });
@@ -95,16 +103,35 @@ Page({
         if (!confirm) return;
         wx.removeStorageSync(REMOTE_KEY);
         this.remote = null;
-        this.setData({remotePaired: false, feedback: '', canControl: false});
+        this.setData({remotePaired: false, feedback: '', canControl: false,
+          canWake: !!this.pairing, wakeRoute: this.pairing ? 'local' : 'none'});
+        this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
       }
     });
   },
 
   refresh() {
+    if (this.refreshInFlight) {
+      this.refreshQueued = true;
+      return this.refreshInFlight;
+    }
+    const pending = Promise.resolve().then(() => this.refreshOnce());
+    this.refreshInFlight = pending;
+    return pending.finally(() => {
+      if (this.refreshInFlight === pending) this.refreshInFlight = null;
+      if (this.refreshQueued) {
+        this.refreshQueued = false;
+        this.refresh();
+      }
+    });
+  },
+
+  refreshOnce() {
     const serial = this.refreshSerial = (this.refreshSerial || 0) + 1;
     if (!this.pairing && !this.remote) {
-      this.setData({state: 'unpaired', stateText: '未配对', mode: 'none', modeText: '未连接', canControl: false});
+      this.setData({state: 'unpaired', stateText: '未配对', mode: 'none', modeText: '未连接',
+        canControl: false, canWake: false, wakeRoute: 'none'});
       return Promise.resolve(false);
     }
     if (this.data.state !== 'waking') this.setData({state: 'checking', stateText: '正在连接', canControl: false});
@@ -170,22 +197,30 @@ Page({
     this.setData({
       state: 'online', stateText: mode === 'local' ? '在线 · 局域网' : '在线 · 远程',
       mode, modeText: mode === 'local' ? '局域网' : '远程', detail: '可以发送电源指令',
+      canWake: true, wakeRoute: mode,
       device: device || this.data.device, canControl: !this.data.busy, busy: false,
       feedback: this.data.state === 'waking' ? '电脑已开机。' : this.data.feedback
     });
   },
 
   markOffline(mode, detail) {
-    const changes = {mode, modeText: mode === 'remote' ? '远程' : mode === 'local' ? '局域网' : '未连接', canControl: false};
+    const wakeRoute = mode === 'remote' && this.remote ? 'remote' : this.pairing ? 'local' : 'none';
+    const localFallback = mode === 'none' && wakeRoute === 'local';
+    const changes = {
+      mode, wakeRoute, canWake: wakeRoute !== 'none' && this.data.state !== 'waking',
+      modeText: localFallback ? '局域网唤醒可用' : mode === 'remote' ? '远程' : mode === 'local' ? '局域网' : '未连接',
+      canControl: false
+    };
     if (this.data.state !== 'waking') {
-      Object.assign(changes, {state: 'offline', stateText: mode === 'remote' ? '离线 · 远程' : '离线', detail});
+      Object.assign(changes, {state: 'offline', stateText: localFallback ? '远程不可用' : mode === 'remote' ? '离线 · 远程' : '离线',
+        detail: localFallback ? `${detail}；仍可通过局域网唤醒` : detail});
     }
     this.setData(changes);
   },
 
   startWakeWait(mode) {
     this.setData({state: 'waking', stateText: '正在唤醒', mode,
-      modeText: mode === 'remote' ? '远程' : '局域网',
+      modeText: mode === 'remote' ? '远程' : '局域网', wakeRoute: mode, canWake: false,
       detail: '已发送网络唤醒包，等待电脑启动', feedback: '已发送唤醒包。', canControl: false});
     const started = Date.now();
     if (this.wakeTimer) clearInterval(this.wakeTimer);
@@ -193,7 +228,8 @@ Page({
       if (Date.now() - started > 60000) {
         clearInterval(this.wakeTimer);
         this.wakeTimer = null;
-        this.setData({state: 'offline', stateText: '未检测到开机', detail: '一分钟内没有检测到电脑', feedback: '唤醒包已发送，但电脑仍未上线。'});
+        this.setData({state: 'offline', stateText: '未检测到开机', detail: '一分钟内没有检测到电脑',
+          canWake: this.data.wakeRoute !== 'none', feedback: '唤醒包已发送，但电脑仍未上线。'});
         return;
       }
       this.refresh();
@@ -202,8 +238,8 @@ Page({
 
   wake() {
     if (this.data.state === 'online') return wx.showToast({title: '电脑已经在线', icon: 'none'});
-    if (this.data.state === 'waking' || this.data.mode === 'none') return;
-    if (this.data.mode === 'remote' && this.remote) {
+    if (this.data.state === 'waking' || !this.data.canWake) return;
+    if (this.data.wakeRoute === 'remote' && this.remote) {
       this.remoteCommand('wake', (response) => {
         if (response.statusCode === 200 && response.data && response.data.ok) this.startWakeWait('remote');
         else this.setData({feedback: '远程唤醒失败，请检查网关状态'});

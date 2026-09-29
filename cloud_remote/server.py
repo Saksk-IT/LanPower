@@ -20,6 +20,7 @@ import uuid
 
 
 ACTIONS = {"wake", "status", "sleep", "hibernate", "restart", "shutdown"}
+VERSION = "1.1.2"
 POWER_ACTIONS = ACTIONS - {"wake", "status"}
 HEX_SECRET = re.compile(r"^[0-9a-fA-F]{64}$")
 GATEWAY_ID = re.compile(r"^[A-Za-z0-9_-]{3,64}$")
@@ -263,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path)
         if path.path == "/healthz":
-            return self.send_json(200, {"ok": True})
+            return self.send_json(200, {"ok": True, "version": VERSION})
         if path.path == "/api/v1/client/status":
             if not self.authorized("client"):
                 return self.send_json(401, {"error": "unauthorized"})

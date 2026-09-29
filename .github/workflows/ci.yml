@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Windows LAN API tests
+        run: python -m unittest discover -s source/tests -v
+
+  cloud-and-mini-program:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Cloud relay tests
+        run: python -m unittest discover -s cloud_remote/tests -v
+      - name: Mini program tests
+        run: node tests/test_mini_program.js
+
+  router-gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: router_gateway/go.mod
+      - name: Shell syntax
+        run: for script in router_gateway/scripts/*.sh; do sh -n "$script"; done
+      - name: Installer integration tests
+        run: python -m unittest discover -s router_gateway/tests -v
+      - name: Go tests
+        working-directory: router_gateway
+        run: go test ./...
+      - name: Go vet
+        working-directory: router_gateway
+        run: go vet ./...
+      - name: Static Linux ARM64 build
+        working-directory: router_gateway
+        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/lanpower-gateway" ./cmd/lanpower-gateway
