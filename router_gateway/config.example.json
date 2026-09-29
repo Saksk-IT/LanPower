@@ -1,0 +1,10 @@
+{
+  "gateway_id": "home-router",
+  "gateway_secret": "REPLACE_WITH_64_HEX_CHARACTERS",
+  "cloud_url": "https://power.example.com",
+  "pc_ip": "192.168.1.100",
+  "port": 48211,
+  "mac": "02-11-22-33-44-55",
+  "broadcast": "192.168.1.255",
+  "lan_token": "REPLACE_WITH_THE_WINDOWS_LAN_TOKEN"
+}

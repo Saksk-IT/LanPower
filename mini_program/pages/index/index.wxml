@@ -23,12 +23,19 @@
     <button class="primary pair-button" bindtap="scanPairing">扫描配对二维码</button>
   </view>
 
+  <view class="pair-card">
+    <view class="section-title">远程控制</view>
+    <view class="muted">{{remotePaired ? '已配置远程网关，离开家后自动连接。' : '部署远程服务后，扫描管理员生成的远程配对码。'}}</view>
+    <button wx:if="{{!remotePaired}}" class="primary pair-button" bindtap="scanRemotePairing">扫描远程配对码</button>
+    <text wx:else class="remote-clear" bindtap="clearRemotePairing">清除远程配对</text>
+  </view>
+
   <view class="section-head">
     <view class="section-title">电源控制</view>
-    <text>同一局域网</text>
+    <text>{{modeText}}</text>
   </view>
-  <button class="wake-button" bindtap="wake" disabled="{{!paired || state === 'waking'}}">
-    <view class="button-icon">↟</view><view><view class="button-title">开机</view><view class="button-sub">发送局域网唤醒包</view></view>
+  <button class="wake-button" bindtap="wake" disabled="{{(!paired &amp;&amp; !remotePaired) || mode === 'none' || state === 'waking'}}">
+    <view class="button-icon">↟</view><view><view class="button-title">开机</view><view class="button-sub">{{mode === 'remote' ? '通过家中路由器唤醒' : '发送局域网唤醒包'}}</view></view>
   </button>
   <view class="action-grid">
     <button class="action" data-action="sleep" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">☾</view><view><view class="button-title">睡眠</view><view class="button-sub">快速恢复</view></view></button>

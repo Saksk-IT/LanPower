@@ -1,0 +1,1 @@
+"""LanPower remote command relay."""

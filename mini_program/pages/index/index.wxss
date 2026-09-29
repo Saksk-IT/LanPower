@@ -20,6 +20,7 @@
 .section-title { color: #f2f7ff; font-size: 31rpx; font-weight: 700; }
 .muted { margin-top: 10rpx; color: #b1c7dc; font-size: 23rpx; line-height: 1.6; }
 .pair-button { margin-top: 27rpx; }
+.remote-clear { display: block; margin-top: 25rpx; color: #a8dffd; font-size: 23rpx; }
 button.primary { background: #65c9f8; color: #0e2638; font-weight: 700; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 46rpx 4rpx 22rpx; }
 .section-head text { color: #93aac1; font-size: 21rpx; }
