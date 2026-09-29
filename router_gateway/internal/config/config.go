@@ -65,7 +65,7 @@ func (c Config) Validate() error {
 	if c.Port < 1 || c.Port > 65535 {
 		return errors.New("invalid Windows API port")
 	}
-	if _, err := net.ParseMAC(c.MAC); err != nil {
+	if mac, err := net.ParseMAC(c.MAC); err != nil || len(mac) != 6 {
 		return errors.New("invalid PC MAC")
 	}
 	if ip := net.ParseIP(c.Broadcast); ip == nil || ip.To4() == nil || !ip.IsPrivate() {

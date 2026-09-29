@@ -2,7 +2,7 @@
 set -eu
 
 BASE=/data/lanpower
-for pid_file in /tmp/lanpower-gateway-child.pid /tmp/lanpower-gateway-supervisor.pid; do
+for pid_file in /tmp/lanpower-gateway-supervisor.pid /tmp/lanpower-gateway-child.pid; do
     if [ -f "$pid_file" ]; then
         kill "$(cat "$pid_file")" 2>/dev/null || true
         rm -f "$pid_file"

@@ -1,6 +1,6 @@
 # 5G / 外网控制实现状态
 
-当前版本：v1.1.0 Remote Gateway Preview。
+当前版本：v1.1.1 Remote Gateway Preview。
 
 家庭端已有的实机验证确认：实际路由器为 Xiaomi AX3000T / RD03（MT7981、aarch64）；`/data` 持久化、ARM64 Go WOL、路由器访问 Windows `48211`、公网 HTTPS GET/POST，以及 UCI firewall include 自启动均已确认。本次开发直接使用这些前提，没有重复做硬件研究。
 

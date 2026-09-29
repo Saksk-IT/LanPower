@@ -36,11 +36,11 @@ if [ ! -e "$BASE/.gateway-installed" ]; then
     fi
 fi
 
-if [ -f /tmp/lanpower-gateway-child.pid ]; then
-    kill "$(cat /tmp/lanpower-gateway-child.pid)" 2>/dev/null || true
-fi
 if [ -f /tmp/lanpower-gateway-supervisor.pid ]; then
     kill "$(cat /tmp/lanpower-gateway-supervisor.pid)" 2>/dev/null || true
+fi
+if [ -f /tmp/lanpower-gateway-child.pid ]; then
+    kill "$(cat /tmp/lanpower-gateway-child.pid)" 2>/dev/null || true
 fi
 rm -f /tmp/lanpower-gateway-child.pid /tmp/lanpower-gateway-supervisor.pid
 
@@ -61,6 +61,12 @@ uci commit firewall
 sleep 12
 if [ ! -f /tmp/lanpower-gateway-child.pid ] || ! kill -0 "$(cat /tmp/lanpower-gateway-child.pid)" 2>/dev/null; then
     echo 'Gateway failed to start; see /data/lanpower/gateway.log' >&2
+    exit 1
+fi
+running_pid=$(cat /tmp/lanpower-gateway-child.pid)
+sleep 2
+if ! kill -0 "$running_pid" 2>/dev/null; then
+    echo 'Gateway did not remain running; see /data/lanpower/gateway.log' >&2
     exit 1
 fi
 echo 'Gateway installed and running'

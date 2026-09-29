@@ -61,7 +61,7 @@ func (c *Client) request(ctx context.Context, method, path string, payload any, 
 
 func (c *Client) Heartbeat(ctx context.Context, state string, uptime int64) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/gateway/heartbeat", map[string]any{
-		"gateway_id": c.config.GatewayID, "pc_state": state, "version": "1.1.0", "uptime": uptime,
+		"gateway_id": c.config.GatewayID, "pc_state": state, "version": "1.1.1", "uptime": uptime,
 	}, nil)
 }
 

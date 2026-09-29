@@ -36,6 +36,11 @@ func TestValidateCredentialsAndDestination(t *testing.T) {
 	if err := c.Validate(); err == nil {
 		t.Fatal("public Windows target accepted")
 	}
+	c = example()
+	c.MAC = "00:11:22:33:44:55:66:77"
+	if err := c.Validate(); err == nil {
+		t.Fatal("EUI-64 address accepted as a PC MAC")
+	}
 }
 
 func TestLoadRequiresPrivateConfig(t *testing.T) {

@@ -1,10 +1,10 @@
 # LanPower：iPhone 与 Windows 电源控制
 
-这套方案使用 **微信小程序**完成开机、睡眠、休眠、重启和关机。电脑端运行在 Windows 11 上；Safari 网页可以作为电脑在线时的备用控制页。v1.1.0 新增 AX3000T Router Gateway 和 Remote Cloud 预览实现：家中优先使用原有局域网链路，离家后经 HTTPS Cloud 中继到常在线路由器，无需开放 Windows 或路由器的公网控制端口。
+这套方案使用 **微信小程序**完成开机、睡眠、休眠、重启和关机。电脑端运行在 Windows 11 上；Safari 网页可以作为电脑在线时的备用控制页。v1.1.1 包含 AX3000T Router Gateway 和 Remote Cloud 预览实现：家中优先使用原有局域网链路，离家后经 HTTPS Cloud 中继到常在线路由器，无需开放 Windows 或路由器的公网控制端口。
 
 ## 最新版本
 
-当前版本：**v1.1.0 Remote Gateway Preview**。从 [GitHub Releases 下载完整包](https://github.com/Saksk-IT/LanPower/releases/latest)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息，也尚未在实际 5G 环境完成端到端实测。
+当前版本：**v1.1.1 Remote Gateway Preview**。从 [v1.1.1 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.1)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息，也尚未在实际 5G 环境完成端到端实测。
 
 ## 安装
 
