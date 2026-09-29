@@ -1,0 +1,73 @@
+<Window x:Class="LanPower.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LanPower" Width="740" Height="690" MinWidth="620" MinHeight="560"
+        Background="#F2F6F6" FontFamily="Segoe UI" Foreground="{StaticResource Ink}"
+        Loaded="OnLoaded">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="32,26,32,28">
+      <DockPanel Margin="0,0,0,20">
+        <TextBlock Text="LanPower" FontSize="30" FontWeight="Bold" DockPanel.Dock="Left"/>
+        <TextBlock Text="Windows 1.2.0" Foreground="{StaticResource Muted}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+      </DockPanel>
+
+      <Border x:Name="FirstRunPanel" Background="#E2F3EF" CornerRadius="12" Padding="20" Margin="0,0,0,16" Visibility="Collapsed">
+        <StackPanel>
+          <TextBlock Text="欢迎使用 LanPower" FontSize="20" FontWeight="SemiBold"/>
+          <TextBlock Text="安装完成后，先检查局域网连接，再打开配对页面让手机扫码。Cloud 可跳过，局域网功能照常使用。"
+                     TextWrapping="Wrap" Margin="0,8,0,15"/>
+          <StackPanel Orientation="Horizontal">
+            <Button Content="打开手机配对" Click="OpenPairing"/>
+            <Button Content="跳过 Cloud，开始使用" Click="FinishWelcome" Background="#456977"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Background="White" CornerRadius="12" Padding="22" Margin="0,0,0,16">
+        <StackPanel>
+          <DockPanel>
+            <TextBlock x:Name="DeviceName" Text="我的电脑" FontSize="22" FontWeight="SemiBold"/>
+            <TextBlock x:Name="DeviceState" Text="正在连接服务…" Foreground="{StaticResource Accent}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+          </DockPanel>
+          <TextBlock Text="连接" FontSize="16" FontWeight="SemiBold" Margin="0,20,0,10"/>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="局域网"/><TextBlock x:Name="LanState" Grid.Row="0" Grid.Column="1" Text="检测中"/>
+            <TextBlock Grid.Row="1" Text="Cloud"/><TextBlock x:Name="CloudState" Grid.Row="1" Grid.Column="1" Text="未配置"/>
+            <TextBlock Grid.Row="2" Text="Wake Gateway"/><TextBlock x:Name="GatewayState" Grid.Row="2" Grid.Column="1" Text="未配置"/>
+          </Grid>
+          <TextBlock Text="网络" FontSize="16" FontWeight="SemiBold" Margin="0,16,0,10"/>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="IP"/><TextBlock x:Name="LanIp" Grid.Row="0" Grid.Column="1" Text="—"/>
+            <TextBlock Grid.Row="1" Text="MAC"/><TextBlock x:Name="Mac" Grid.Row="1" Grid.Column="1" Text="—"/>
+            <TextBlock Grid.Row="2" Text="Wake-on-LAN"/><TextBlock x:Name="WolState" Grid.Row="2" Grid.Column="1" Text="检测中"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Background="White" CornerRadius="12" Padding="22" Margin="0,0,0,16">
+        <StackPanel>
+          <TextBlock Text="远程控制" FontSize="16" FontWeight="SemiBold"/>
+          <TextBlock Text="Cloud Direct 将在后续版本开放；未配置路由器时，远程唤醒不可用。"
+                     Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+        </StackPanel>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+        <Button Content="打开手机配对" Click="OpenPairing"/>
+        <Button Content="刷新状态" Click="RefreshStatus" Background="#456977"/>
+        <Button Content="查看日志" Click="ShowLogs" Background="#456977"/>
+      </StackPanel>
+      <Border x:Name="LogPanel" Background="White" CornerRadius="12" Padding="18" Visibility="Collapsed">
+        <StackPanel>
+          <TextBlock Text="服务日志" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+          <TextBox x:Name="LogText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
+                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Height="150"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

@@ -14,11 +14,29 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Windows LAN API tests
         run: python -m unittest discover -s source/tests -v
+      - name: Windows application build
+        run: dotnet build windows/LanPower.sln -c Release
+      - name: Windows unit tests
+        run: dotnet test windows/LanPower.sln -c Release --no-build
+      - name: Windows service and IPC tests
+        run: dotnet run --project windows/LanPower.Tests -c Release --no-build
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./windows/installer/build-installer.ps1
 
   cloud-and-mini-program:
     runs-on: ubuntu-latest

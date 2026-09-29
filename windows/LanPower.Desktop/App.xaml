@@ -1,0 +1,18 @@
+<Application x:Class="LanPower.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="Ink" Color="#172C3D"/>
+    <SolidColorBrush x:Key="Muted" Color="#617688"/>
+    <SolidColorBrush x:Key="Accent" Color="#1B786D"/>
+    <Style TargetType="Button">
+      <Setter Property="Background" Value="#1B786D"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+  </Application.Resources>
+</Application>

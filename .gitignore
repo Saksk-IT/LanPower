@@ -11,6 +11,9 @@
 **/gateway.json
 **/cloud.json
 **/*.db
+/windows/**/bin/
+/windows/**/obj/
+/windows/out/
 private/
 /AGENTS.md
 /router-gateway-implementation.md

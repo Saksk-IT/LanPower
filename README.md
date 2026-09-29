@@ -1,6 +1,16 @@
-# LanPower：iPhone 与 Windows 电源控制
+# LanPower
 
-这套方案使用 **微信小程序**完成开机、睡眠、休眠、重启和关机。电脑端运行在 Windows 11 上；Safari 网页可以作为电脑在线时的备用控制页。v1.1.2 包含 AX3000T Router Gateway 和 Remote Cloud 预览实现：家中优先使用原有局域网链路，离家后经 HTTPS Cloud 中继到常在线路由器，无需开放 Windows 或路由器的公网控制端口。
+LanPower 用于管理 Windows 电脑的电源。家中可用微信小程序通过局域网查询状态、睡眠、休眠、重启、关机和网络唤醒；现有远程预览版通过 Cloud 与常在线的 Wake Gateway 控制电脑。Windows 服务与桌面应用的新实现已进入产品化阶段。
+
+## 使用方式
+
+| 模式 | 所需组件 | 当前状态 |
+|---|---|---|
+| LAN Direct | Windows + 微信小程序 | 已可用，不依赖 Cloud 或路由器程序 |
+| Remote Gateway Preview | Windows + Cloud + Wake Gateway | v1.1.2 已验证远程状态、睡眠和唤醒 |
+| Cloud Direct | Windows + Cloud + 浏览器或小程序 | 架构规划中，当前版本尚未实现 |
+
+普通用户可先使用下方已发布版本。开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建新服务、桌面端和安装包；新安装包尚未发布。
 
 ## 最新版本
 
