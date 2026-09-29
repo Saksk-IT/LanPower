@@ -36,6 +36,8 @@
 
 部署 [Remote Cloud](cloud_remote/README.md) 和 [AX3000T Gateway](router_gateway/README.md)，在小程序中扫描远程配对码。小程序先检查局域网接口；不可达时自动查询 Cloud 的网关和电脑状态，并在远程模式下将六种枚举动作交给 Gateway。Cloud 不可用时，只要本地配对仍在，“开机”仍可发送局域网 WOL；状态查询失败不会锁住唤醒按钮。电脑关机时由路由器在 LAN 发 WOL；电脑在线时由路由器访问 Windows 本地 API。完整设计和当前验证边界见 [5G/外网控制说明](docs/remote-5g.md)。
 
+已有路由器配置、正在连接四端时，按 [Windows、路由器、Cloud 与手机联调清单](docs/cloud-phone-connection.md) 逐项核对凭据、HTTPS 和真机 5G 状态。不要重新生成配套凭据后只更新单独一端。
+
 ## 源码与构建
 
 电脑端源代码、静态页面、测试和 PyInstaller 配置在 `source/`；小程序源代码在 `mini_program/`。Gateway Go 源码在 `router_gateway/`，Cloud Python 源码在 `cloud_remote/`。仓库内的 `LanPower/` 是可直接安装的 Windows 程序。电脑端使用 Python 标准库处理 HTTP 和电源指令，二维码使用 `qrcode` 生成。
