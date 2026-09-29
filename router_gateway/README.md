@@ -15,6 +15,8 @@ go build -trimpath -ldflags='-s -w' -o lanpower-gateway ./cmd/lanpower-gateway
 
 配置由 `python -m cloud_remote.provision` 生成，详见 [Cloud 部署说明](../cloud_remote/README.md)。`gateway.json` 包含 LAN Token 和独立的 Gateway Secret，必须以 `0600` 权限保存在 `/data/lanpower/`，不要提交到 Git。PC IP 应先通过路由器 DHCP 静态绑定；示例地址只用于说明。
 
+路由器 Shell 脚本必须保持 LF 换行，仓库通过 `.gitattributes` 固定该规则。从 Windows 导出已提交源码包时，在仓库根目录使用 `git -c core.autocrlf=false archive --format=tar -o "$env:TEMP\lanpower-source.tar" HEAD cloud_remote router_gateway`，避免用户级 `core.autocrlf=true` 使部署包出现 CRLF。Linux 报 `set: Illegal option` 或启动脚本解释器不存在时，先检查包内换行，再执行安装。
+
 ## 安装到路由器
 
 通过已有的 LAN SSH 通道上传二进制、生成的配置、`scripts/install.sh` 与 `scripts/startup.sh` 至路由器临时目录。旧 Dropbear 可能需要 SSH 客户端显式启用 `ssh-rsa`；随后在路由器执行：

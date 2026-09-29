@@ -42,4 +42,4 @@ power.example.com {
 
 只公开反向代理的 HTTPS 入口；Cloud 进程始终绑定 loopback。`GET /healthz` 返回服务进程状态和版本号，不代表 Gateway 在线。`GET /api/v1/client/status?gateway_id=home-router` 使用手机 Bearer 凭据，区分 Gateway 在线、PC 在线与 PC 离线。路由器每轮长轮询前上报心跳，最多等待 25 秒取命令。命令一次投递，最长有效期 45 秒；Cloud 重启或网关掉线时，未完成的客户端请求会超时，而不会重发可能已经执行的电源动作。
 
-小程序还需在微信平台配置实际 HTTPS 域名，再用真机分别验证 Wi-Fi 和 5G。当前仓库没有实际域名、云服务器配置或私有凭据，故远程链路尚未做该环境下的端到端实测。
+小程序还需在微信平台配置实际 HTTPS 域名，再用真机分别验证 Wi-Fi 和 5G。仓库不包含实际域名、云服务器配置或私有凭据。2026 年 9 月 29 日，一套实际部署已验证 Cloudflare 代理入口、Caddy HTTPS、Cloud 与 Gateway 心跳，以及通过 Gateway 返回 Windows 在线状态的远程只读命令；手机 5G 操作尚未验证。
