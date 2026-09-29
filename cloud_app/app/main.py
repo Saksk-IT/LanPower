@@ -41,6 +41,7 @@ EVENT_LABELS.update({"enrollment_approved": "允许设备连接", "enrollment_de
 EVENT_LABELS.update({"client_enrollment_created": "创建客户端二维码", "client_enrolled": "客户端已授权",
                      "client_revoked": "客户端已移除", "client_refresh_rotated": "客户端凭据已更新",
                      "client_refresh_reuse": "客户端凭据异常"})
+EVENT_LABELS.update({"gateway_linked": "关联唤醒网关", "gateway_unlinked": "移除网关关联"})
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
@@ -271,12 +272,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if isinstance(error, BlockingIOError): return HTTPException(429, str(error))
         return HTTPException(400, str(error))
 
-    def device_identity(request: Request) -> tuple[str, str]:
+    def device_identity(request: Request, device_type: str = "windows") -> tuple[str, str]:
         authorization = request.headers.get("authorization", "")
         if not authorization.startswith("Bearer "):
             raise HTTPException(401, "device unauthorized")
         try:
-            return platform.windows.authorize(authorization[7:])
+            return platform.tokens.authorize(authorization[7:], expected_type=device_type)
         except PermissionError as error:
             raise HTTPException(401, str(error)) from error
 
@@ -545,8 +546,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def gateways_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "gateways", session, devices=platform.devices(session.owner_id), presence=platform.presence(),
-                    gateway_id=platform.gateway_id, windows_id=platform.windows_id)
+        devices = platform.devices(session.owner_id)
+        return page(request, "gateways", session, devices=devices, links=platform.links(session.owner_id),
+                    statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices})
+
+    @app.post("/gateways/{gateway_id}/links")
+    async def gateway_link(request: Request, gateway_id: str):
+        session = session_owner(request)
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        if form.get("operation", "save") not in {"save", "remove"}:
+            raise HTTPException(400, "invalid operation")
+        try:
+            platform.gateway.link(session.owner_id, gateway_id, form.get("windows_id", ""),
+                                  backup=form.get("backup") == "on", remove=form.get("operation") == "remove")
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return RedirectResponse("/gateways", status_code=303)
 
     @app.get("/clients")
     def clients_page(request: Request):
@@ -730,6 +746,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def api_devices(request: Request):
         owner_id = client_owner(request)
         return [platform.device_status(owner_id, device.id) for device in platform.devices(owner_id)]
+
+    @app.post("/api/v2/gateway/heartbeat")
+    async def gateway_heartbeat(request: Request):
+        owner_id, device_id = device_identity(request, "gateway")
+        try:
+            platform.gateway.heartbeat(owner_id, device_id, await json_body(request, limit=8192))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+        return {"ok": True}
+
+    @app.get("/api/v2/gateway/commands")
+    def gateway_commands(request: Request):
+        _, device_id = device_identity(request, "gateway")
+        return {"command": platform.gateway.poll(device_id)}
+
+    @app.post("/api/v2/gateway/results")
+    async def gateway_results(request: Request):
+        _, device_id = device_identity(request, "gateway")
+        try:
+            platform.gateway.result(device_id, await json_body(request))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return {"ok": True}
 
     @app.get("/api/v2/devices/{device_id}")
     def api_device(request: Request, device_id: str):

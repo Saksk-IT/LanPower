@@ -3,8 +3,25 @@
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">连接</p><h1>唤醒网关</h1><p class="muted">电脑离线时，网关可以在家中发送网络唤醒包。</p></div></div>
 {% for device in devices if device.device_type == 'gateway' %}
-<section class="card"><div class="card-heading"><div><span class="device-type">Wake Gateway</span><h2>{{ device.name }}</h2></div><span class="badge {{ 'good' if presence.gateway == 'online' else '' }}">{{ '在线' if presence.gateway == 'online' else '离线' }}</span></div>
-  <div class="facts"><span>关联电脑</span><strong>{{ (devices | selectattr('id', 'equalto', windows_id) | first).name }}</strong><span>最近连接</span><strong>{{ device.last_seen_at | relative_time }}</strong><span>版本</span><strong>{{ device.version }}</strong></div>
+<section class="card"><div class="card-heading"><div><span class="device-type">{{ 'Wake Gateway' if device.protocol_version == '2' else 'Legacy Gateway' }}</span><h2>{{ device.name }}</h2></div><span class="badge {{ 'good' if statuses[device.id].state == 'online' else '' }}">{{ '在线' if statuses[device.id].state == 'online' else '离线' }}</span></div>
+  <p class="muted">版本 {{ device.version }} · 最近连接：{{ device.last_seen_at | relative_time }}</p>
+  {% for link in links.get(device.id, []) %}
+  <div class="gateway-link"><p><strong>{{ link.name }}</strong> · {{ '唤醒和备用控制' if link.backup else '唤醒' }}</p>
+    {% if device.protocol_version == '2' %}<form method="post" action="/gateways/{{ device.id }}/links">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="windows_id" value="{{ link.device_id }}">
+      <button class="secondary" name="operation" value="remove">解除关联</button>
+    </form>{% endif %}
+  </div>
+  {% else %}<p class="muted">尚未关联电脑。</p>{% endfor %}
+  {% if device.protocol_version == '2' %}
+  <form method="post" action="/gateways/{{ device.id }}/links" class="gateway-link-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>关联电脑<select name="windows_id" required>{% for windows in devices if windows.device_type == 'windows' %}<option value="{{ windows.id }}">{{ windows.name }}</option>{% endfor %}</select></label>
+    <label><input type="checkbox" name="backup"> 允许备用控制</label>
+    <button class="primary">保存关联</button>
+  </form>
+  <p class="hint">网关还需在本地配置对应电脑，才能唤醒。备用控制仅在电脑云端连接中断、局域网仍可访问时使用。</p>
+  {% endif %}
 </section>
 {% endfor %}
 {% if not (devices | selectattr('device_type', 'equalto', 'gateway') | list) %}<section class="card"><p>尚未配置唤醒网关。在线的 Windows 电脑仍可通过 Cloud 直接控制。</p></section>{% endif %}

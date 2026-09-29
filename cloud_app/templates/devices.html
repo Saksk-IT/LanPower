@@ -7,6 +7,7 @@
 <section class="card list-card">
   <div><span class="device-type">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }}</span><h2>{{ device.name }}</h2>
     <p class="muted">{{ '在线' if current.state == 'online' else '离线或状态未知' }} · 版本 {{ device.version }}</p>
+    {% if device.device_type == 'windows' %}<details class="hint"><summary>配置唤醒网关</summary><p>将此电脑编号填入网关本地配置：</p><code class="device-id">{{ device.id }}</code></details>{% endif %}
   </div>
   <form method="post" action="/devices/{{ device.id }}/rename" class="rename-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">

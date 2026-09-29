@@ -13,7 +13,7 @@ from cloud_app.app.auth import digest
 from cloud_app.app.device_auth import ACCESS_SECONDS, REFRESH_SECONDS, DeviceTokens
 from cloud_app.app.models import (
     AuditLog, Command, Device, DeviceCommand, DeviceHeartbeat, DeviceSession,
-    EnrollmentSession,
+    EnrollmentSession, GatewayCommand,
 )
 
 ENROLL_SECONDS = 10 * 60
@@ -186,7 +186,7 @@ class WindowsProtocol:
             if command.state == "accepted" and command.issued_at + 45 <= int(time.time()):
                 command.state = "failed"
                 command.completed_at = int(time.time())
-                command.error = "Windows 未在时限内确认"
+                command.error = "设备未在时限内确认"
             return {"command_id": command.id, "accepted": True, "route": command.route,
                     "state": command.state, "error": command.error}
 
@@ -202,5 +202,15 @@ class WindowsProtocol:
             for session in db.scalars(select(DeviceSession).where(DeviceSession.device_id == device_id,
                                                                   DeviceSession.revoked_at.is_(None))):
                 session.revoked_at = now
+            pending = list(db.scalars(select(DeviceCommand).where(
+                DeviceCommand.target_device_id == device_id, DeviceCommand.result_ok.is_(None))))
+            pending += list(db.scalars(select(GatewayCommand).where(
+                or_(GatewayCommand.gateway_id == device_id, GatewayCommand.target_device_id == device_id),
+                GatewayCommand.result_ok.is_(None))))
+            for command in pending:
+                command.result_ok, command.result_state, command.error = False, "failed", "设备已移除，未完成命令已停止"
+                row = db.get(Command, command.id)
+                if row is not None:
+                    row.state, row.error, row.completed_at = "failed", command.error, now
             db.add(AuditLog(id=str(uuid.uuid4()), owner_id=owner_id, event="device_revoked",
                             target_device_id=device_id, created_at=now))

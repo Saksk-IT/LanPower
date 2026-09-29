@@ -2,6 +2,12 @@
 
 本目录是 Xiaomi AX3000T / RD03（MediaTek MT7981、aarch64）的 LanPower Gateway。它只主动连接 Cloud，不在路由器上开放控制端口。WOL 已纳入 Go 程序；Windows 的 LAN Token 只存于 Windows 和路由器。
 
+## Gateway v2
+
+新版支持设备短码注册、独立凭据轮换、一个网关关联多台 Windows、远程唤醒和可选备用局域网控制。Windows 在线时，Cloud 优先直接控制 Windows。使用 `config.v2.example.json` 创建新版配置；完整注册、安装和迁移步骤见 [Wake Gateway v2](../docs/wake-gateway.md)。下文的共享密钥配置与 `seen.json` 为保留的 v1 兼容方式。
+
+v2 凭据保存在配置同目录的 `device-credentials.json`，命令执行记录保存在 `command-receipts.json`，二者均为 `0600`。注册和常驻进程共用独占锁；重复命令返回原结果，执行中断后结果未知的命令不会重新执行。网关仅上传设备编号和能力/连通状态，不上传 Windows LAN Token、MAC 或广播地址。
+
 ## 构建
 
 在装有 Go 1.22 或更新版本的电脑上，从本目录执行：

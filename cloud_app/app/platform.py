@@ -15,6 +15,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.windows import WindowsProtocol
 from cloud_app.app.enrollment import Enrollment
 from cloud_app.app.clients import Clients
+from cloud_app.app.gateway import GatewayProtocol
 from cloud_app.password import hash_password
 
 ADMIN_ID = "00000000-0000-0000-0000-000000000001"
@@ -75,6 +76,7 @@ class Platform:
         self.tokens = self.windows.tokens
         self.enrollment = Enrollment(sessions, settings.public_url)
         self.mobile = Clients(sessions)
+        self.gateway = GatewayProtocol(sessions)
         if settings.legacy is None:
             seed_admin(settings, sessions)
             self.gateway_id, self.windows_id = None, None
@@ -99,38 +101,58 @@ class Platform:
             if device is None:
                 raise ValueError("device unavailable")
             legacy = bool(device.meta.get("legacy"))
-            gateway = db.scalar(select(Device).join(DeviceLink, Device.id == DeviceLink.gateway_id).where(
+            gateways = list(db.scalars(select(Device).join(DeviceLink, Device.id == DeviceLink.gateway_id).where(
                 DeviceLink.windows_id == device_id, DeviceLink.relationship == "wake_gateway",
-                Device.owner_id == owner_id, Device.revoked_at.is_(None))) if device.device_type == "windows" else None
-            relay = self.presence() if legacy or gateway or device.device_type == "gateway" else None
+                Device.owner_id == owner_id, Device.revoked_at.is_(None)).order_by(Device.id))) if device.device_type == "windows" else []
             if device.device_type == "gateway":
-                state = relay["gateway"] if device.id == self.gateway_id else "offline"
+                state = self.presence()["gateway"] if device.id == self.gateway_id else "online" if self.gateway.online(device) else "offline"
                 return {"device_id": device.id, "name": device.name, "device_type": device.device_type,
                         "state": state, "cloud_agent": "offline", "wake_available": False,
                         "wake_gateway": None, "remote_control_available": False}
             direct = device.protocol_version == "2" and self.windows.online(device)
-            gateway_online = bool(gateway and relay and relay["gateway"] == "online")
-            lan_online = bool(relay and relay["pc"] == "online")
-            state = "online" if direct or (legacy and gateway_online and lan_online) else "offline"
+            wake, backup = None, None
+            for gateway in gateways:
+                if gateway.protocol_version == "2":
+                    if wake is None and self.gateway.permitted(db, gateway.id, device.id, "wake"):
+                        wake = gateway
+                    if backup is None and self.gateway.permitted(db, gateway.id, device.id, "status"):
+                        backup = gateway
+                elif legacy and gateway.id == self.gateway_id:
+                    relay = self.presence()
+                    if relay["gateway"] == "online":
+                        wake = wake or gateway
+                        if relay["pc"] == "online":
+                            backup = backup or gateway
+            linked = wake or (gateways[0] if gateways else None)
+            linked_online = bool(linked and (self.gateway.online(linked) if linked.protocol_version == "2"
+                                             else self.presence()["gateway"] == "online"))
+            state = "online" if direct or backup else "offline"
             return {"device_id": device.id, "name": device.name, "device_type": device.device_type,
                     "state": state, "cloud_agent": "online" if direct else "offline",
-                    "wake_available": gateway_online, "wake_gateway": {"state": "online" if gateway_online else "offline"} if gateway else None,
-                    "remote_control_available": direct or (gateway_online and lan_online and legacy)}
+                    "wake_available": wake is not None,
+                    "wake_gateway": {"device_id": linked.id, "name": linked.name, "state": "online" if linked_online else "offline"} if linked else None,
+                    "backup_gateway": {"device_id": backup.id, "name": backup.name, "state": "online"} if backup else None,
+                    "remote_control_available": direct or backup is not None}
 
     def issue_command(self, owner_id: str, device_id: str, action: str) -> dict:
         status = self.device_status(owner_id, device_id)
         if status["device_type"] != "windows":
             raise ValueError("device unavailable")
-        device = self.device(owner_id, device_id)
-        legacy = bool(device.meta.get("legacy"))
-        relay = self.presence() if legacy else None
+        gateway = status["wake_gateway"] if action == "wake" else status["backup_gateway"]
         route = select_route(action, windows_online=status["cloud_agent"] == "online",
-                             gateway_online=bool(status["wake_gateway"] and status["wake_gateway"]["state"] == "online"),
-                             linked_gateway=status["wake_gateway"] is not None,
-                             windows_lan_online=bool(relay and relay["pc"] == "online"), legacy=legacy)
+                             gateway_online=bool(gateway and gateway["state"] == "online" and
+                                                 (action != "wake" or status["wake_available"])),
+                             linked_gateway=gateway is not None,
+                             windows_lan_online=status["backup_gateway"] is not None,
+                             backup_relay_enabled=status["backup_gateway"] is not None)
         if route == "windows_direct":
             return self.windows.issue(owner_id, device_id, action)
         if route in {"wake_gateway", "gateway_relay"}:
+            linked = self.device(owner_id, gateway["device_id"])
+            if linked is None:
+                raise ConnectionError("gateway route unavailable")
+            if linked.protocol_version == "2":
+                return self.gateway.issue(owner_id, linked.id, device_id, action)
             return self.issue_legacy(owner_id, device_id, action)
         raise ConnectionError("requested action unavailable")
 
@@ -168,6 +190,18 @@ class Platform:
     def clients(self, owner_id: str) -> list[LegacyClient]:
         with self.sessions() as db:
             return list(db.scalars(select(LegacyClient).where(LegacyClient.owner_id == owner_id)))
+
+    def links(self, owner_id: str) -> dict[str, list[dict]]:
+        result: dict[str, list[dict]] = {}
+        with self.sessions() as db:
+            devices = {device.id: device for device in db.scalars(select(Device).where(
+                Device.owner_id == owner_id, Device.revoked_at.is_(None)))}
+            for link in db.scalars(select(DeviceLink).where(DeviceLink.relationship == "wake_gateway")):
+                if link.gateway_id in devices and link.windows_id in devices:
+                    result.setdefault(link.gateway_id, []).append({"device_id": link.windows_id,
+                        "name": devices[link.windows_id].name,
+                        "backup": db.get(DeviceLink, (link.gateway_id, link.windows_id, "backup_relay")) is not None})
+        return result
 
     def record(self, owner_id: str, event: str, device_id: str | None = None, route: str | None = None) -> None:
         with self.sessions.begin() as db:

@@ -11,6 +11,10 @@
 *.log.*
 *.zip
 **/gateway.json
+**/device-credentials.json
+**/command-receipts.json
+**/gateway.lock
+**/seen.json
 **/cloud.json
 **/*.db
 **/setup-code

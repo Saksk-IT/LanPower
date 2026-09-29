@@ -15,6 +15,7 @@ import (
 
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/cloud"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/config"
+	"github.com/Saksk-IT/LanPower/router_gateway/internal/gateway"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/protocol"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/windows"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/wol"
@@ -74,10 +75,10 @@ func run(ctx context.Context, cfg config.Config, replay *protocol.ReplayStore) e
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := lockFile(lock); err != nil {
 		return errors.New("gateway is already running")
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlockFile(lock)
 	pc := windows.New(cfg)
 	remote := cloud.New(cfg)
 	started := time.Now()
@@ -136,6 +137,10 @@ func run(ctx context.Context, cfg config.Config, replay *protocol.ReplayStore) e
 var cfgPath string
 
 func main() {
+	enroll := len(os.Args) > 1 && os.Args[1] == "enroll"
+	if enroll {
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	}
 	flag.StringVar(&cfgPath, "config", "/data/lanpower/gateway.json", "gateway config path")
 	check := flag.Bool("check-config", false, "validate configuration and exit")
 	flag.Parse()
@@ -147,6 +152,17 @@ func main() {
 	if *check {
 		fmt.Println("gateway config OK")
 		return
+	}
+	if cfg.ProtocolVersion == "2" {
+		if err := runV2(cfg, enroll); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if enroll {
+		fmt.Fprintln(os.Stderr, "enrollment requires protocol_version 2")
+		os.Exit(1)
 	}
 	replay, err := protocol.OpenReplayStore(filepath.Join(filepath.Dir(cfgPath), "seen.json"))
 	if err != nil {
@@ -161,4 +177,38 @@ func main() {
 		log.Print(err)
 		os.Exit(1)
 	}
+}
+
+func runV2(cfg config.Config, enroll bool) error {
+	directory := filepath.Dir(cfgPath)
+	lock, err := os.OpenFile(filepath.Join(directory, "gateway.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := lockFile(lock); err != nil {
+		return errors.New("stop the running gateway before enrollment")
+	}
+	defer unlockFile(lock)
+	remote := cloud.NewV2(cfg, filepath.Join(directory, "device-credentials.json"))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if enroll {
+		if err := remote.Enroll(ctx, func(code, uri string) {
+			fmt.Printf("配对码：%s\n请登录 %s 核对名称后允许连接。\n", code, uri)
+		}); err != nil {
+			return err
+		}
+		fmt.Println("网关已连接，凭据已保存。请在 Cloud 页面关联电脑，并在网关本地配置对应设备。")
+		return nil
+	}
+	if err := remote.Load(); err != nil {
+		return err
+	}
+	store, err := protocol.OpenCommandStore(filepath.Join(directory, "command-receipts.json"))
+	if err != nil {
+		return err
+	}
+	log.SetOutput(io.Writer(rotatingLog{path: filepath.Join(directory, "gateway.log")}))
+	return gateway.New(cfg, remote, store).Run(ctx)
 }

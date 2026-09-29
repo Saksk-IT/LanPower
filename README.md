@@ -9,7 +9,7 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 | LAN Direct | Windows + 微信小程序 | 已可用，不依赖 Cloud 或路由器程序 |
 | Cloud Direct | 新 Windows 应用 + Cloud + 浏览器 | 源码已实现；在线电脑不需要 Wake Gateway |
 | 小程序 v2 | 新 Windows 应用 + Cloud + 微信小程序 | 扫码授权、设备列表、局域网优先与云端回退已实现，待微信真机验收 |
-| Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新架构的网关接入仍在开发 |
+| Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新版已实现多电脑唤醒及可选备用控制，待实机验收 |
 
 普通用户可先使用下方已发布版本。开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建新服务、桌面端和安装包；新安装包尚未发布。
 
@@ -21,6 +21,7 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
 3. 在 Windows 应用中输入 Cloud 地址，点击“连接 Cloud”查看设备配对码。登录 Cloud 网页的“连接 Windows 电脑”，输入短码并核对名称后允许连接。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
 4. 手机需要远程控制时，在 Cloud“已授权客户端”页面生成二维码，用新版小程序扫码。选中电脑后，可单独扫描该电脑的局域网码以启用局域网优先；详见 [小程序 v2](docs/mini-program-v2.md)。
+5. 需要远程开机时，按 [Wake Gateway v2](docs/wake-gateway.md) 在路由器上注册网关、配置电脑并在 Cloud 关联。一个网关支持多台电脑，Windows 在线时仍优先直连。
 
 ## 最新版本
 

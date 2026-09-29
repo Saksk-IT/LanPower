@@ -10,12 +10,20 @@ var identifier = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 var nonce = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
 
 type Command struct {
-	CommandID string `json:"command_id"`
-	GatewayID string `json:"gateway_id"`
-	Action    string `json:"action"`
-	IssuedAt  int64  `json:"issued_at"`
-	ExpiresAt int64  `json:"expires_at"`
-	Nonce     string `json:"nonce"`
+	CommandID      string `json:"command_id"`
+	GatewayID      string `json:"gateway_id"`
+	TargetDeviceID string `json:"target_device_id,omitempty"`
+	Action         string `json:"action"`
+	IssuedAt       int64  `json:"issued_at"`
+	ExpiresAt      int64  `json:"expires_at"`
+	Nonce          string `json:"nonce"`
+}
+
+func (c Command) ValidateV2(expectedGateway string, allowedTargets map[string]bool, now time.Time) error {
+	if !identifier.MatchString(c.TargetDeviceID) || !allowedTargets[c.TargetDeviceID] {
+		return errors.New("unknown Windows target")
+	}
+	return c.Validate(expectedGateway, now)
 }
 
 type Result struct {

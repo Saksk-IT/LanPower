@@ -5,3 +5,5 @@
 @media(max-width:480px){.login-card{padding:24px}.login-body{padding:16px}.login-card h1{font-size:1.7rem}.recovery-codes{font-size:.7rem;padding-left:27px}}
 @media(max-width:800px){.shell{grid-template-rows:auto 1fr}.sidebar-bottom{display:flex;margin-top:0}}
 .pairing-qr{margin:24px 0;width:min(100%,300px);background:#fff}.pairing-qr svg{display:block;width:100%;height:auto}.rename-form{flex-wrap:wrap}
+.gateway-link{display:flex;gap:16px;align-items:center;justify-content:space-between;border-top:1px solid #e2ebec;padding:14px 0}.gateway-link p{margin:0}.gateway-link-form{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:20px}.gateway-link-form select{display:block;max-width:100%;font:inherit;padding:8px;border:1px solid #cbdbdf;border-radius:8px}.device-id{overflow-wrap:anywhere}
+.page-heading{align-items:flex-start;gap:16px}.page-heading .button-link,.gateway-link form{flex-shrink:0}.gateway-link-form label{max-width:100%;min-width:0}.card h2,.gateway-link strong{overflow-wrap:anywhere}@media(max-width:600px){.page-heading{flex-direction:column}}

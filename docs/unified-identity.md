@@ -36,6 +36,6 @@
 
 ## 剩余开发与实机验收
 
-小程序 v2 的独立客户端授权、设备列表、LAN First 与 Cloud Fallback 已实现并通过本地测试，见 [小程序 v2](mini-program-v2.md)。Gateway v2 的多设备关联、WOL 和备用 LAN 中继继续按后续阶段实现；当前网关配对基础不代表 Gateway v2 控制协议已经完成。
+小程序 v2 的独立客户端授权、设备列表、LAN First 与 Cloud Fallback 已实现并通过本地测试，见 [小程序 v2](mini-program-v2.md)。Gateway v2 的短码注册、多设备关联、WOL 和备用 LAN 中继已实现并通过本地测试，见 [Wake Gateway](wake-gateway.md)。网关凭据轮换前记录待完成状态；若响应丢失，不会重用旧刷新凭据，需要重新配对。凭据与命令记录只在网关本地保存。
 
 实际 Windows Hello、Face ID、Touch ID、安全密钥、公网 HTTPS、真实电源操作、安装升级和网关多设备链路仍需实机验收；本地自动测试不替代这些验收。架构文档的整个开发目标仍在进行中。

@@ -224,6 +224,22 @@ class Command(Base):
     error: Mapped[str] = mapped_column(String(160), default="")
 
 
+class GatewayCommand(Base):
+    __tablename__ = "gateway_commands"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    gateway_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    target_device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    action: Mapped[str] = mapped_column(String(16))
+    nonce: Mapped[str] = mapped_column(String(32), unique=True)
+    issued_at: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[int] = mapped_column(Integer)
+    delivered_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_ok: Mapped[bool | None] = mapped_column(nullable=True)
+    result_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
