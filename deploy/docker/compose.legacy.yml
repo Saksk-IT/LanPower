@@ -1,0 +1,6 @@
+services:
+  cloud:
+    environment:
+      LANPOWER_LEGACY_CONFIG: /run/secrets/cloud.json
+    volumes:
+      - ./private/cloud.json:/run/secrets/cloud.json:ro

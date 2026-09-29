@@ -63,6 +63,66 @@ class LegacyClient(Base):
     created_at: Mapped[int] = mapped_column(Integer)
 
 
+class EnrollmentSession(Base):
+    __tablename__ = "enrollment_sessions"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    device_type: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[int] = mapped_column(Integer)
+    used_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DeviceSession(Base):
+    __tablename__ = "device_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    access_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    access_expires_at: Mapped[int] = mapped_column(Integer)
+    refresh_expires_at: Mapped[int] = mapped_column(Integer)
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class UsedRefreshToken(Base):
+    __tablename__ = "used_refresh_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("device_sessions.id"), index=True)
+    used_at: Mapped[int] = mapped_column(Integer)
+
+
+class DeviceHeartbeat(Base):
+    __tablename__ = "heartbeats"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    seen_at: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16))
+    uptime: Mapped[int] = mapped_column(Integer)
+    lan_ip: Mapped[str] = mapped_column(String(45))
+    wol_capable: Mapped[bool] = mapped_column()
+
+
+class DeviceCommand(Base):
+    __tablename__ = "device_commands"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    action: Mapped[str] = mapped_column(String(16))
+    nonce: Mapped[str] = mapped_column(String(32), unique=True)
+    issued_at: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[int] = mapped_column(Integer)
+    delivered_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_ok: Mapped[bool | None] = mapped_column(nullable=True)
+    result_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+
 class Command(Base):
     __tablename__ = "platform_commands"
 

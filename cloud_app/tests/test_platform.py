@@ -17,9 +17,9 @@ from cloud_app.app.main import create_app
 from cloud_app.app.settings import Settings
 
 
-def make_client(directory: Path) -> tuple[TestClient, object]:
+def make_client(directory: Path, no_gateway: bool = False) -> tuple[TestClient, object]:
     settings = Settings(
-        legacy=Config("home-router", "a" * 64, "b" * 64, directory / "relay.db"),
+        legacy=None if no_gateway else Config("home-router", "a" * 64, "b" * 64, directory / "relay.db"),
         database_url="sqlite:///" + (directory / "platform.db").as_posix(),
         admin_password_hash=hash_password("correct horse battery staple"),
         public_url="https://power.example.com",
@@ -42,7 +42,7 @@ def test_migration_login_and_csrf() -> None:
         client, app = make_client(directory)
         try:
             with closing(sqlite3.connect(directory / "platform.db")) as connection:
-                assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0001_platform"
+                assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0002_windows_direct"
                 assert connection.execute("SELECT count(*) FROM devices").fetchone()[0] == 2
                 assert connection.execute("SELECT count(*) FROM device_links").fetchone()[0] == 1
                 assert connection.execute("SELECT count(*) FROM legacy_clients").fetchone()[0] == 1

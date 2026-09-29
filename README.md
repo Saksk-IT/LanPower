@@ -1,24 +1,30 @@
 # LanPower
 
-LanPower 用于管理 Windows 电脑的电源。家中可用微信小程序通过局域网查询状态、睡眠、休眠、重启、关机和网络唤醒；现有远程预览版通过 Cloud 与常在线的 Wake Gateway 控制电脑。Windows 服务与桌面应用的新实现已进入产品化阶段。
+LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新 Windows 应用、Cloud Web 与 Cloud Direct 已在源码中实现，尚未发布或进行公网实机验收。
 
 ## 使用方式
 
 | 模式 | 所需组件 | 当前状态 |
 |---|---|---|
 | LAN Direct | Windows + 微信小程序 | 已可用，不依赖 Cloud 或路由器程序 |
-| Remote Gateway Preview | Windows + Cloud + Wake Gateway | v1.1.2 已验证远程状态、睡眠和唤醒；新版 Cloud Web 源码已加入 |
-| Cloud Direct | Windows + Cloud + 浏览器或小程序 | 架构规划中，当前版本尚未实现 |
+| Cloud Direct | 新 Windows 应用 + Cloud + 浏览器 | 源码已实现；在线电脑不需要 Wake Gateway |
+| Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新架构的网关接入仍在开发 |
 
 普通用户可先使用下方已发布版本。开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建新服务、桌面端和安装包；新安装包尚未发布。
 
-新版 [Cloud Web 部署说明](cloud_app/README.md) 介绍浏览器登录、设备列表、旧版 Gateway 兼容与 Docker 部署。当前仍需 Wake Gateway 执行外网控制；Windows Cloud Direct 尚未实现。
+新版 [Cloud Web 部署说明](cloud_app/README.md) 介绍无网关模式、浏览器控制与旧版 Gateway 兼容。[Cloud Direct 说明](docs/cloud-direct.md) 列出配对步骤、控制路径和验收边界。
+
+## 新架构快速开始（源码版本）
+
+1. 按 [Windows 构建说明](windows/README.md) 生成并安装 Windows 应用，或等待新版安装包发布。安装后，局域网控制无需 Cloud。
+2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
+3. 登录 Cloud 网页，打开“连接 Windows 电脑”生成一次性配对码。在 Windows 应用中输入 Cloud 地址与配对码。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
 
 ## 最新版本
 
 当前版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息。一套实际部署已在 iPhone 5G 下完成远程状态、睡眠和唤醒实测。
 
-## 安装
+## 已发布 v1.1.2 的安装
 
 1. 在电脑上克隆仓库或解压发布包，双击 `Install.cmd`。首次运行会请求 Windows 管理员授权，以便设置开机启动任务和只允许当前家用网段访问的防火墙规则。
 2. 用微信开发者工具导入发布包中的 `mini_program/`，使用自己的小程序 AppID 或测试号 AppID 在 iPhone 微信里预览。详细步骤见 `mini_program/README.md`。
@@ -33,7 +39,7 @@ LanPower 用于管理 Windows 电脑的电源。家中可用微信小程序通�
 - 电脑离线时，网页服务器也会离线；请用小程序发送 WOL 唤醒包。
 - 扫码链接含有随机配对密钥，只在电脑本机的 `/setup` 页面显示；手机浏览器收到后保存在此网站的本地存储中。
 
-## Windows 端
+## 已发布 v1.1.2 的 Windows 端
 
 - 启动任务：`LanPower LAN Control`，以 SYSTEM 账户在开机时运行。
 - 防火墙规则：`LanPower LAN Only`，仅放行安装时检测到的家用网段到 TCP `48211`。
@@ -44,7 +50,7 @@ LanPower 用于管理 Windows 电脑的电源。家中可用微信小程序通�
 
 2026 年 9 月 28 日，iPhone 微信预览版已实测配对显示在线、睡眠后唤醒并恢复在线、关机后重新开机。2026 年 9 月 29 日，AX3000T / RD03 上的 WOL、Windows API 调用、公网 HTTPS 和自启动已有实机验证；Cloudflare 代理入口、Cloud、Gateway 与 Windows 的在线状态及远程只读状态命令也已在实际部署中验证。iPhone 关闭 Wi-Fi 后，小程序显示“在线 · 远程”；用户通过 5G 发出睡眠和唤醒操作，电脑恢复在线，随后远程只读状态命令再次返回在线。其他远程电源动作尚未逐项真机验证，详见 [5G/外网控制说明](docs/remote-5g.md)。
 
-## 手机使用 5G 时
+## 已发布 v1.1.2 的手机远程模式
 
 部署 [Remote Cloud](cloud_remote/README.md) 和 [AX3000T Gateway](router_gateway/README.md)，在小程序中扫描远程配对码。小程序先检查局域网接口；不可达时自动查询 Cloud 的网关和电脑状态，并在远程模式下将六种枚举动作交给 Gateway。Cloud 不可用时，只要本地配对仍在，“开机”仍可发送局域网 WOL；状态查询失败不会锁住唤醒按钮。电脑关机时由路由器在 LAN 发 WOL；电脑在线时由路由器访问 Windows 本地 API。完整设计和当前验证边界见 [5G/外网控制说明](docs/remote-5g.md)。
 

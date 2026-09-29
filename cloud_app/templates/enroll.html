@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}连接 Windows 电脑{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">连接设备</p><h1>连接 Windows 电脑</h1></div></div>
+<section class="card">
+  <p>在电脑上打开 LanPower，在 Cloud 连接中输入此 Cloud 地址和一次性配对码。配对码十分钟内有效，只能使用一次。</p>
+  <p>Cloud 地址：<strong>{{ public_url }}</strong></p>
+  {% if code %}<p>一次性配对码：<strong class="pair-code">{{ code }}</strong></p>{% endif %}
+  <form method="post" action="/devices/enroll"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">{{ '重新生成配对码' if code else '生成配对码' }}</button></form>
+</section>
+{% endblock %}

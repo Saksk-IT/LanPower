@@ -11,6 +11,7 @@ var configPath = ArgumentValue(args, "--config") ?? Path.Combine(
 var dryRun = args.Contains("--dry-run", StringComparer.Ordinal);
 var config = LanConfig.Load(configPath);
 var serviceLog = new ServiceLog(Path.Combine(Path.GetDirectoryName(configPath)!, "logs", "service.log"));
+var dataDirectory = Path.GetDirectoryName(configPath)!;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -23,6 +24,12 @@ builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(serviceLog);
 builder.Services.AddSingleton(new PowerExecutor(dryRun, serviceLog));
 builder.Services.AddSingleton<PowerGate>();
+builder.Services.AddSingleton(new CloudCredentialStore(dataDirectory));
+builder.Services.AddSingleton(new ReplayStore(dataDirectory));
+builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+    { Timeout = TimeSpan.FromSeconds(35) });
+builder.Services.AddSingleton<CloudAgent>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<CloudAgent>());
 builder.Services.AddHostedService<PipeWorker>();
 var app = builder.Build();
 

@@ -9,17 +9,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from cloud_remote.server import Relay
 from cloud_app.app.models import AuditLog, Command, Device, DeviceLink, LegacyClient, User, WebSession
+from cloud_app.app.routing import select_route
 from cloud_app.app.settings import Settings
+from cloud_app.app.windows import WindowsProtocol
 
 ADMIN_ID = "00000000-0000-0000-0000-000000000001"
 NAMESPACE = uuid.UUID("e09ab1c0-306f-4d8e-9b1f-afd27fab0715")
 
 
-def seed_legacy(settings: Settings, sessions: sessionmaker[Session]) -> tuple[str, str]:
+def seed_admin(settings: Settings, sessions: sessionmaker[Session]) -> None:
     now = int(time.time())
-    gateway_id = str(uuid.uuid5(NAMESPACE, "gateway:" + settings.legacy.gateway_id))
-    windows_id = str(uuid.uuid5(NAMESPACE, "windows:" + settings.legacy.gateway_id))
-    client_id = str(uuid.uuid5(NAMESPACE, "client:" + settings.legacy.gateway_id))
     with sessions.begin() as db:
         admin = db.get(User, ADMIN_ID)
         if admin is None:
@@ -28,6 +27,17 @@ def seed_legacy(settings: Settings, sessions: sessionmaker[Session]) -> tuple[st
         elif admin.password_hash != settings.admin_password_hash:
             admin.password_hash = settings.admin_password_hash
             db.execute(delete(WebSession).where(WebSession.owner_id == ADMIN_ID))
+
+
+def seed_legacy(settings: Settings, sessions: sessionmaker[Session]) -> tuple[str, str]:
+    if settings.legacy is None:
+        raise ValueError("legacy gateway not configured")
+    seed_admin(settings, sessions)
+    now = int(time.time())
+    gateway_id = str(uuid.uuid5(NAMESPACE, "gateway:" + settings.legacy.gateway_id))
+    windows_id = str(uuid.uuid5(NAMESPACE, "windows:" + settings.legacy.gateway_id))
+    client_id = str(uuid.uuid5(NAMESPACE, "client:" + settings.legacy.gateway_id))
+    with sessions.begin() as db:
         gateway = db.get(Device, gateway_id)
         if gateway is None:
             db.add(Device(id=gateway_id, owner_id=ADMIN_ID, device_type="gateway",
@@ -55,8 +65,13 @@ class Platform:
     def __init__(self, settings: Settings, sessions: sessionmaker[Session]):
         self.settings = settings
         self.sessions = sessions
-        self.relay = Relay(settings.legacy)
-        self.gateway_id, self.windows_id = seed_legacy(settings, sessions)
+        self.relay = Relay(settings.legacy) if settings.legacy is not None else None
+        self.windows = WindowsProtocol(sessions)
+        if settings.legacy is None:
+            seed_admin(settings, sessions)
+            self.gateway_id, self.windows_id = None, None
+        else:
+            self.gateway_id, self.windows_id = seed_legacy(settings, sessions)
 
     def devices(self, owner_id: str) -> list[Device]:
         with self.sessions() as db:
@@ -67,11 +82,54 @@ class Platform:
             return db.scalar(select(Device).where(Device.id == device_id, Device.owner_id == owner_id, Device.revoked_at.is_(None)))
 
     def presence(self) -> dict:
-        return self.relay.status()
+        return self.relay.status() if self.relay is not None else {"gateway": "offline", "pc": "unknown"}
+
+    def device_status(self, owner_id: str, device_id: str) -> dict:
+        with self.sessions() as db:
+            device = db.scalar(select(Device).where(Device.id == device_id, Device.owner_id == owner_id,
+                                                    Device.revoked_at.is_(None)))
+            if device is None:
+                raise ValueError("device unavailable")
+            legacy = bool(device.meta.get("legacy"))
+            gateway = db.scalar(select(Device).join(DeviceLink, Device.id == DeviceLink.gateway_id).where(
+                DeviceLink.windows_id == device_id, DeviceLink.relationship == "wake_gateway",
+                Device.owner_id == owner_id, Device.revoked_at.is_(None))) if device.device_type == "windows" else None
+            relay = self.presence() if legacy or gateway or device.device_type == "gateway" else None
+            if device.device_type == "gateway":
+                state = relay["gateway"] if device.id == self.gateway_id else "offline"
+                return {"device_id": device.id, "name": device.name, "device_type": device.device_type,
+                        "state": state, "cloud_agent": "offline", "wake_available": False,
+                        "wake_gateway": None, "remote_control_available": False}
+            direct = device.protocol_version == "2" and self.windows.online(device)
+            gateway_online = bool(gateway and relay and relay["gateway"] == "online")
+            lan_online = bool(relay and relay["pc"] == "online")
+            state = "online" if direct or (legacy and gateway_online and lan_online) else "offline"
+            return {"device_id": device.id, "name": device.name, "device_type": device.device_type,
+                    "state": state, "cloud_agent": "online" if direct else "offline",
+                    "wake_available": gateway_online, "wake_gateway": {"state": "online" if gateway_online else "offline"} if gateway else None,
+                    "remote_control_available": direct or (gateway_online and lan_online and legacy)}
+
+    def issue_command(self, owner_id: str, device_id: str, action: str) -> dict:
+        status = self.device_status(owner_id, device_id)
+        if status["device_type"] != "windows":
+            raise ValueError("device unavailable")
+        device = self.device(owner_id, device_id)
+        legacy = bool(device.meta.get("legacy"))
+        relay = self.presence() if legacy else None
+        route = select_route(action, windows_online=status["cloud_agent"] == "online",
+                             gateway_online=bool(status["wake_gateway"] and status["wake_gateway"]["state"] == "online"),
+                             linked_gateway=status["wake_gateway"] is not None,
+                             windows_lan_online=bool(relay and relay["pc"] == "online"), legacy=legacy)
+        if route == "windows_direct":
+            return self.windows.issue(owner_id, device_id, action)
+        if route in {"wake_gateway", "gateway_relay"}:
+            return self.issue_legacy(owner_id, device_id, action)
+        raise ConnectionError("requested action unavailable")
 
     def issue_legacy(self, owner_id: str, device_id: str, action: str) -> dict:
         device = self.device(owner_id, device_id)
-        if device is None or device.device_type != "windows" or device.legacy_gateway_id != self.settings.legacy.gateway_id:
+        if (self.relay is None or self.settings.legacy is None or device is None or
+                device.device_type != "windows" or device.legacy_gateway_id != self.settings.legacy.gateway_id):
             raise ValueError("device unavailable")
         if action not in {"wake", "status", "sleep", "hibernate", "restart", "shutdown"}:
             raise ValueError("unknown action")

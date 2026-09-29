@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}我的设备{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">设备</p><h1>我的设备</h1><p class="muted">管理当前 Cloud 已登记的电脑和唤醒网关。</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">设备</p><h1>我的设备</h1><p class="muted">管理当前 Cloud 已登记的电脑和唤醒网关。</p></div><a class="button-link" href="/devices/enroll">连接 Windows 电脑</a></div>
 {% for device in devices %}
+{% set current = statuses[device.id] %}
 <section class="card list-card">
   <div><span class="device-type">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }}</span><h2>{{ device.name }}</h2>
-    <p class="muted">{{ '在线' if (presence.pc == 'online' if device.device_type == 'windows' else presence.gateway == 'online') else '离线或状态未知' }} · 版本 {{ device.version }}</p>
+    <p class="muted">{{ '在线' if current.state == 'online' else '离线或状态未知' }} · 版本 {{ device.version }}</p>
   </div>
   <form method="post" action="/devices/{{ device.id }}/rename" class="rename-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">

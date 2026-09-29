@@ -47,6 +47,35 @@ public partial class MainWindow : Window
 
     private async void RefreshStatus(object sender, RoutedEventArgs e) => await LoadStatusAsync();
 
+    private async void ConnectCloud(object sender, RoutedEventArgs e)
+    {
+        CloudConnectButton.IsEnabled = false;
+        CloudNotice.Text = "正在连接…";
+        try
+        {
+            var command = JsonSerializer.Serialize(new
+            {
+                op = "enroll",
+                cloud_url = CloudUrlBox.Text.Trim(),
+                code = CloudCodeBox.Password.Trim()
+            });
+            using var response = await PipeClient.RequestAsync(command);
+            if (!response.RootElement.GetProperty("ok").GetBoolean())
+            {
+                CloudNotice.Text = response.RootElement.GetProperty("error").GetString() ?? "配对失败";
+                return;
+            }
+            CloudCodeBox.Clear();
+            CloudNotice.Text = "配对成功";
+            await LoadStatusAsync();
+        }
+        catch
+        {
+            CloudNotice.Text = "无法连接服务或 Cloud，请稍后重试。";
+        }
+        finally { CloudConnectButton.IsEnabled = true; }
+    }
+
     private async void ShowLogs(object sender, RoutedEventArgs e)
     {
         LogPanel.Visibility = Visibility.Visible;

@@ -10,7 +10,7 @@ internal static class PipeClient
 {
     public static async Task<JsonDocument> RequestAsync(string command)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         await using var pipe = new NamedPipeClientStream(".", LanProtocol.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await pipe.ConnectAsync(timeout.Token);
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);

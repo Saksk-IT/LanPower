@@ -10,7 +10,7 @@ using LanPower.Shared;
 
 namespace LanPower.Service;
 
-public sealed class PipeWorker(LanConfig config, ServiceLog log) : BackgroundService
+public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -62,7 +62,7 @@ public sealed class PipeWorker(LanConfig config, ServiceLog log) : BackgroundSer
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-                timeout.CancelAfter(TimeSpan.FromSeconds(4));
+                timeout.CancelAfter(TimeSpan.FromSeconds(20));
                 using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
                 await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
                 var line = await ReadCommandAsync(reader, timeout.Token);
@@ -71,7 +71,7 @@ public sealed class PipeWorker(LanConfig config, ServiceLog log) : BackgroundSer
                 {
                     "status" => JsonSerializer.Serialize(new { ok = true, status = GetStatus() }),
                     "logs" => JsonSerializer.Serialize(new { ok = true, logs = log.ReadTail() }),
-                    _ => JsonSerializer.Serialize(new { ok = false, error = "unknown request" })
+                    _ => await EnrollAsync(line, timeout.Token)
                 };
                 await writer.WriteLineAsync(response.AsMemory(), timeout.Token);
             }
@@ -82,11 +82,31 @@ public sealed class PipeWorker(LanConfig config, ServiceLog log) : BackgroundSer
         }
     }
 
+    private async Task<string> EnrollAsync(string line, CancellationToken token)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(line);
+            var request = document.RootElement;
+            if (request.ValueKind != JsonValueKind.Object || request.EnumerateObject().Count() != 3 ||
+                request.GetProperty("op").GetString() != "enroll")
+                return JsonSerializer.Serialize(new { ok = false, error = "unknown request" });
+            await cloud.EnrollAsync(request.GetProperty("cloud_url").GetString() ?? "",
+                request.GetProperty("code").GetString() ?? "", token);
+            return JsonSerializer.Serialize(new { ok = true });
+        }
+        catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or
+                                     ArgumentException or HttpRequestException or InvalidDataException)
+        {
+            return JsonSerializer.Serialize(new { ok = false, error = "Cloud 配对失败，请检查地址和配对码" });
+        }
+    }
+
     private static async Task<string?> ReadCommandAsync(StreamReader reader, CancellationToken token)
     {
         var command = new StringBuilder();
         var buffer = new char[1];
-        while (command.Length <= 128)
+        while (command.Length <= 512)
         {
             if (await reader.ReadAsync(buffer.AsMemory(), token) == 0) return null;
             if (buffer[0] == '\n') return command.ToString().TrimEnd('\r');
@@ -103,7 +123,7 @@ public sealed class PipeWorker(LanConfig config, ServiceLog log) : BackgroundSer
         var mac = adapter?.GetPhysicalAddress().ToString() ?? "";
         if (mac.Length == 12) mac = string.Join(":", Enumerable.Range(0, 6).Select(i => mac.Substring(i * 2, 2)));
         return new ServiceStatus(Environment.MachineName, config.HostIp, mac,
-            DetectWake(adapter), "已连接", "未配置", "未配置", "1.2.0");
+            DetectWake(adapter), "已连接", cloud.State, "未配置", "1.4.0");
     }
 
     private static string DetectWake(NetworkInterface? adapter)

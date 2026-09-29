@@ -25,6 +25,18 @@ $network = ([System.Net.IPAddress]::new($bytes)).ToString() + '/' + $ip.PrefixLe
 $dataDir = Join-Path $env:ProgramData 'LanPower'
 $configPath = Join-Path $dataDir 'config.json'
 New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+if (((Get-Item -LiteralPath $dataDir).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'LanPower 数据目录不能是链接。'
+}
+& icacls.exe $dataDir '/inheritance:r' '/grant:r' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '/remove:g' '*S-1-5-32-545' '*S-1-5-11' '*S-1-1-0' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw '无法保护 LanPower 数据目录。' }
+foreach ($protectedName in @('credentials.dat', 'cloud-replay.jsonl')) {
+    $protectedPath = Join-Path $dataDir $protectedName
+    if (Test-Path -LiteralPath $protectedPath) {
+        & icacls.exe $protectedPath '/inheritance:r' '/grant:r' '*S-1-5-18:F' '*S-1-5-32-544:F' '/remove:g' '*S-1-5-32-545' '*S-1-5-11' '*S-1-1-0' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw '无法保护 Cloud 凭据和命令记录。' }
+    }
+}
 
 $token = $null
 if (Test-Path -LiteralPath $configPath) {

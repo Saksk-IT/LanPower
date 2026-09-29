@@ -1,19 +1,20 @@
 {% extends "base.html" %}
 {% block title %}总览{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">总览</p><h1>我的设备</h1><p class="muted">在这里查看电脑与唤醒网关的连接状态。</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">总览</p><h1>我的设备</h1><p class="muted">在这里查看电脑与唤醒网关的连接状态。</p></div><a class="button-link" href="/devices/enroll">连接 Windows 电脑</a></div>
 <div class="summary-grid">
-  <div class="summary"><span>Windows 电脑</span><strong>{{ '在线' if presence.pc == 'online' and presence.gateway == 'online' else '状态未知' if presence.gateway != 'online' else '离线' }}</strong></div>
-  <div class="summary"><span>唤醒网关</span><strong>{{ '在线' if presence.gateway == 'online' else '离线' }}</strong></div>
+  <div class="summary"><span>在线的 Windows 电脑</span><strong>{{ statuses.values() | selectattr('device_type', 'equalto', 'windows') | selectattr('state', 'equalto', 'online') | list | length }}</strong></div>
+  <div class="summary"><span>唤醒网关</span><strong>{{ '在线' if presence.gateway == 'online' else '未连接' }}</strong></div>
   <div class="summary"><span>Cloud 版本</span><strong>{{ version }}</strong></div>
 </div>
 {% for device in devices if device.device_type == 'windows' %}
+{% set current = statuses[device.id] %}
 <section class="card device-card">
-  <div class="card-heading"><div><p class="eyebrow">Windows</p><h2>{{ device.name }}</h2></div><span class="badge {{ 'good' if presence.gateway == 'online' and presence.pc == 'online' else '' }}">{{ '在线' if presence.gateway == 'online' and presence.pc == 'online' else '离线' if presence.gateway == 'online' else '状态未知' }}</span></div>
-  <p class="muted">当前经唤醒网关连接。Windows Cloud Direct 将在后续版本提供。</p>
+  <div class="card-heading"><div><p class="eyebrow">Windows</p><h2>{{ device.name }}</h2></div><span class="badge {{ 'good' if current.state == 'online' else '' }}">{{ '在线' if current.state == 'online' else '离线' }}</span></div>
+  <p class="muted">{{ 'Cloud 已连接，可直接远程控制。' if current.cloud_agent == 'online' else '通过唤醒网关连接。' if current.remote_control_available else 'Cloud 未连接。' }} {{ '远程唤醒可用。' if current.wake_available else '远程唤醒不可用。' }}</p>
   <div class="controls">
     {% for action, label in [('status','查看状态'),('sleep','睡眠'),('hibernate','休眠'),('restart','重启'),('shutdown','关机'),('wake','开机')] %}
-    {% set can_run = (presence.gateway == 'online' and (action == 'wake' or presence.pc == 'online')) %}
+    {% set can_run = current.wake_available if action == 'wake' else current.remote_control_available %}
     <form method="post" action="/devices/{{ device.id }}/commands" data-confirm="{{ label if action in ['sleep','hibernate','restart','shutdown','wake'] else '' }}">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="action" value="{{ action }}">
@@ -21,7 +22,7 @@
     </form>
     {% endfor %}
   </div>
-  {% if presence.gateway != 'online' %}<p class="hint">唤醒网关未连接，暂时无法远程控制。</p>{% elif presence.pc != 'online' %}<p class="hint">电脑当前离线，可以尝试开机。</p>{% endif %}
+  {% if not current.remote_control_available %}<p class="hint">电脑当前不可远程控制。</p>{% endif %}
 </section>
 {% endfor %}
 <section class="card"><div class="card-heading"><h2>最近操作</h2><a href="/activity">查看全部</a></div>

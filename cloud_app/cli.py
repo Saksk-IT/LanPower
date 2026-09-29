@@ -13,6 +13,8 @@ from cloud_app.app.settings import Settings
 
 
 def migrate_v1(settings: Settings) -> tuple[str, str]:
+    if settings.legacy is None:
+        raise ValueError("legacy gateway not configured")
     source = settings.legacy.database.resolve()
     if not source.is_file():
         raise ValueError("legacy relay.db does not exist")

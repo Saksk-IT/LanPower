@@ -21,13 +21,13 @@ from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 ACTION_LABELS = {"status": "查看状态", "sleep": "睡眠", "hibernate": "休眠", "restart": "重启", "shutdown": "关机", "wake": "开机"}
 ROUTE_LABELS = {"gateway_relay": "网关连接", "wake_gateway": "唤醒网关", "windows_direct": "云端直连"}
-STATE_LABELS = {"accepted": "已接收", "completed": "已完成", "failed": "未完成"}
-EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "device_renamed": "设备改名", "command_issued": "已发送命令"}
+STATE_LABELS = {"accepted": "已接收", "transitioning": "正在执行", "completed": "已完成", "failed": "未完成"}
+EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "device_renamed": "设备改名", "command_issued": "已发送命令", "enrollment_created": "创建配对码", "device_enrolled": "设备已连接", "device_revoked": "设备已移除", "refresh_rotated": "设备凭据已更新", "refresh_reuse": "设备凭据异常"}
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
@@ -112,6 +112,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
 
     def authorized(request: Request, role: str) -> None:
+        if settings.legacy is None:
+            raise HTTPException(404, "legacy gateway not configured")
         secret = settings.legacy.gateway_secret if role == "gateway" else settings.legacy.client_secret
         if not hmac.compare_digest(request.headers.get("authorization", ""), "Bearer " + secret):
             raise HTTPException(401, "unauthorized")
@@ -119,14 +121,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def json_body(request: Request) -> dict:
         if request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
             raise HTTPException(400, "invalid JSON")
+        header_length = request.headers.get("content-length")
+        if header_length is not None:
+            try:
+                length = int(header_length)
+            except ValueError as error:
+                raise HTTPException(400, "invalid body size") from error
+            if length < 2 or length > 4096:
+                raise HTTPException(400, "invalid body size")
         try:
-            length = int(request.headers.get("content-length", "0"))
-        except ValueError:
-            length = 0
-        if length < 2 or length > 4096:
-            raise HTTPException(400, "invalid body size")
-        try:
-            payload = json.loads(await read_limited(request, 4096))
+            body = await read_limited(request, 4096)
+            if len(body) < 2:
+                raise HTTPException(400, "invalid body size")
+            payload = json.loads(body)
         except (ValueError, UnicodeDecodeError) as exc:
             raise HTTPException(400, "invalid JSON") from exc
         if not isinstance(payload, dict):
@@ -137,6 +144,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if isinstance(error, ConnectionError): return HTTPException(503, str(error))
         if isinstance(error, BlockingIOError): return HTTPException(429, str(error))
         return HTTPException(400, str(error))
+
+    def device_identity(request: Request) -> tuple[str, str]:
+        authorization = request.headers.get("authorization", "")
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(401, "device unauthorized")
+        try:
+            return platform.windows.authorize(authorization[7:])
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
 
     @app.get("/healthz")
     def healthz():
@@ -241,15 +257,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def dashboard(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "dashboard", session, devices=platform.devices(session.owner_id),
-                    presence=platform.presence(), commands=platform.recent_commands(session.owner_id),
-                    windows_id=platform.windows_id)
+        devices = platform.devices(session.owner_id)
+        return page(request, "dashboard", session, devices=devices,
+                    statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices},
+                    presence=platform.presence(), commands=platform.recent_commands(session.owner_id))
 
     @app.get("/devices")
     def devices_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "devices", session, devices=platform.devices(session.owner_id), presence=platform.presence())
+        devices = platform.devices(session.owner_id)
+        return page(request, "devices", session, devices=devices,
+                    statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices})
+
+    @app.get("/devices/enroll")
+    def enroll_page(request: Request):
+        session, redirect = browser_guard(request)
+        if redirect: return redirect
+        return page(request, "enroll", session, code=None)
+
+    @app.post("/devices/enroll")
+    async def enroll_code(request: Request):
+        session, redirect = browser_guard(request)
+        if redirect: return redirect
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        code = platform.windows.create_enrollment(session.owner_id)
+        return page(request, "enroll", session, code=code)
 
     @app.post("/devices/{device_id}/rename")
     async def rename(request: Request, device_id: str):
@@ -309,32 +343,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if action not in {"wake", "status", "sleep", "hibernate", "restart", "shutdown"}:
             raise HTTPException(400, "unknown action")
         try:
-            result = await run_in_threadpool(platform.issue_legacy, session.owner_id, device_id, action)
+            result = await run_in_threadpool(platform.issue_command, session.owner_id, device_id, action)
         except (ValueError, ConnectionError, BlockingIOError) as error:
-            return page(request, "result", session, success=False, action=action, route="", message=str(error))
-        return page(request, "result", session, success=result["ok"], action=action,
-                    route=result["route"], message=result["error"])
+            return page(request, "result", session, success=False, pending=False, action=action, route="", message=str(error), command_id=None)
+        pending = result.get("accepted", False) and result.get("state") == "accepted"
+        return page(request, "result", session, success=result.get("ok", False), pending=pending, action=action,
+                    route=result["route"], message=result.get("error", ""), command_id=result.get("command_id"))
+
+    @app.post("/api/v2/windows/enroll")
+    async def windows_enroll(request: Request):
+        payload = await json_body(request)
+        try:
+            return platform.windows.enroll(payload)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/v2/windows/token")
+    async def windows_token(request: Request):
+        payload = await json_body(request)
+        try:
+            return platform.windows.refresh(payload)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+
+    @app.post("/api/v2/windows/heartbeat")
+    async def windows_heartbeat(request: Request):
+        _owner_id, device_id = device_identity(request)
+        payload = await json_body(request)
+        try:
+            platform.windows.heartbeat(device_id, payload)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+        return {"ok": True}
+
+    @app.get("/api/v2/windows/commands")
+    def windows_commands(request: Request):
+        _owner_id, device_id = device_identity(request)
+        return {"command": platform.windows.poll(device_id)}
+
+    @app.post("/api/v2/windows/results")
+    async def windows_results(request: Request):
+        _owner_id, device_id = device_identity(request)
+        payload = await json_body(request)
+        try:
+            platform.windows.result(device_id, payload)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return {"ok": True}
 
     @app.get("/api/v2/devices")
     def api_devices(request: Request):
         session = web_session(request)
         if session is None: raise HTTPException(401, "unauthorized")
-        presence = platform.presence()
-        return [{"device_id": device.id, "name": device.name, "device_type": device.device_type,
-                 "state": presence["pc"] if device.device_type == "windows" else presence["gateway"]}
-                for device in platform.devices(session.owner_id)]
+        return [platform.device_status(session.owner_id, device.id) for device in platform.devices(session.owner_id)]
 
     @app.get("/api/v2/devices/{device_id}")
     def api_device(request: Request, device_id: str):
         session = web_session(request)
         if session is None: raise HTTPException(401, "unauthorized")
-        device = platform.device(session.owner_id, device_id)
-        if device is None: raise HTTPException(404, "device unavailable")
-        presence = platform.presence()
-        return {"device_id": device.id, "name": device.name, "device_type": device.device_type,
-                "state": presence["pc"] if device.device_type == "windows" else presence["gateway"],
-                "cloud_agent": "offline", "wake_available": presence["gateway"] == "online" and device.device_type == "windows",
-                "wake_gateway": {"state": presence["gateway"]} if device.device_type == "windows" else None}
+        try:
+            return platform.device_status(session.owner_id, device_id)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
 
     @app.post("/api/v2/devices/{device_id}/commands")
     async def api_command(request: Request, device_id: str):
@@ -346,8 +420,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if set(payload) != {"action"} or not isinstance(payload["action"], str):
             raise HTTPException(400, "invalid command request")
         try:
-            return await run_in_threadpool(platform.issue_legacy, session.owner_id, device_id, payload["action"])
+            return await run_in_threadpool(platform.issue_command, session.owner_id, device_id, payload["action"])
         except (ValueError, ConnectionError, BlockingIOError) as error:
             raise relay_error(error) from error
+
+    @app.get("/api/v2/commands/{command_id}")
+    def api_command_result(request: Request, command_id: str):
+        session = web_session(request)
+        if session is None: raise HTTPException(401, "unauthorized")
+        try:
+            return platform.windows.command_result(session.owner_id, command_id)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
 
     return app

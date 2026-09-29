@@ -2,5 +2,5 @@
 {% block title %}系统{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">运行状态</p><h1>系统</h1></div></div>
-<section class="card"><div class="facts"><span>Cloud 版本</span><strong>{{ version }}</strong><span>唤醒网关</span><strong>{{ '已连接' if presence.gateway == 'online' else '未连接' }}</strong><span>Windows Cloud Direct</span><strong>后续版本开放</strong></div></section>
+<section class="card"><div class="facts"><span>Cloud 版本</span><strong>{{ version }}</strong><span>唤醒网关</span><strong>{{ '已连接' if presence.gateway == 'online' else '未配置或未连接' }}</strong><span>Windows Cloud Direct</span><strong>已开放</strong></div></section>
 {% endblock %}

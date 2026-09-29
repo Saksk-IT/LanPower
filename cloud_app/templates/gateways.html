@@ -7,4 +7,5 @@
   <div class="facts"><span>关联电脑</span><strong>{{ (devices | selectattr('id', 'equalto', windows_id) | first).name }}</strong><span>最近连接</span><strong>{{ device.last_seen_at | relative_time }}</strong><span>版本</span><strong>{{ device.version }}</strong></div>
 </section>
 {% endfor %}
+{% if not (devices | selectattr('device_type', 'equalto', 'gateway') | list) %}<section class="card"><p>尚未配置唤醒网关。在线的 Windows 电脑仍可通过 Cloud 直接控制。</p></section>{% endif %}
 {% endblock %}
