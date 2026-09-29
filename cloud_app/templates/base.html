@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}LanPower{% endblock %} · LanPower</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/dashboard"><span class="brand-icon">↯</span><span>LanPower<small>电源管理</small></span></a>
+      <nav aria-label="主要导航">
+        <a class="{{ 'active' if page == 'dashboard' else '' }}" href="/dashboard">总览</a>
+        <a class="{{ 'active' if page == 'devices' else '' }}" href="/devices">我的设备</a>
+        <a class="{{ 'active' if page == 'gateways' else '' }}" href="/gateways">唤醒网关</a>
+        <a class="{{ 'active' if page == 'clients' else '' }}" href="/clients">已授权客户端</a>
+        <a class="{{ 'active' if page == 'activity' else '' }}" href="/activity">活动记录</a>
+        <a class="{{ 'active' if page == 'settings' else '' }}" href="/settings">设置</a>
+        <a class="{{ 'active' if page == 'system' else '' }}" href="/system">系统</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <span>Cloud {{ version }}</span>
+        <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="text-button" type="submit">退出登录</button></form>
+      </div>
+    </aside>
+    <main class="content">
+      <header class="topbar"><span>LanPower Cloud</span><span class="account">管理员</span></header>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

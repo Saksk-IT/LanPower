@@ -7,10 +7,12 @@ LanPower 用于管理 Windows 电脑的电源。家中可用微信小程序通�
 | 模式 | 所需组件 | 当前状态 |
 |---|---|---|
 | LAN Direct | Windows + 微信小程序 | 已可用，不依赖 Cloud 或路由器程序 |
-| Remote Gateway Preview | Windows + Cloud + Wake Gateway | v1.1.2 已验证远程状态、睡眠和唤醒 |
+| Remote Gateway Preview | Windows + Cloud + Wake Gateway | v1.1.2 已验证远程状态、睡眠和唤醒；新版 Cloud Web 源码已加入 |
 | Cloud Direct | Windows + Cloud + 浏览器或小程序 | 架构规划中，当前版本尚未实现 |
 
 普通用户可先使用下方已发布版本。开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建新服务、桌面端和安装包；新安装包尚未发布。
+
+新版 [Cloud Web 部署说明](cloud_app/README.md) 介绍浏览器登录、设备列表、旧版 Gateway 兼容与 Docker 部署。当前仍需 Wake Gateway 执行外网控制；Windows Cloud Direct 尚未实现。
 
 ## 最新版本
 

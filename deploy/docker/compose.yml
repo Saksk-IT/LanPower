@@ -1,0 +1,20 @@
+services:
+  cloud:
+    build:
+      context: ../..
+      dockerfile: cloud_app/Dockerfile
+    env_file: .env
+    environment:
+      LANPOWER_LEGACY_CONFIG: /run/secrets/cloud.json
+      LANPOWER_DATABASE_URL: sqlite:////var/lib/lanpower-cloud/platform.db
+    volumes:
+      - ./data:/var/lib/lanpower-cloud
+      - ./private/cloud.json:/run/secrets/cloud.json:ro
+    ports:
+      - 127.0.0.1:8765:8765
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>登录 · LanPower</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-logo">↯</div>
+    <p class="eyebrow">LanPower Cloud</p>
+    <h1>欢迎回来</h1>
+    <p class="muted">登录后查看和控制自己的设备。</p>
+    {% if error %}<p class="error" role="alert">登录失败，请检查账户与密码后重试。</p>{% endif %}
+    <form method="post" action="/login" class="login-form">
+      <label>账户<input name="username" autocomplete="username" value="admin" required maxlength="80"></label>
+      <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">登录</button>
+    </form>
+    <p class="login-foot">局域网控制可以独立使用，不需要登录 Cloud。</p>
+  </main>
+</body>
+</html>

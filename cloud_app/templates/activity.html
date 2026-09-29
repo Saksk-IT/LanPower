@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}活动记录{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">记录</p><h1>活动记录</h1><p class="muted">这里只记录操作与所用连接方式，不显示任何配对密钥。</p></div></div>
+<section class="card"><h2>远程操作</h2>
+  {% if commands %}<div class="table-wrap"><table><thead><tr><th>动作</th><th>连接方式</th><th>结果</th><th>时间</th></tr></thead><tbody>
+  {% for command in commands %}<tr><td>{{ command.action | action_label }}</td><td>{{ command.route | route_label }}</td><td>{{ command.state | state_label }}</td><td>{{ command.issued_at | relative_time }}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="muted">还没有操作记录。</p>{% endif %}
+</section>
+<section class="card"><h2>账户活动</h2>
+  {% if events %}<ul class="timeline">{% for event in events %}<li><strong>{{ event.event | event_label }}</strong><span>{{ event.created_at | relative_time }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="muted">还没有账户活动。</p>{% endif %}
+</section>
+{% endblock %}

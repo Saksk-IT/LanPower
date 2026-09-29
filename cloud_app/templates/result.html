@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}操作结果{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">操作结果</p><h1>{{ '命令已完成' if success else '操作未完成' }}</h1></div></div>
+<section class="card result-card">
+  <p>动作：<strong>{{ action | action_label }}</strong></p>
+  {% if route %}<p>连接方式：<strong>{{ route | route_label }}</strong></p>{% endif %}
+  {% if message %}<p class="muted">{{ message }}</p>{% endif %}
+  <a class="button-link" href="/dashboard">返回总览</a>
+</section>
+{% endblock %}

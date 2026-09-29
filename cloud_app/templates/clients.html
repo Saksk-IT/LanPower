@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}已授权客户端{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">访问</p><h1>已授权客户端</h1></div></div>
+{% for client in clients %}<section class="card"><h2>{{ client.name }}</h2><p class="muted">旧版小程序仍可使用原有远程配对信息访问 Cloud。客户端独立授权和撤销将在统一账户阶段提供。</p></section>{% endfor %}
+{% endblock %}

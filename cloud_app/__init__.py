@@ -1,0 +1,1 @@
+"""LanPower Cloud platform."""

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">偏好</p><h1>设置</h1></div></div>
+<section class="card"><h2>Cloud 地址</h2><p class="muted">{{ public_url }}</p><p>当前为单管理员部署。Cloud 登录密码可在服务器上更换；更换后，已有网页登录会失效。</p></section>
+<section class="card"><h2>局域网独立运行</h2><p class="muted">Cloud 暂时不可用时，家中的微信小程序仍可直接连接 Windows。</p></section>
+{% endblock %}

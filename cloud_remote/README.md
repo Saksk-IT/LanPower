@@ -1,5 +1,7 @@
 # LanPower Remote Cloud
 
+这是 v1.1.2 远程中继实现，继续保留供现有部署使用。新的浏览器控制端与 Docker 部署见 [Cloud Web 说明](../cloud_app/README.md)；它继续提供原有 `/api/v1/*` 路径。
+
 Cloud 是单家庭预览版的 HTTPS 命令中继：保存网关与手机各自的独立凭据、命令结果和心跳状态；不保存 Windows LAN Token。服务使用 Python 标准库、SQLite，并且只监听 `127.0.0.1:8765`，公网 HTTPS 由同机反向代理提供。现有 Windows `48211` 和路由器 SSH 均不应对公网开放。
 
 ## 生成私有配置

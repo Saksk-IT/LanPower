@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}唤醒网关{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">连接</p><h1>唤醒网关</h1><p class="muted">电脑离线时，网关可以在家中发送网络唤醒包。</p></div></div>
+{% for device in devices if device.device_type == 'gateway' %}
+<section class="card"><div class="card-heading"><div><span class="device-type">Wake Gateway</span><h2>{{ device.name }}</h2></div><span class="badge {{ 'good' if presence.gateway == 'online' else '' }}">{{ '在线' if presence.gateway == 'online' else '离线' }}</span></div>
+  <div class="facts"><span>关联电脑</span><strong>{{ (devices | selectattr('id', 'equalto', windows_id) | first).name }}</strong><span>最近连接</span><strong>{{ device.last_seen_at | relative_time }}</strong><span>版本</span><strong>{{ device.version }}</strong></div>
+</section>
+{% endfor %}
+{% endblock %}
