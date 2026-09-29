@@ -3,19 +3,22 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import hmac
 from pathlib import Path
+import secrets
 import threading
 import time
 import json
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from starlette.concurrency import run_in_threadpool
+from webauthn.helpers.exceptions import WebAuthnException
 
-from cloud_app.app.auth import SESSION_SECONDS, create_session, current_session, parse_form, read_limited, require_csrf
+from cloud_app.app.auth import SESSION_SECONDS, create_session, current_session, digest, parse_form, read_limited, require_csrf
 from cloud_app.app.database import make_engine, migrate, session_factory
+from cloud_app.app.identity import BootstrapCode, Identity
 from cloud_app.app.models import Device, User
 from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
@@ -27,7 +30,7 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 ACTION_LABELS = {"status": "查看状态", "sleep": "睡眠", "hibernate": "休眠", "restart": "重启", "shutdown": "关机", "wake": "开机"}
 ROUTE_LABELS = {"gateway_relay": "网关连接", "wake_gateway": "唤醒网关", "windows_direct": "云端直连"}
 STATE_LABELS = {"accepted": "已接收", "transitioning": "正在执行", "completed": "已完成", "failed": "未完成"}
-EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "device_renamed": "设备改名", "command_issued": "已发送命令", "enrollment_created": "创建配对码", "device_enrolled": "设备已连接", "device_revoked": "设备已移除", "refresh_rotated": "设备凭据已更新", "refresh_reuse": "设备凭据异常"}
+EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "setup_completed": "完成初始化", "device_renamed": "设备改名", "command_issued": "已发送命令", "enrollment_created": "创建配对码", "device_enrolled": "设备已连接", "device_revoked": "设备已移除", "refresh_rotated": "设备凭据已更新", "refresh_reuse": "设备凭据异常", "passkey_registered": "添加 Passkey", "passkey_login": "Passkey 登录", "recovery_created": "生成恢复码", "recovery_used": "使用恢复码"}
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
@@ -49,6 +52,7 @@ templates.env.filters["relative_time"] = relative_time
 class LoginLimiter:
     def __init__(self) -> None:
         self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self._ceremonies: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
     def blocked(self, address: str) -> bool:
@@ -66,6 +70,16 @@ class LoginLimiter:
         with self._lock:
             self._failures.pop(address, None)
 
+    def allow_ceremony(self, address: str) -> bool:
+        with self._lock:
+            attempts = self._ceremonies[address]
+            while attempts and attempts[0] < time.monotonic() - 300:
+                attempts.popleft()
+            if len(attempts) >= 20:
+                return False
+            attempts.append(time.monotonic())
+            return True
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_environment()
@@ -73,9 +87,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     migrate(settings.database_url)
     engine = make_engine(settings.database_url)
     platform = Platform(settings, session_factory(engine))
+    identity = Identity(platform.sessions, settings.public_url)
+    bootstrap = BootstrapCode(settings.database_url,
+                              enabled=settings.admin_password_hash is None and not identity.initialized(ADMIN_ID))
+    if identity.initialized(ADMIN_ID):
+        bootstrap.disable()
     limiter = LoginLimiter()
     app = FastAPI(title="LanPower Cloud", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.platform = platform
+    app.state.identity = identity
+    app.state.bootstrap = bootstrap
     app.state.engine = engine
     app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
@@ -87,7 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
-        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -111,6 +132,84 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base.update(context)
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
 
+    def session_response(path: str, owner_id: str, *, payload: dict | None = None) -> Response:
+        with platform.sessions() as db:
+            owner = db.get(User, owner_id)
+            if owner is None or owner.revoked_at is not None:
+                raise HTTPException(401, "unauthorized")
+            token, csrf = create_session(db, owner)
+        response = (JSONResponse({"redirect": path, **payload}) if payload is not None
+                    else RedirectResponse(path, status_code=303))
+        response.set_cookie("lp_session", token, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
+        response.set_cookie("lp_csrf", csrf, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
+        response.delete_cookie("lp_auth", secure=True, httponly=True, samesite="strict")
+        return response
+
+    def json_csrf(request: Request, session) -> None:
+        require_csrf(request, session, {"csrf": request.headers.get("x-csrf-token", "")})
+
+    def session_owner(request: Request):
+        session, redirect = browser_guard(request)
+        if redirect:
+            raise HTTPException(401, "unauthorized")
+        return session
+
+    def setup_available() -> bool:
+        # Check persisted state on every request, including across worker restarts.
+        return bootstrap.enabled and not identity.initialized(ADMIN_ID)
+
+    def auth_page(request: Request, name: str = "login", *, error: bool = False, status: int = 200):
+        token = request.cookies.get("lp_auth", "")
+        if len(token) != 43 or not token.isascii() or not all(c.isalnum() or c in "_-" for c in token):
+            token = secrets.token_urlsafe(32)
+        response = page(request, name, None, auth_token=token, error=error, status=status,
+                        passkey_enabled=identity.has_passkey(ADMIN_ID),
+                        password_enabled=settings.admin_password_hash is not None)
+        response.set_cookie("lp_auth", token, max_age=600, secure=True, httponly=True, samesite="strict")
+        return response
+
+    def auth_binding(request: Request, supplied: str | None = None) -> str:
+        cookie = request.cookies.get("lp_auth", "")
+        supplied = supplied if supplied is not None else request.headers.get("x-auth-token", "")
+        origin = request.headers.get("origin")
+        if (len(cookie) != 43 or len(supplied) > 128 or
+                not hmac.compare_digest(digest(cookie), digest(supplied)) or
+                (origin is not None and origin != settings.public_url.rstrip("/")) or
+                request.headers.get("sec-fetch-site") == "cross-site"):
+            raise HTTPException(403, "请刷新页面后重试")
+        return cookie
+
+    def login_address(request: Request, *, ceremony: bool = False) -> str:
+        address = request.client.host if request.client else "unknown"
+        if limiter.blocked(address) or (ceremony and not limiter.allow_ceremony(address)):
+            raise HTTPException(429, "尝试次数过多，请在 5 分钟后重试")
+        return address
+
+    def failed_login(address: str) -> None:
+        limiter.fail(address)
+        platform.record(ADMIN_ID, "login_failed")
+
+    def registration_proof(request: Request, payload: dict) -> tuple[str, str, bool]:
+        if "setup_code" in payload:
+            if not setup_available():
+                raise HTTPException(404, "初始化已关闭")
+            binding = auth_binding(request)
+            address = login_address(request)
+            code = payload["setup_code"]
+            if not isinstance(code, str) or not bootstrap.verify(code):
+                failed_login(address)
+                raise HTTPException(401, "初始化验证码无效")
+            return ADMIN_ID, binding, True
+        session = session_owner(request)
+        json_csrf(request, session)
+        return session.owner_id, session.token_hash, False
+
+    def credential_payload(payload: dict) -> tuple[str, dict]:
+        challenge_id, credential = payload.get("challenge_id"), payload.get("credential")
+        if not isinstance(challenge_id, str) or len(challenge_id) != 36 or not isinstance(credential, dict):
+            raise HTTPException(400, "验证内容无效，请重试")
+        return challenge_id, credential
+
     def authorized(request: Request, role: str) -> None:
         if settings.legacy is None:
             raise HTTPException(404, "legacy gateway not configured")
@@ -118,7 +217,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not hmac.compare_digest(request.headers.get("authorization", ""), "Bearer " + secret):
             raise HTTPException(401, "unauthorized")
 
-    async def json_body(request: Request) -> dict:
+    async def json_body(request: Request, limit: int = 4096) -> dict:
         if request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
             raise HTTPException(400, "invalid JSON")
         header_length = request.headers.get("content-length")
@@ -127,10 +226,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 length = int(header_length)
             except ValueError as error:
                 raise HTTPException(400, "invalid body size") from error
-            if length < 2 or length > 4096:
+            if length < 2 or length > limit:
                 raise HTTPException(400, "invalid body size")
         try:
-            body = await read_limited(request, 4096)
+            body = await read_limited(request, limit)
             if len(body) < 2:
                 raise HTTPException(400, "invalid body size")
             payload = json.loads(body)
@@ -210,34 +309,100 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/")
     def home(request: Request):
+        if setup_available(): return RedirectResponse("/setup", status_code=303)
         return RedirectResponse("/dashboard" if web_session(request) else "/login", status_code=303)
+
+    @app.get("/setup")
+    def setup_page(request: Request):
+        if not setup_available(): raise HTTPException(404, "初始化已关闭")
+        return auth_page(request, "setup")
 
     @app.get("/login")
     def login_page(request: Request):
+        if setup_available(): return RedirectResponse("/setup", status_code=303)
         if web_session(request): return RedirectResponse("/dashboard", status_code=303)
-        return page(request, "login", None, error=False)
+        return auth_page(request)
 
     @app.post("/login")
     async def login(request: Request):
+        if settings.admin_password_hash is None:
+            raise HTTPException(404, "密码登录未启用")
         address = request.client.host if request.client else "unknown"
         if limiter.blocked(address):
-            return page(request, "login", None, error=True, status=429)
+            return auth_page(request, error=True, status=429)
         form = await parse_form(request)
+        auth_binding(request, form.get("auth", ""))
         username, password = form.get("username", ""), form.get("password", "")
         with platform.sessions() as db:
             owner = db.scalar(select(User).where(User.username == username, User.revoked_at.is_(None)))
-            valid = verify_password(password, owner.password_hash if owner else settings.admin_password_hash)
+            valid = verify_password(password, owner.password_hash if owner else settings.admin_password_hash or "")
             if not owner or not valid:
-                limiter.fail(address)
-                platform.record(ADMIN_ID, "login_failed")
-                return page(request, "login", None, error=True, status=401)
-            token, csrf = create_session(db, owner)
+                failed_login(address)
+                return auth_page(request, error=True, status=401)
         limiter.clear(address)
         platform.record(owner.id, "login")
-        response = RedirectResponse("/dashboard", status_code=303)
-        response.set_cookie("lp_session", token, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
-        response.set_cookie("lp_csrf", csrf, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
-        return response
+        return session_response("/dashboard", owner.id)
+
+    @app.post("/api/v2/auth/passkeys/register/options")
+    async def passkey_register_options(request: Request):
+        payload = await json_body(request)
+        owner_id, binding, setup = registration_proof(request, payload)
+        login_address(request, ceremony=True)
+        try:
+            return identity.registration_options(owner_id, binding, setup=setup)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/v2/auth/passkeys/register/verify")
+    async def passkey_register_verify(request: Request):
+        payload = await json_body(request, limit=65536)
+        owner_id, binding, setup = registration_proof(request, payload)
+        address = login_address(request)
+        challenge_id, credential = credential_payload(payload)
+        try:
+            codes = identity.finish_registration(owner_id, challenge_id, credential, binding, setup=setup)
+        except (ValueError, WebAuthnException) as error:
+            failed_login(address)
+            raise HTTPException(400, "Passkey 验证失败，请重新开始") from error
+        limiter.clear(address)
+        bootstrap.disable()
+        return session_response("/settings" if not setup else "/dashboard", owner_id,
+                                payload={"recovery_codes": codes})
+
+    @app.post("/api/v2/auth/passkeys/login/options")
+    async def passkey_login_options(request: Request):
+        binding = auth_binding(request)
+        login_address(request, ceremony=True)
+        await json_body(request)
+        try:
+            return identity.authentication_options(ADMIN_ID, binding)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/v2/auth/passkeys/login/verify")
+    async def passkey_login_verify(request: Request):
+        binding = auth_binding(request)
+        address = login_address(request)
+        challenge_id, credential = credential_payload(await json_body(request, limit=65536))
+        try:
+            owner_id = identity.finish_authentication(ADMIN_ID, challenge_id, credential, binding)
+        except (ValueError, WebAuthnException) as error:
+            failed_login(address)
+            raise HTTPException(401, "Passkey 登录失败，请重试") from error
+        limiter.clear(address)
+        return session_response("/dashboard", owner_id, payload={})
+
+    @app.post("/api/v2/auth/recovery")
+    async def recovery_login(request: Request):
+        auth_binding(request)
+        address = login_address(request)
+        payload = await json_body(request)
+        code = payload.get("code")
+        if not isinstance(code, str) or len(code) > 128 or not identity.use_recovery_code(ADMIN_ID, code):
+            failed_login(address)
+            raise HTTPException(401, "恢复码无效或已使用")
+        limiter.clear(address)
+        return session_response("/settings", ADMIN_ID, payload={})
 
     @app.post("/logout")
     async def logout(request: Request):
@@ -325,7 +490,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def settings_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "settings", session)
+        return page(request, "settings", session, passkeys=identity.passkeys(session.owner_id),
+                    recovery_count=identity.recovery_count(session.owner_id)[1],
+                    password_enabled=settings.admin_password_hash is not None)
 
     @app.get("/system")
     def system_page(request: Request):

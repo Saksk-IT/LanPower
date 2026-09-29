@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="lp-auth" content="{{ auth_token }}">
   <title>登录 · LanPower</title>
   <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/app.js"></script>
 </head>
 <body class="login-body">
   <main class="login-card">
@@ -12,12 +14,33 @@
     <p class="eyebrow">LanPower Cloud</p>
     <h1>欢迎回来</h1>
     <p class="muted">登录后查看和控制自己的设备。</p>
+    <p class="error" role="alert" data-auth-error hidden></p>
+    {% if passkey_enabled %}
+    <form class="login-form" data-auth="passkey-login">
+      <p class="muted">使用指纹、面容、Windows Hello 或安全密钥。</p>
+      <button type="submit" class="primary">使用 Passkey 登录</button>
+    </form>
+    <details class="auth-alternative">
+      <summary>无法使用 Passkey？使用恢复码</summary>
+      <form class="login-form" data-auth="recovery">
+        <label>恢复码<input name="code" autocomplete="off" spellcheck="false" required maxlength="128"></label>
+        <p class="hint">每个恢复码只能使用一次。登录后请添加新的 Passkey。</p>
+        <button type="submit" class="secondary">使用恢复码登录</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if password_enabled %}
     {% if error %}<p class="error" role="alert">登录失败，请检查账户与密码后重试。</p>{% endif %}
+    <details class="auth-alternative" {% if not passkey_enabled or error %}open{% endif %}>
+    <summary>使用管理员密码</summary>
     <form method="post" action="/login" class="login-form">
+      <input type="hidden" name="auth" value="{{ auth_token }}">
       <label>账户<input name="username" autocomplete="username" value="admin" required maxlength="80"></label>
       <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
       <button type="submit" class="primary">登录</button>
     </form>
+    </details>
+    {% endif %}
     <p class="login-foot">局域网控制可以独立使用，不需要登录 Cloud。</p>
   </main>
 </body>

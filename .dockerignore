@@ -18,3 +18,8 @@ tests
 **/cloud.json
 **/gateway.json
 **/config.json
+**/setup-code
+deploy/docker/.env
+deploy/docker/private
+deploy/docker/data
+AGENTS.md

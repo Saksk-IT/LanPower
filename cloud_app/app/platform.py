@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 import hashlib
+import secrets
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -12,6 +13,7 @@ from cloud_app.app.models import AuditLog, Command, Device, DeviceLink, LegacyCl
 from cloud_app.app.routing import select_route
 from cloud_app.app.settings import Settings
 from cloud_app.app.windows import WindowsProtocol
+from cloud_app.password import hash_password
 
 ADMIN_ID = "00000000-0000-0000-0000-000000000001"
 NAMESPACE = uuid.UUID("e09ab1c0-306f-4d8e-9b1f-afd27fab0715")
@@ -22,9 +24,10 @@ def seed_admin(settings: Settings, sessions: sessionmaker[Session]) -> None:
     with sessions.begin() as db:
         admin = db.get(User, ADMIN_ID)
         if admin is None:
-            db.add(User(id=ADMIN_ID, username="admin", password_hash=settings.admin_password_hash,
+            password_hash = settings.admin_password_hash or hash_password(secrets.token_urlsafe(32))
+            db.add(User(id=ADMIN_ID, username="admin", password_hash=password_hash,
                         created_at=now))
-        elif admin.password_hash != settings.admin_password_hash:
+        elif settings.admin_password_hash is not None and admin.password_hash != settings.admin_password_hash:
             admin.password_hash = settings.admin_password_hash
             db.execute(delete(WebSession).where(WebSession.owner_id == ADMIN_ID))
 

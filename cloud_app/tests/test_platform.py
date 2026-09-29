@@ -29,7 +29,9 @@ def make_client(directory: Path, no_gateway: bool = False) -> tuple[TestClient, 
 
 
 def login(client: TestClient) -> str:
-    response = client.post("/login", data={"username": "admin", "password": "correct horse battery staple"}, follow_redirects=False)
+    client.get("/login")
+    response = client.post("/login", data={"username": "admin", "password": "correct horse battery staple",
+                                            "auth": client.cookies["lp_auth"]}, follow_redirects=False)
     assert response.status_code == 303
     assert "Secure" in response.headers["set-cookie"]
     assert "HttpOnly" in response.headers["set-cookie"]
@@ -42,12 +44,14 @@ def test_migration_login_and_csrf() -> None:
         client, app = make_client(directory)
         try:
             with closing(sqlite3.connect(directory / "platform.db")) as connection:
-                assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0002_windows_direct"
+                assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0003_unified_identity"
                 assert connection.execute("SELECT count(*) FROM devices").fetchone()[0] == 2
                 assert connection.execute("SELECT count(*) FROM device_links").fetchone()[0] == 1
                 assert connection.execute("SELECT count(*) FROM legacy_clients").fetchone()[0] == 1
             assert client.get("/dashboard", follow_redirects=False).status_code == 303
-            assert client.post("/login", data={"username": "admin", "password": "wrong"}).status_code == 401
+            client.get("/login")
+            assert client.post("/login", data={"username": "admin", "password": "wrong",
+                                                "auth": client.cookies["lp_auth"]}).status_code == 401
             csrf = login(client)
             for path in ("/dashboard", "/devices", "/gateways", "/clients", "/activity", "/settings", "/system"):
                 assert client.get(path).status_code == 200, path

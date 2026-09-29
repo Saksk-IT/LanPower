@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="lp-auth" content="{{ auth_token }}">
+  <title>首次设置 · LanPower</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body class="login-body">
+  <main class="login-card setup-card">
+    <div class="login-logo">↯</div>
+    <p class="eyebrow">LanPower Cloud</p>
+    <h1>欢迎使用 LanPower</h1>
+    <p class="muted">创建管理员的 Passkey，即可开始连接和管理自己的设备。</p>
+    <p class="error" role="alert" data-auth-error hidden></p>
+    <form class="login-form" data-auth="setup">
+      <label>管理员账户<input value="admin" readonly autocomplete="username"></label>
+      <label>初始化验证码<input name="setup_code" type="password" autocomplete="off" required minlength="10" maxlength="128"></label>
+      <p class="hint">请向部署者获取初始化验证码。它保存在服务器的数据目录中，不会通过网页公开。</p>
+      <button type="submit" class="primary">创建 Passkey</button>
+    </form>
+    {% include "recovery_codes.html" %}
+    <noscript><p class="error">创建 Passkey 需要启用浏览器的 JavaScript。</p></noscript>
+    <p class="login-foot">完成后会关闭初始化入口。局域网控制仍可独立使用。</p>
+  </main>
+</body>
+</html>

@@ -2,6 +2,16 @@
 {% block title %}设置{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">偏好</p><h1>设置</h1></div></div>
-<section class="card"><h2>Cloud 地址</h2><p class="muted">{{ public_url }}</p><p>当前为单管理员部署。Cloud 登录密码可在服务器上更换；更换后，已有网页登录会失效。</p></section>
+<section class="card"><h2>登录与恢复</h2>
+  <p>使用指纹、面容、Windows Hello 或安全密钥登录。建议在备用设备上也添加一个 Passkey。</p>
+  <p class="error" role="alert" data-auth-error hidden></p>
+  {% if passkeys %}
+  <ul class="timeline">{% for key in passkeys %}<li><strong>{{ key.name }} {{ loop.index }}</strong><span>添加于 {{ key.created_at | relative_time }} · 最近使用 {{ key.last_used_at | relative_time }}</span></li>{% endfor %}</ul>
+  <p class="muted">还有 {{ recovery_count }} 个恢复码可用。恢复码只能在生成时查看。</p>
+  {% else %}<p class="muted">还没有 Passkey。添加第一个 Passkey 后将生成 10 个恢复码。</p>{% endif %}
+  <form data-auth="passkey-register" class="controls"><button type="submit" class="primary">添加 Passkey</button></form>
+  {% include "recovery_codes.html" %}
+</section>
+<section class="card"><h2>Cloud 地址</h2><p class="muted">{{ public_url }}</p><p>当前为单管理员部署。{% if password_enabled %}管理员密码仍可用于登录；可在服务器上更换或关闭。{% endif %}</p></section>
 <section class="card"><h2>局域网独立运行</h2><p class="muted">Cloud 暂时不可用时，家中的微信小程序仍可直接连接 Windows。</p></section>
 {% endblock %}

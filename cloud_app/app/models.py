@@ -17,6 +17,8 @@ class User(Base):
     created_at: Mapped[int] = mapped_column(Integer)
     revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    identity_initialized_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
 
 class Device(Base):
     __tablename__ = "devices"
@@ -51,6 +53,41 @@ class WebSession(Base):
     csrf_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(Integer)
     expires_at: Mapped[int] = mapped_column(Integer, index=True)
+
+
+class Passkey(Base):
+    __tablename__ = "passkeys"
+
+    credential_id: Mapped[str] = mapped_column(String(2048), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    public_key: Mapped[str] = mapped_column(String(2048))
+    sign_count: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[int] = mapped_column(Integer)
+    last_used_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    backed_up: Mapped[bool] = mapped_column(default=False)
+
+
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[int] = mapped_column(Integer)
+    used_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class AuthChallenge(Base):
+    __tablename__ = "auth_challenges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    challenge: Mapped[str] = mapped_column(String(128))
+    purpose: Mapped[str] = mapped_column(String(16))
+    binding_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[int] = mapped_column(Integer)
+    used_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class LegacyClient(Base):

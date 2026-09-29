@@ -58,11 +58,16 @@ def current_session(request: Request, db: Session) -> WebSession | None:
     if not token or len(token) > 128:
         return None
     session = db.get(WebSession, digest(token))
-    return session if session and session.expires_at > int(time.time()) else None
+    if session is None or session.expires_at <= int(time.time()):
+        return None
+    owner = db.get(User, session.owner_id)
+    return session if owner and owner.revoked_at is None else None
 
 
 def require_csrf(request: Request, session: WebSession, form: dict[str, str]) -> None:
     cookie = request.cookies.get("lp_csrf", "")
     supplied = form.get("csrf", "")
-    if not cookie or not supplied or not hmac.compare_digest(cookie, supplied) or not hmac.compare_digest(digest(cookie), session.csrf_hash):
+    if (not cookie or not supplied or len(cookie) > 128 or len(supplied) > 128 or
+            not hmac.compare_digest(digest(cookie), digest(supplied)) or
+            not hmac.compare_digest(digest(cookie), session.csrf_hash)):
         raise HTTPException(403, "invalid request")
