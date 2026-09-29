@@ -22,7 +22,8 @@ public sealed class CloudCredentialStore
         {
             if (!File.Exists(_path)) return null;
             var plain = ProtectedData.Unprotect(File.ReadAllBytes(_path), null, DataProtectionScope.LocalMachine);
-            return JsonSerializer.Deserialize<CloudCredentials>(plain) ?? throw new InvalidDataException("Cloud 凭据无效");
+            try { return JsonSerializer.Deserialize<CloudCredentials>(plain) ?? throw new InvalidDataException("Cloud 凭据无效"); }
+            finally { CryptographicOperations.ZeroMemory(plain); }
         }
     }
 

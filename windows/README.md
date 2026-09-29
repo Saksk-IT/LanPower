@@ -25,6 +25,7 @@ dotnet run --project windows/LanPower.Tests -c Release --no-build
 - Windows 防火墙只允许当前本机地址和局域网网段访问 `48211`；配对页只允许本机打开。桌面端通过 `\\.\pipe\LanPower.Service` 读取服务状态和日志，不通过 LAN API 获取配对密钥。
 - 桌面端显示局域网、网卡、WOL 和 Cloud 连接状态。在 Cloud 网页生成一次性配对码后，通过桌面端填写 HTTPS 地址与配对码；普通用户无需直接接触设备凭据。未配置 Cloud 或 Wake Gateway 是正常状态。
 - Cloud Agent 只发起出站 HTTPS，定期上报状态、领取限定的电源命令并回传结果。Cloud 凭据由 Windows DPAPI 加密，安装脚本将 ProgramData 数据目录限制为 SYSTEM 与管理员访问；Cloud 不接收 LAN 配对密钥。命令在执行前写入本机记录，同一命令不会重复触发电源动作。
+- 若本机 Cloud 命令记录损坏，Cloud Agent 会拒绝执行新命令；LAN 服务仍可启动并提供原有局域网功能。保留记录文件供排查，避免删除记录后立即重试尚未过期的云端命令。
 - 卸载新应用会移除服务和防火墙规则，并保留 ProgramData 配对配置，供重装沿用。旧版 `source/`、`LanPower/` 与 `Install.cmd` 仍保留。
 
 ## 验证边界

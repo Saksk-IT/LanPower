@@ -39,19 +39,18 @@ public sealed class ReplayStore
         _path = Path.Combine(dataDirectory, "cloud-replay.jsonl");
         if (File.Exists(_path))
         {
-            foreach (var line in File.ReadLines(_path))
+            try
             {
-                try
+                foreach (var line in File.ReadLines(_path))
                 {
                     var entry = JsonSerializer.Deserialize<StoredCommand>(line)
                         ?? throw new InvalidDataException("Cloud 命令记录无效");
                     _entries[entry.CommandId] = entry;
                 }
-                catch (Exception error) when (error is JsonException or InvalidDataException)
-                {
-                    _corrupt = true;
-                    break;
-                }
+            }
+            catch (Exception error) when (error is JsonException or InvalidDataException or IOException or UnauthorizedAccessException)
+            {
+                _corrupt = true;
             }
         }
     }

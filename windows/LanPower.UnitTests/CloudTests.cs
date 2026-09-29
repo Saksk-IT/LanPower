@@ -46,6 +46,21 @@ public sealed class CloudTests
     }
 
     [TestMethod]
+    public void CorruptReplayStoreRefusesCloudCommandsWithoutCrashing()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "LanPowerReplayTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "cloud-replay.jsonl"), "{incomplete");
+            var store = new ReplayStore(folder);
+            var command = new CloudCommand(Guid.NewGuid(), Guid.NewGuid().ToString(), "shutdown", 1, 20, new string('b', 32));
+            Assert.ThrowsExactly<InvalidDataException>(() => store.Prepare(command, true));
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [TestMethod]
     public async Task AgentEnrollsPollsAndReportsWithoutGateway()
     {
         var folder = Path.Combine(Path.GetTempPath(), "LanPowerCloudTests", Guid.NewGuid().ToString("N"));
