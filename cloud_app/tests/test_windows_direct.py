@@ -4,8 +4,39 @@ import tempfile
 import json
 from pathlib import Path
 
+import pytest
+
 from cloud_app.app.platform import ADMIN_ID
 from cloud_app.tests.test_platform import login, make_client
+
+
+@pytest.mark.parametrize("action", ["status", "sleep", "hibernate", "restart", "shutdown"])
+def test_each_action_uses_direct_route_without_gateway(action: str) -> None:
+    with tempfile.TemporaryDirectory() as temp:
+        client, app = make_client(Path(temp), no_gateway=True)
+        try:
+            assert app.state.platform.relay is None
+            csrf = login(client)
+            code = app.state.platform.windows.create_enrollment(ADMIN_ID)
+            credentials = client.post("/api/v2/windows/enroll", json={"code": code, "name": "PC",
+                "version": "1.4.0", "protocol_version": "2"}).json()
+            device_id = credentials["device_id"]
+            headers = {"Authorization": "Bearer " + credentials["access_token"]}
+            assert client.post("/api/v2/windows/heartbeat", headers=headers, json={
+                "device_id": device_id, "version": "1.4.0", "state": "online",
+                "uptime": 1, "lan_ip": "192.168.1.7", "wol_capable": False}).status_code == 200
+            command = client.post(f"/api/v2/devices/{device_id}/commands",
+                headers={"x-csrf-token": csrf}, json={"action": action}).json()
+            assert command["route"] == "windows_direct"
+            delivered = client.get("/api/v2/windows/commands", headers=headers).json()["command"]
+            assert delivered["command_id"] == command["command_id"]
+            assert delivered["action"] == action
+            assert client.post("/api/v2/windows/results", headers=headers, json={
+                "command_id": delivered["command_id"], "ok": True,
+                "state": "online" if action == "status" else "transitioning", "error": ""}).status_code == 200
+        finally:
+            client.close()
+            app.state.engine.dispose()
 
 
 def test_no_router_windows_enrollment_and_command_round_trip() -> None:
