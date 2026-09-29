@@ -18,7 +18,8 @@ public sealed record ServiceStatus(
     [property: JsonPropertyName("lan_state")] string LanState,
     [property: JsonPropertyName("cloud_state")] string CloudState,
     [property: JsonPropertyName("gateway_state")] string GatewayState,
-    [property: JsonPropertyName("version")] string Version);
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("cloud_url")] string CloudUrl = "");
 
 public sealed record CloudPairing(Guid Id, string UserCode, string VerificationUri, long ExpiresAt, int Interval);
 

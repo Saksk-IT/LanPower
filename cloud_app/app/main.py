@@ -648,7 +648,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def system_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "system", session, presence=platform.presence())
+        devices = platform.devices(session.owner_id)
+        return page(request, "system", session,
+                    statuses=[platform.device_status(session.owner_id, device.id) for device in devices])
 
     @app.post("/devices/{device_id}/commands")
     async def web_command(request: Request, device_id: str):
@@ -717,7 +719,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v2/windows/heartbeat")
     async def windows_heartbeat(request: Request):
-        _owner_id, device_id = device_identity(request)
+        owner_id, device_id = device_identity(request)
         payload = await json_body(request)
         try:
             platform.windows.heartbeat(device_id, payload)
@@ -725,7 +727,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, str(error)) from error
         except PermissionError as error:
             raise HTTPException(401, str(error)) from error
-        return {"ok": True}
+        status = platform.device_status(owner_id, device_id)
+        return {"ok": True, "wake_available": status["wake_available"], "wake_gateway": status["wake_gateway"]}
 
     @app.get("/api/v2/windows/commands")
     def windows_commands(request: Request):

@@ -8,16 +8,21 @@ namespace LanPower.Service;
 
 public sealed class CloudAgent(
     LanConfig lanConfig, CloudCredentialStore credentials, ReplayStore replay,
-    HttpClient client, PowerGate gate, PowerExecutor power, ServiceLog log) : BackgroundService
+    HttpClient client, PowerGate gate, PowerExecutor power, ServiceLog log,
+    Func<LocalNetworkSnapshot>? networkStatus = null) : BackgroundService
 {
     private readonly SemaphoreSlim _tokensLock = new(1, 1);
     private string? _accessToken;
     private long _accessExpiresAt;
     private string _state = "未配置";
+    private string _gatewayState = "状态未知";
+    private string _cloudUrl = "";
     private CloudEnrollment? _enrollment;
     private CloudEnrollment Enrollment => LazyInitializer.EnsureInitialized(ref _enrollment,
         () => new CloudEnrollment(client, SaveTokensAsync));
     public string State => Volatile.Read(ref _state);
+    public string CloudUrl => Volatile.Read(ref _cloudUrl);
+    public string GatewayState => State == "未配置" ? "未配置" : State == "已连接" ? Volatile.Read(ref _gatewayState) : "等待云端连接";
 
     public Task<CloudPairing> BeginEnrollmentAsync(string cloudUrl, CancellationToken token) =>
         Enrollment.BeginAsync(cloudUrl, token);
@@ -49,6 +54,7 @@ public sealed class CloudAgent(
         try
         {
             credentials.Save(new CloudCredentials(origin, deviceId, refresh));
+            Volatile.Write(ref _cloudUrl, origin);
             _accessToken = access;
             _accessExpiresAt = expires;
             Volatile.Write(ref _state, "连接中");
@@ -63,19 +69,33 @@ public sealed class CloudAgent(
         {
             try
             {
-                if (credentials.Load() is null)
+                var configured = credentials.Load();
+                if (configured is null)
                 {
                     Volatile.Write(ref _state, "未配置");
                     await Task.Delay(5000, stoppingToken);
                     continue;
                 }
+                Volatile.Write(ref _cloudUrl, configured.CloudUrl);
                 var (saved, access) = await EnsureAccessAsync(stoppingToken);
+                Volatile.Write(ref _cloudUrl, saved.CloudUrl);
+                var network = networkStatus?.Invoke() ?? LocalNetworkStatus.Read(lanConfig);
                 using (var heartbeat = await AuthenticatedPostAsync(saved.CloudUrl + "/api/v2/windows/heartbeat", access,
                     new { device_id = saved.DeviceId, version = "1.4.0", state = "online",
-                          uptime = Environment.TickCount64 / 1000, lan_ip = lanConfig.HostIp, wol_capable = false }, stoppingToken))
+                          uptime = Environment.TickCount64 / 1000, lan_ip = network.LanIp, wol_capable = network.WolCapable }, stoppingToken))
                 {
                     if (heartbeat.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
                     heartbeat.EnsureSuccessStatusCode();
+                    using var presence = await heartbeat.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: stoppingToken);
+                    var gatewayState = "状态未知";
+                    if (presence?.RootElement.TryGetProperty("wake_gateway", out var gateway) == true)
+                    {
+                        gatewayState = gateway.ValueKind == JsonValueKind.Null ? "未配置" :
+                            gateway.TryGetProperty("state", out var state) && state.GetString() == "online" ?
+                            presence.RootElement.TryGetProperty("wake_available", out var available) && available.ValueKind == JsonValueKind.True
+                                ? "已连接，远程唤醒可用" : "已连接，待配置电脑" : "未连接";
+                    }
+                    Volatile.Write(ref _gatewayState, gatewayState);
                 }
                 Volatile.Write(ref _state, "已连接");
                 using var poll = new HttpRequestMessage(HttpMethod.Get, saved.CloudUrl + "/api/v2/windows/commands");

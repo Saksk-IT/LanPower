@@ -202,3 +202,30 @@ def test_heartbeat_accepts_maximum_target_count(cloud):
             targets.append(target(pc, False, "offline"))
     assert heartbeat(client, gateway, headers, targets).status_code == 200
     assert heartbeat(client, gateway, headers, targets + [target(str(uuid.uuid4()))]).status_code == 400
+
+
+def test_windows_presence_exposes_details_and_own_gateway_only(cloud):
+    client, platform, csrf = cloud
+    gateway, gateway_headers = enroll(client, "gateway")
+    pc, windows_headers = enroll(client, "windows")
+    beat = {"device_id": pc, "version": "2.0.0", "state": "online", "uptime": 1,
+            "lan_ip": "192.168.1.20", "wol_capable": True}
+    before = client.post("/api/v2/windows/heartbeat", headers=windows_headers, json=beat).json()
+    assert before == {"ok": True, "wake_available": False, "wake_gateway": None}
+    assert "未配置唤醒网关" in client.get("/dashboard").text
+    heartbeat(client, gateway, gateway_headers, [target(pc)])
+    link(client, csrf, gateway, pc)
+    after = client.post("/api/v2/windows/heartbeat", headers=windows_headers, json=beat).json()
+    assert after["wake_available"] and after["wake_gateway"]["device_id"] == gateway
+    with platform.sessions.begin() as db:
+        device = db.get(Device, pc)
+        device.meta = {**device.meta, "private_marker": "must-not-leak"}
+    status = client.get(f"/api/v2/devices/{pc}")
+    assert status.json()["lan_ip"] == beat["lan_ip"]
+    assert status.json()["wol_capable"] is True
+    assert status.json()["last_seen_at"] is not None
+    assert status.json()["protocol_version"] == "2"
+    assert "must-not-leak" not in status.text
+    page = client.get("/devices").text
+    assert "192.168.1.20" in page and "系统允许唤醒" in page and "最近连接" in page
+    assert "在线的唤醒网关</span><strong>1" in client.get("/system").text

@@ -63,4 +63,6 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 网关使用 `/api/v2/gateway/heartbeat`、`commands`、`results`，不能调用 Windows 协议。命令同时绑定网关和 Windows，45 秒有效；轮询原子领取，重试结果保持幂等。移除设备或修改关联会取消未完成队列；已经送达的电源动作无法撤回。被移除的 Windows 不再计入网关状态，其余电脑仍可用。
 
-安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。本地 Cloud 共 63 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离；网页关联流程已在桌面和手机宽度验证。
+安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。本地 Cloud 共 64 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离；网页关联和设备详情已在桌面和手机宽度验证。
+
+Windows 状态上报的响应额外提供该电脑的 `wake_gateway` 和 `wake_available`，用于桌面端显示实际连接情况；不会暴露其他电脑或设备凭据。设备列表提供版本、最近连接、局域网地址和系统唤醒能力，网页在开机不可用时区分未配置网关、网关离线和网关尚未配置电脑。

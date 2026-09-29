@@ -7,6 +7,15 @@
 <section class="card list-card">
   <div><span class="device-type">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }}</span><h2>{{ device.name }}</h2>
     <p class="muted">{{ '在线' if current.state == 'online' else '离线或状态未知' }} · 版本 {{ device.version }}</p>
+    {% if device.device_type == 'windows' %}
+    <dl class="device-facts">
+      <dt>云端连接</dt><dd>{{ '已连接' if current.cloud_agent == 'online' else '未连接' }}</dd>
+      <dt>局域网地址</dt><dd>{{ current.lan_ip or '尚未上报' }}</dd>
+      <dt>网络唤醒</dt><dd>{{ '系统允许唤醒' if current.wol_capable is sameas true else '请检查电脑设置' if current.wol_capable is sameas false else '尚未上报' }}</dd>
+      <dt>唤醒网关</dt><dd>{{ current.wake_gateway.name ~ (' · 在线' if current.wake_gateway.state == 'online' else ' · 离线') if current.wake_gateway else '未配置' }}</dd>
+      <dt>最近连接</dt><dd>{{ device.last_seen_at | relative_time }}</dd>
+    </dl>
+    {% endif %}
     {% if device.device_type == 'windows' %}<details class="hint"><summary>配置唤醒网关</summary><p>将此电脑编号填入网关本地配置：</p><code class="device-id">{{ device.id }}</code></details>{% endif %}
   </div>
   <form method="post" action="/devices/{{ device.id }}/rename" class="rename-form">

@@ -61,7 +61,12 @@ public sealed class CloudTests
     }
 
     [TestMethod]
-    public async Task AgentEnrollsPollsAndReportsWithoutGateway()
+    [DataRow("legacy", "状态未知")]
+    [DataRow("none", "未配置")]
+    [DataRow("offline", "未连接")]
+    [DataRow("online", "已连接，远程唤醒可用")]
+    [DataRow("unconfigured", "已连接，待配置电脑")]
+    public async Task AgentReportsCommandsAndActualGatewayState(string gatewayState, string expectedState)
     {
         var folder = Path.Combine(Path.GetTempPath(), "LanPowerCloudTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
@@ -69,12 +74,13 @@ public sealed class CloudTests
         {
             var deviceId = Guid.NewGuid().ToString();
             var commandId = Guid.NewGuid();
-            var handler = new FakeCloudHandler(deviceId, commandId);
+            var handler = new FakeCloudHandler(deviceId, commandId, gatewayState);
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(3) };
             var config = new LanConfig { Token = new string('a', 64), HostIp = "127.0.0.1", AllowedNetworks = ["127.0.0.0/8"] };
             var agent = new CloudAgent(config, new CloudCredentialStore(folder), new ReplayStore(folder),
                 http, new PowerGate(), new PowerExecutor(true, new ServiceLog(Path.Combine(folder, "service.log"))),
-                new ServiceLog(Path.Combine(folder, "service.log")));
+                new ServiceLog(Path.Combine(folder, "service.log")),
+                () => new LocalNetworkSnapshot("192.168.1.20", "02:00:00:00:00:01", "已连接", "系统允许唤醒", true));
             await agent.EnrollAsync("https://cloud.example.test", new string('x', 24), CancellationToken.None);
             await agent.StartAsync(CancellationToken.None);
             try
@@ -82,6 +88,9 @@ public sealed class CloudTests
                 await handler.ResultReported.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.AreEqual("status", handler.ReportedAction);
                 Assert.AreEqual("已连接", agent.State);
+                Assert.AreEqual(expectedState, agent.GatewayState);
+                Assert.AreEqual("https://cloud.example.test", agent.CloudUrl);
+                Assert.IsTrue(handler.WolCapable);
                 Assert.IsNotNull(new CloudCredentialStore(folder).Load());
             }
             finally { await agent.StopAsync(CancellationToken.None); }
@@ -89,10 +98,11 @@ public sealed class CloudTests
         finally { Directory.Delete(folder, true); }
     }
 
-    private sealed class FakeCloudHandler(string deviceId, Guid commandId) : HttpMessageHandler
+    private sealed class FakeCloudHandler(string deviceId, Guid commandId, string gatewayState) : HttpMessageHandler
     {
         private int _polls;
         public string? ReportedAction { get; private set; }
+        public bool WolCapable { get; private set; }
         public TaskCompletionSource ResultReported { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -104,7 +114,16 @@ public sealed class CloudTests
                 result = new { device_id = deviceId, access_token = new string('a', 43),
                     refresh_token = new string('r', 43), access_expires_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 900 };
             }
-            else if (path.EndsWith("/heartbeat")) result = new { ok = true };
+            else if (path.EndsWith("/heartbeat"))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+                WolCapable = body.RootElement.GetProperty("wol_capable").GetBoolean();
+                result = gatewayState == "legacy" ? new { ok = true } : (object)new
+                {
+                    ok = true, wake_available = gatewayState == "online",
+                    wake_gateway = gatewayState == "none" ? null : new { state = gatewayState == "offline" ? "offline" : "online" }
+                };
+            }
             else if (path.EndsWith("/commands"))
             {
                 if (Interlocked.Increment(ref _polls) == 1)

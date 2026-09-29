@@ -1,7 +1,4 @@
-using System.Diagnostics;
 using System.IO.Pipes;
-using System.Net;
-using System.Net.NetworkInformation;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
@@ -129,40 +126,8 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
 
     private ServiceStatus GetStatus()
     {
-        var adapter = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(nic =>
-            nic.OperationalStatus == OperationalStatus.Up &&
-            nic.GetIPProperties().UnicastAddresses.Any(address => address.Address.Equals(IPAddress.Parse(config.HostIp))));
-        var mac = adapter?.GetPhysicalAddress().ToString() ?? "";
-        if (mac.Length == 12) mac = string.Join(":", Enumerable.Range(0, 6).Select(i => mac.Substring(i * 2, 2)));
-        return new ServiceStatus(Environment.MachineName, config.HostIp, mac,
-            DetectWake(adapter), "已连接", cloud.State, "未配置", "1.4.0");
-    }
-
-    private static string DetectWake(NetworkInterface? adapter)
-    {
-        if (adapter is null) return "未检测到网卡";
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo(
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "powercfg.exe"),
-                "/devicequery wake_armed")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true
-            });
-            if (process is null || !process.WaitForExit(2000))
-            {
-                if (process is { HasExited: false }) process.Kill();
-                return "无法确认";
-            }
-            var output = process.StandardOutput.ReadToEnd();
-            return output.Contains(adapter.Name, StringComparison.OrdinalIgnoreCase) ||
-                   output.Contains(adapter.Description, StringComparison.OrdinalIgnoreCase) ? "已启用" : "需检查";
-        }
-        catch
-        {
-            return "无法确认";
-        }
+        var network = LocalNetworkStatus.Read(config);
+        return new ServiceStatus(Environment.MachineName, network.LanIp, network.Mac,
+            network.WolState, network.LanState, cloud.State, cloud.GatewayState, "1.4.0", cloud.CloudUrl);
     }
 }

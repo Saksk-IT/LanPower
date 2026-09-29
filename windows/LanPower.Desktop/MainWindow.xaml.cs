@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
 using LanPower.Shared;
 
 namespace LanPower.Desktop;
@@ -12,17 +13,23 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanPower", "welcome-complete");
     private CancellationTokenSource? _cloudWait;
     private CloudPairing? _cloudPairing;
+    private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(20) };
+    private bool _loadingStatus;
 
     public MainWindow() => InitializeComponent();
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         FirstRunPanel.Visibility = File.Exists(_welcomeMarker) ? Visibility.Collapsed : Visibility.Visible;
+        _statusTimer.Tick += RefreshStatus;
+        _statusTimer.Start();
         await LoadStatusAsync();
     }
 
     private async Task LoadStatusAsync()
     {
+        if (_loadingStatus) return;
+        _loadingStatus = true;
         try
         {
             using var response = await PipeClient.RequestAsync("status");
@@ -36,18 +43,21 @@ public partial class MainWindow : Window
             LanIp.Text = status.LanIp;
             Mac.Text = string.IsNullOrEmpty(status.Mac) ? "未检测到" : status.Mac;
             WolState.Text = status.WolState;
+            if (_cloudWait is null && !CloudUrlBox.IsKeyboardFocused && CloudUrlBox.Text == "https://" && !string.IsNullOrWhiteSpace(status.CloudUrl))
+                CloudUrlBox.Text = status.CloudUrl;
         }
         catch
         {
             DeviceState.Text = "● 服务未连接";
             LanState.Text = "请检查 LanPower Service";
-            CloudState.Text = "未配置";
-            GatewayState.Text = "未配置";
+            CloudState.Text = "状态未知";
+            GatewayState.Text = "状态未知";
             WolState.Text = "无法确认";
         }
+        finally { _loadingStatus = false; }
     }
 
-    private async void RefreshStatus(object sender, RoutedEventArgs e) => await LoadStatusAsync();
+    private async void RefreshStatus(object? sender, EventArgs e) => await LoadStatusAsync();
 
     private async void ConnectCloud(object sender, RoutedEventArgs e)
     {
@@ -127,6 +137,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _cloudWait?.Cancel();
+        _statusTimer.Stop();
         base.OnClosed(e);
     }
 
