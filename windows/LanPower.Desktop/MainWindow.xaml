@@ -53,15 +53,27 @@
           <TextBlock Text="远程控制" FontSize="16" FontWeight="SemiBold"/>
           <TextBlock Text="连接 Cloud 后，可在浏览器中直接控制这台电脑。未配置唤醒网关时，远程唤醒不可用。"
                      Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,12"/>
-          <TextBlock Text="在 Cloud 网页的“连接 Windows 电脑”中生成配对码，再填写下面的信息。" TextWrapping="Wrap"/>
+          <TextBlock Text="输入 Cloud 地址，连接后在网页核对这台电脑的配对码并批准。" TextWrapping="Wrap"/>
           <TextBlock Text="Cloud 地址" Margin="0,12,0,4"/>
           <TextBox x:Name="CloudUrlBox" Text="https://"/>
-          <TextBlock Text="一次性配对码" Margin="0,12,0,4"/>
-          <PasswordBox x:Name="CloudCodeBox"/>
           <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
             <Button x:Name="CloudConnectButton" Content="连接 Cloud" Click="ConnectCloud"/>
-            <TextBlock x:Name="CloudNotice" Margin="12,6,0,0" TextWrapping="Wrap"/>
+            <Button Content="打开 Cloud 网页" Click="OpenCloud" Background="#456977"/>
           </StackPanel>
+          <TextBlock x:Name="CloudNotice" Margin="0,10,0,0" TextWrapping="Wrap"/>
+          <StackPanel x:Name="CloudPairingPanel" Visibility="Collapsed" Margin="0,12,0,0">
+            <TextBlock Text="设备配对码（10 分钟内有效）"/>
+            <TextBox x:Name="CloudUserCode" IsReadOnly="True" FontFamily="Consolas" FontSize="26" Margin="0,6,0,10"/>
+            <TextBlock Text="在 Cloud 网页输入此配对码，确认设备名称一致，再点击允许连接。" TextWrapping="Wrap"/>
+            <Button Content="停止等待" Click="CancelCloudWait" HorizontalAlignment="Left" Margin="0,10,0,0" Background="#456977"/>
+          </StackPanel>
+          <Expander Header="连接旧版 Cloud" Margin="0,16,0,0">
+            <StackPanel>
+              <TextBlock Text="仅当旧版 Cloud 要求在网页生成一次性配对码时使用。" TextWrapping="Wrap" Margin="0,8,0,6"/>
+              <PasswordBox x:Name="CloudCodeBox"/>
+              <Button x:Name="LegacyConnectButton" Content="使用旧版配对码" Click="ConnectLegacyCloud" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+            </StackPanel>
+          </Expander>
         </StackPanel>
       </Border>
 

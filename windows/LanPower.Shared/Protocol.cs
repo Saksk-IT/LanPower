@@ -20,6 +20,8 @@ public sealed record ServiceStatus(
     [property: JsonPropertyName("gateway_state")] string GatewayState,
     [property: JsonPropertyName("version")] string Version);
 
+public sealed record CloudPairing(Guid Id, string UserCode, string VerificationUri, long ExpiresAt, int Interval);
+
 public sealed class PowerGate
 {
     private readonly TimeProvider _clock;

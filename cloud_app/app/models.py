@@ -125,6 +125,23 @@ class DeviceSession(Base):
     revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class DeviceAuthorization(Base):
+    __tablename__ = "device_authorizations"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    device_type: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(100))
+    version: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[int] = mapped_column(Integer, index=True)
+    next_poll_at: Mapped[int] = mapped_column(Integer)
+    approved_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    denied_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    redeemed_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class UsedRefreshToken(Base):
     __tablename__ = "used_refresh_tokens"
 

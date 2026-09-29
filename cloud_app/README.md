@@ -19,7 +19,7 @@ python -m venv cloud_app/.venv
 1. 将 `deploy/docker/.env.example` 复制为 `deploy/docker/.env`，设置实际 HTTPS 域名 `LANPOWER_PUBLIC_URL`。新安装无需设置管理员密码。`.env`、`private/` 和 `data/` 不应提交。
 2. 创建 `deploy/docker/data/` 并使 UID 10001 可写。在 `deploy/docker/` 运行 `docker compose up -d --build`。容器入口只绑定宿主机 `127.0.0.1:8765`；由 Caddy 等反向代理提供 HTTPS。不要把 `8765`、Windows `48211` 或路由器 SSH 直接暴露到公网。
 3. 检查本机 `http://127.0.0.1:8765/healthz`。在服务器运行 `docker compose exec cloud cat /var/lib/lanpower-cloud/setup-code` 读取初始化验证码，并在自己的 HTTPS 地址打开 `/setup`。填入验证码，按浏览器提示创建管理员 `admin` 的 Passkey，保存随后显示的 10 个恢复码，再进入控制台。验证码不会写入应用日志；初始化完成后会删除验证码文件并永久关闭 `/setup`，重启也不会重新开放。
-4. 打开“连接 Windows 电脑”生成一次性配对码，再到 Windows 应用输入 Cloud 地址和配对码。设备在线后可在网页中直接控制。
+4. 在 Windows 应用中填写 Cloud 地址并点击“连接 Cloud”，电脑将显示短配对码。打开 Cloud 的 `/enroll`（也可从“连接 Windows 电脑”进入），输入短码、核对设备名称并允许连接。设备在线后可在网页中直接控制。旧版 Windows 仍可使用网页生成的一次性长配对码。
 
 已有 Gateway 的部署额外使用 `deploy/docker/compose.legacy.yml`：把旧 `cloud.json` 放到 `deploy/docker/private/cloud.json`，其中 `database` 路径为 `/var/lib/lanpower-cloud/relay.db`；将旧 `relay.db` 保留在 `deploy/docker/data/relay.db`。确保 `private/cloud.json` 对容器 UID 10001 可读且权限为 `0600`，然后运行：
 
@@ -27,7 +27,7 @@ python -m venv cloud_app/.venv
 docker compose -f compose.yml -f compose.legacy.yml up -d --build
 ```
 
-Cloud 启动时会对 `platform.db` 执行 Alembic 迁移，目前为 `0003_unified_identity`。启用旧网关配置后，还会登记现有 Gateway 与一台关联的旧版 Windows 设备。旧 `relay.db` 由原中继逻辑继续使用，不会被迁移脚本修改。
+Cloud 启动时会对 `platform.db` 执行 Alembic 迁移，目前为 `0004_device_authorization`。启用旧网关配置后，还会登记现有 Gateway 与一台关联的旧版 Windows 设备。旧 `relay.db` 由原中继逻辑继续使用，不会被迁移脚本修改。
 
 需要在正式切换前单独核对迁移结果时，可先运行 `docker compose -f compose.yml -f compose.legacy.yml run --rm cloud python -m cloud_app.cli migrate-v1`。命令只读取旧 `relay.db` 和 `cloud.json`，将旧 Gateway、Windows 与客户端登记到新的 `platform.db`，不会改写旧数据。
 
@@ -41,8 +41,16 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 浏览器会话使用 `Secure`、`HttpOnly`、`SameSite=Strict` Cookie；登录前后均校验 CSRF。Passkey 挑战绑定浏览器或已登录会话，5 分钟到期且只能使用一次。初始化和登录失败会限流，身份事件进入活动记录。Windows 的 15 分钟 Access Token、30 天 Refresh Token、轮换、旧 Token 重用检测和设备撤销继续独立生效。
 
+## 设备批准与撤销
+
+新设备使用 `POST /api/v2/enroll/start` 发起配对，提交 `device_type`（`windows` 或 `gateway`）、`name`、`version` 和 `protocol_version: "2"`。返回的 `device_code` 留在设备服务中；用户只需核对短 `user_code`，并在 `verification_uri` 登录后批准。两种码均在 10 分钟后失效，数据库只保存哈希。
+
+设备按返回的 `interval` 调用 `POST /api/v2/enroll/token`，请求体为 `{"device_code":"..."}`。未批准时返回 `authorization_pending`，过快轮询返回 `slow_down`，拒绝或过期分别返回 `access_denied`、`expired_token`。批准后仅能兑换一次独立设备凭据；短配对码不能兑换凭据。`POST /api/v2/devices/token` 为 Windows 和网关提供统一刷新入口，Windows 原 `/api/v2/windows/token` 仍兼容。网关凭据不能调用 Windows 协议。
+
+“我的设备”中的“移除设备”会撤销该设备及其所有会话。批准、拒绝、连接和撤销均记录审计。旧版网关使用共享配置，需由部署者在服务器上移除其配置。
+
 ## 当前限制
 
 - 旧 Gateway 仍采用单家庭配对配置；设备表与 API 已按 `owner_id` 和设备关系设计。Windows Device 的凭据已独立，旧小程序的独立客户端授权仍待统一身份阶段。
-- 当前 Web 为单管理员；Passkey 与恢复码已实现。统一设备批准流程、新客户端入网和 Gateway v2 仍待后续实现。
+- 当前 Web 为单管理员；Passkey、恢复码和设备批准流程已实现。独立客户端入网、小程序 v2 和 Gateway v2 控制协议仍待后续阶段实现。
 - Docker 镜像与真实公网 HTTPS、真实 Windows 电源动作需要在可恢复环境中验收。本阶段自动测试模拟命令回传，未安装到当前工作电脑。

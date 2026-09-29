@@ -3,6 +3,13 @@
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">连接设备</p><h1>连接 Windows 电脑</h1></div></div>
 <section class="card">
+  <h2>从电脑发起连接</h2>
+  <p>在 Windows 应用中填写此 Cloud 地址，点击“连接 Cloud”。然后在这里核对电脑显示的短配对码并批准连接。</p>
+  <p>Cloud 地址：<strong>{{ public_url }}</strong></p>
+  <a class="button-link" href="/enroll">输入设备配对码</a>
+</section>
+<section class="card">
+  <h2>旧版 Windows 配对</h2>
   <p>在电脑上打开 LanPower，在 Cloud 连接中输入此 Cloud 地址和一次性配对码。配对码十分钟内有效，只能使用一次。</p>
   <p>Cloud 地址：<strong>{{ public_url }}</strong></p>
   {% if code %}<p>一次性配对码：<strong class="pair-code">{{ code }}</strong></p>{% endif %}

@@ -5,8 +5,8 @@ LanPower Windows Service 在保留局域网接口的同时，主动通过 HTTPS 
 ## 连接 Windows
 
 1. 部署 [Cloud Web](../cloud_app/README.md)，确认公网域名使用受信任的 HTTPS 证书。
-2. 在 Cloud 网页登录，进入“连接 Windows 电脑”，生成一次性配对码。配对码十分钟内有效，只能使用一次。
-3. 在 Windows 桌面应用的“远程控制”区域输入 Cloud 地址和配对码，点击“连接 Cloud”。Windows Service 保存独立设备凭据；Cloud 不接收局域网配对密钥。
+2. 在 Windows 桌面应用的“远程控制”区域输入 Cloud 地址，点击“连接 Cloud”，查看设备短配对码。
+3. 在 Cloud 网页登录，进入“连接 Windows 电脑”或 `/enroll`，输入短码，核对名称后允许连接。配对十分钟内有效且只能兑换一次。Windows Service 保存独立设备凭据；Cloud 不接收局域网配对密钥。
 4. 在 Cloud 总览确认新电脑在线，并测试“查看状态”。之后按需操作电源按钮。
 
 Cloud 不可用时，已配对的局域网客户端仍可调用 Windows LAN API。未配置 Cloud 也可只使用 LAN Direct。Windows 的 Cloud 连接仅使用出站 HTTPS，不需要路由器端口映射。
@@ -24,8 +24,9 @@ Cloud 将 Windows 心跳作为直连在线信号。网页按设备显示可用�
 
 ## 接口与凭据
 
-- `POST /api/v2/windows/enroll`：使用一次性配对码注册 Windows Device。
-- `POST /api/v2/windows/token`：轮换设备刷新凭据。
+- `POST /api/v2/enroll/start`、`POST /api/v2/enroll/token`：设备发起配对，等待网页批准并兑换独立凭据。
+- `POST /api/v2/devices/token`：统一设备凭据轮换；`POST /api/v2/windows/token` 继续兼容 Windows。
+- `POST /api/v2/windows/enroll`：兼容旧版 Windows 的网页长配对码。
 - `POST /api/v2/windows/heartbeat`、`GET /api/v2/windows/commands`、`POST /api/v2/windows/results`：Windows Agent 上报状态、领取命令与回执。
 - `GET /api/v2/devices`、`GET /api/v2/devices/{id}`、`POST /api/v2/devices/{id}/commands`：Cloud Web 设备与控制接口。
 - `GET /api/v2/commands/{id}`：查询命令回执。网页控制需要登录会话和 CSRF 校验。

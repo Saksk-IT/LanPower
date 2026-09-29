@@ -236,6 +236,19 @@ def test_legacy_admin_adds_passkey_with_session_csrf_and_keeps_password(tmp_path
         app.state.engine.dispose()
 
 
+def test_password_form_null_origin_keeps_token_and_cross_site_checks(tmp_path):
+    client, app = make_client(tmp_path, no_gateway=True)
+    try:
+        client.get("/login")
+        form = {"username": "admin", "password": "correct horse battery staple", "auth": client.cookies["lp_auth"]}
+        assert client.post("/login", data=form, headers={"Origin": "null", "Sec-Fetch-Site": "cross-site"}).status_code == 403
+        assert client.post("/login", data={**form, "auth": "wrong"}, headers={"Origin": "null"}).status_code == 403
+        assert client.post("/login", data=form, headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"}, follow_redirects=False).status_code == 303
+    finally:
+        client.close()
+        app.state.engine.dispose()
+
+
 def test_revoked_owner_cannot_keep_web_session_or_use_recovery(cloud):
     client, app, _settings = cloud
     _authenticator, codes = setup(client, app)

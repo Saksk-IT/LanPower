@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}批准设备连接{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">连接设备</p><h1>批准设备连接</h1></div></div>
+<section class="card">
+  {% if message %}<p role="status">{{ message }}</p><a class="button-link" href="/devices">查看我的设备</a>
+  {% elif device %}
+  <h2>{{ device.name }}</h2>
+  <p>{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }} · 版本 {{ device.version }}</p>
+  <p>配对码：<strong>{{ user_code }}</strong></p>
+  <p class="muted">请确认名称和配对码与自己的设备屏幕一致，再允许连接。</p>
+  <form method="post" action="/enroll/decision" class="controls">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="user_code" value="{{ user_code }}">
+    <button name="decision" value="approve" type="submit" class="primary">允许连接</button>
+    <button name="decision" value="deny" type="submit" class="secondary">拒绝</button>
+  </form>
+  {% else %}
+  <p>在 Windows 应用或唤醒网关中连接 Cloud，然后输入设备显示的配对码。</p>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/enroll/lookup" class="login-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>设备配对码<input name="user_code" placeholder="A7K2-M9QP" autocomplete="off" maxlength="20" required></label>
+    <button type="submit" class="primary">核对设备</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

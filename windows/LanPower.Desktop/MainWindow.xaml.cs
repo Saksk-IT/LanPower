@@ -10,6 +10,8 @@ public partial class MainWindow : Window
 {
     private readonly string _welcomeMarker = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanPower", "welcome-complete");
+    private CancellationTokenSource? _cloudWait;
+    private CloudPairing? _cloudPairing;
 
     public MainWindow() => InitializeComponent();
 
@@ -49,7 +51,88 @@ public partial class MainWindow : Window
 
     private async void ConnectCloud(object sender, RoutedEventArgs e)
     {
-        CloudConnectButton.IsEnabled = false;
+        CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudUrlBox.IsEnabled = false;
+        CloudNotice.Text = "正在请求配对…";
+        using var wait = new CancellationTokenSource();
+        _cloudWait = wait;
+        try
+        {
+            using var response = await PipeClient.RequestAsync(JsonSerializer.Serialize(new
+            { op = "enroll_start", cloud_url = CloudUrlBox.Text.Trim() }));
+            if (!response.RootElement.GetProperty("ok").GetBoolean())
+            {
+                CloudNotice.Text = response.RootElement.GetProperty("error").GetString() ?? "无法发起配对";
+                return;
+            }
+            var pairing = response.RootElement.GetProperty("pairing").Deserialize<CloudPairing>()
+                ?? throw new InvalidDataException("配对响应无效");
+            _cloudPairing = pairing;
+            CloudUserCode.Text = pairing.UserCode;
+            CloudPairingPanel.Visibility = Visibility.Visible;
+            CloudNotice.Text = "等待网页批准。请打开 Cloud 网页，输入下方配对码。";
+            while (DateTimeOffset.UtcNow.ToUnixTimeSeconds() < pairing.ExpiresAt)
+            {
+                wait.Token.ThrowIfCancellationRequested();
+                try
+                {
+                    using var progress = await PipeClient.RequestAsync(JsonSerializer.Serialize(new
+                    { op = "enroll_poll", enrollment_id = pairing.Id }));
+                    if (progress.RootElement.GetProperty("ok").GetBoolean())
+                    {
+                        var state = progress.RootElement.GetProperty("state").GetString();
+                        if (state == "connected")
+                        {
+                            CloudNotice.Text = "配对成功，电脑正在连接 Cloud。";
+                            await LoadStatusAsync();
+                            return;
+                        }
+                        if (state is "denied" or "expired")
+                        {
+                            CloudNotice.Text = state == "denied" ? "管理员已拒绝连接。" : "配对已过期，请重新连接。";
+                            return;
+                        }
+                        CloudNotice.Text = "等待网页批准。请核对设备名称与配对码。";
+                    }
+                    else CloudNotice.Text = "暂时无法完成配对，正在重试…";
+                }
+                catch (Exception error) when (error is IOException or OperationCanceledException)
+                {
+                    CloudNotice.Text = "连接暂时中断，正在重试…";
+                }
+                await Task.Delay(TimeSpan.FromSeconds(pairing.Interval), wait.Token);
+            }
+            CloudNotice.Text = "配对已过期，请重新连接。";
+        }
+        catch (OperationCanceledException) { CloudNotice.Text = "已停止等待。"; }
+        catch { CloudNotice.Text = "无法连接服务或 Cloud，请检查地址后重试。"; }
+        finally
+        {
+            _cloudWait = null;
+            _cloudPairing = null;
+            CloudPairingPanel.Visibility = Visibility.Collapsed;
+            CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudUrlBox.IsEnabled = true;
+        }
+    }
+
+    private void CancelCloudWait(object sender, RoutedEventArgs e) => _cloudWait?.Cancel();
+
+    private void OpenCloud(object sender, RoutedEventArgs e)
+    {
+        var address = _cloudPairing?.VerificationUri ?? CloudUrlBox.Text.Trim().TrimEnd('/') + "/dashboard";
+        if (Uri.TryCreate(address, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.UserInfo.Length == 0)
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        else CloudNotice.Text = "请先输入有效的 HTTPS Cloud 地址。";
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _cloudWait?.Cancel();
+        base.OnClosed(e);
+    }
+
+    private async void ConnectLegacyCloud(object sender, RoutedEventArgs e)
+    {
+        CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = false;
         CloudNotice.Text = "正在连接…";
         try
         {
@@ -73,7 +156,7 @@ public partial class MainWindow : Window
         {
             CloudNotice.Text = "无法连接服务或 Cloud，请稍后重试。";
         }
-        finally { CloudConnectButton.IsEnabled = true; }
+        finally { CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = true; }
     }
 
     private async void ShowLogs(object sender, RoutedEventArgs e)

@@ -14,32 +14,43 @@ public sealed class CloudAgent(
     private string? _accessToken;
     private long _accessExpiresAt;
     private string _state = "未配置";
+    private CloudEnrollment? _enrollment;
+    private CloudEnrollment Enrollment => LazyInitializer.EnsureInitialized(ref _enrollment,
+        () => new CloudEnrollment(client, SaveTokensAsync));
     public string State => Volatile.Read(ref _state);
+
+    public Task<CloudPairing> BeginEnrollmentAsync(string cloudUrl, CancellationToken token) =>
+        Enrollment.BeginAsync(cloudUrl, token);
+
+    public Task<string> PollEnrollmentAsync(Guid id, CancellationToken token) => Enrollment.PollAsync(id, token);
 
     public async Task EnrollAsync(string cloudUrl, string code, CancellationToken token)
     {
-        if (!Uri.TryCreate(cloudUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
-            uri.UserInfo.Length != 0 || uri.AbsolutePath != "/" || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
-            cloudUrl.Length > 250 || code.Length is < 10 or > 80)
-            throw new ArgumentException("Cloud 地址或配对码无效");
-        var origin = uri.GetLeftPart(UriPartial.Authority);
+        var origin = CloudEnrollment.NormalizeOrigin(cloudUrl);
+        if (code.Length is < 10 or > 80) throw new ArgumentException("配对码无效");
         using var response = await client.PostAsJsonAsync(origin + "/api/v2/windows/enroll",
             new { code, name = Environment.MachineName, version = "1.4.0", protocol_version = "2" }, token);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException("配对失败，请检查地址和配对码");
         using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
             ?? throw new InvalidDataException("Cloud 配对响应无效");
-        var result = data.RootElement;
+        await SaveTokensAsync(origin, data.RootElement, token);
+    }
+
+    private async Task SaveTokensAsync(string origin, JsonElement result, CancellationToken token)
+    {
         var deviceId = result.GetProperty("device_id").GetString()!;
         var access = result.GetProperty("access_token").GetString()!;
         var refresh = result.GetProperty("refresh_token").GetString()!;
-        if (!Guid.TryParse(deviceId, out _) || access.Length < 32 || refresh.Length < 32)
+        var expires = result.GetProperty("access_expires_at").GetInt64();
+        if (!Guid.TryParse(deviceId, out _) || access.Length is < 32 or > 128 || refresh.Length is < 32 or > 128 ||
+            expires <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
             throw new InvalidDataException("Cloud 配对响应无效");
         await _tokensLock.WaitAsync(token);
         try
         {
             credentials.Save(new CloudCredentials(origin, deviceId, refresh));
             _accessToken = access;
-            _accessExpiresAt = result.GetProperty("access_expires_at").GetInt64();
+            _accessExpiresAt = expires;
             Volatile.Write(ref _state, "连接中");
         }
         finally { _tokensLock.Release(); }
@@ -52,14 +63,13 @@ public sealed class CloudAgent(
         {
             try
             {
-                var saved = credentials.Load();
-                if (saved is null)
+                if (credentials.Load() is null)
                 {
                     Volatile.Write(ref _state, "未配置");
                     await Task.Delay(5000, stoppingToken);
                     continue;
                 }
-                var access = await EnsureAccessAsync(saved, stoppingToken);
+                var (saved, access) = await EnsureAccessAsync(stoppingToken);
                 using (var heartbeat = await AuthenticatedPostAsync(saved.CloudUrl + "/api/v2/windows/heartbeat", access,
                     new { device_id = saved.DeviceId, version = "1.4.0", state = "online",
                           uptime = Environment.TickCount64 / 1000, lan_ip = lanConfig.HostIp, wol_capable = false }, stoppingToken))
@@ -95,13 +105,16 @@ public sealed class CloudAgent(
         }
     }
 
-    private async Task<string> EnsureAccessAsync(CloudCredentials saved, CancellationToken token)
+    private async Task<(CloudCredentials Credentials, string Access)> EnsureAccessAsync(CancellationToken token)
     {
         await _tokensLock.WaitAsync(token);
         try
         {
+            // Read the credential identity while holding the same lock as enrollment.
+            // A newly issued token must never be sent to a previous Cloud address.
+            var saved = credentials.Load() ?? throw new InvalidDataException("Cloud 未配置");
             if (_accessToken is not null && _accessExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 60)
-                return _accessToken;
+                return (saved, _accessToken);
             using var response = await client.PostAsJsonAsync(saved.CloudUrl + "/api/v2/windows/token",
                 new { device_id = saved.DeviceId, refresh_token = saved.RefreshToken }, token);
             if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
@@ -116,13 +129,15 @@ public sealed class CloudAgent(
             credentials.Save(saved with { RefreshToken = refresh });
             _accessToken = access;
             _accessExpiresAt = result.GetProperty("access_expires_at").GetInt64();
-            return access;
+            return (saved, access);
         }
         finally { _tokensLock.Release(); }
     }
 
     private async Task ProcessCommandAsync(CloudCredentials saved, string access, JsonElement payload, CancellationToken token)
     {
+        var current = credentials.Load();
+        if (current?.CloudUrl != saved.CloudUrl || current.DeviceId != saved.DeviceId) return;
         CloudCommand command;
         try { command = CloudCommand.Parse(payload, saved.DeviceId, DateTimeOffset.UtcNow); }
         catch (Exception error) when (error is InvalidDataException or KeyNotFoundException or InvalidOperationException or ArgumentException or JsonException)

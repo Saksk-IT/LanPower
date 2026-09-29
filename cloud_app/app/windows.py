@@ -10,13 +10,12 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from cloud_app.app.auth import digest
+from cloud_app.app.device_auth import ACCESS_SECONDS, REFRESH_SECONDS, DeviceTokens
 from cloud_app.app.models import (
     AuditLog, Command, Device, DeviceCommand, DeviceHeartbeat, DeviceSession,
-    EnrollmentSession, UsedRefreshToken,
+    EnrollmentSession,
 )
 
-ACCESS_SECONDS = 15 * 60
-REFRESH_SECONDS = 30 * 86400
 ENROLL_SECONDS = 10 * 60
 ACTIONS = {"status", "sleep", "hibernate", "restart", "shutdown"}
 POWER_ACTIONS = ACTIONS - {"status"}
@@ -25,6 +24,7 @@ POWER_ACTIONS = ACTIONS - {"status"}
 class WindowsProtocol:
     def __init__(self, sessions: sessionmaker[Session]):
         self.sessions = sessions
+        self.tokens = DeviceTokens(sessions)
         self.changed = threading.Condition(threading.RLock())
 
     def create_enrollment(self, owner_id: str) -> str:
@@ -46,9 +46,6 @@ class WindowsProtocol:
             raise ValueError("invalid enrollment")
         now = int(time.time())
         device_id = str(uuid.uuid4())
-        session_id = str(uuid.uuid4())
-        access = secrets.token_urlsafe(32)
-        refresh = secrets.token_urlsafe(32)
         with self.sessions.begin() as db:
             row = db.get(EnrollmentSession, digest(payload["code"]))
             if row is None or row.device_type != "windows":
@@ -62,71 +59,16 @@ class WindowsProtocol:
             db.add(Device(id=device_id, owner_id=row.owner_id, device_type="windows",
                           name=payload["name"].strip(), version=payload["version"], protocol_version="2",
                           created_at=now, meta={}))
-            db.add(DeviceSession(id=session_id, owner_id=row.owner_id, device_id=device_id,
-                                 access_hash=digest(access), refresh_hash=digest(refresh),
-                                 access_expires_at=now + ACCESS_SECONDS,
-                                 refresh_expires_at=now + REFRESH_SECONDS, generation=0))
+            result = self.tokens.issue(db, row.owner_id, device_id, now)
             db.add(AuditLog(id=str(uuid.uuid4()), owner_id=row.owner_id, event="device_enrolled",
                             target_device_id=device_id, created_at=now))
-        return {"device_id": device_id, "access_token": access, "refresh_token": refresh,
-                "access_expires_at": now + ACCESS_SECONDS}
-
-    def refresh(self, payload: dict) -> dict:
-        if set(payload) != {"device_id", "refresh_token"} or not all(isinstance(value, str) for value in payload.values()):
-            raise ValueError("invalid refresh request")
-        if len(payload["refresh_token"]) > 128 or len(payload["device_id"]) > 64:
-            raise ValueError("invalid refresh request")
-        now = int(time.time())
-        submitted_hash = digest(payload["refresh_token"])
-        result: dict | None = None
-        with self.sessions.begin() as db:
-            session = db.scalar(select(DeviceSession).where(
-                DeviceSession.device_id == payload["device_id"],
-                DeviceSession.refresh_hash == submitted_hash,
-                DeviceSession.revoked_at.is_(None), DeviceSession.refresh_expires_at > now))
-            if session is None:
-                used = db.get(UsedRefreshToken, submitted_hash)
-                if used is not None:
-                    compromised = db.get(DeviceSession, used.session_id)
-                    if compromised and compromised.revoked_at is None:
-                        compromised.revoked_at = now
-                        db.add(AuditLog(id=str(uuid.uuid4()), owner_id=compromised.owner_id,
-                                        event="refresh_reuse", target_device_id=compromised.device_id,
-                                        created_at=now))
-            else:
-                device = db.get(Device, session.device_id)
-                if device is None or device.revoked_at is not None:
-                    raise PermissionError("device revoked")
-                access = secrets.token_urlsafe(32)
-                refresh = secrets.token_urlsafe(32)
-                db.add(UsedRefreshToken(token_hash=submitted_hash, session_id=session.id, used_at=now))
-                session.access_hash = digest(access)
-                session.refresh_hash = digest(refresh)
-                session.access_expires_at = now + ACCESS_SECONDS
-                session.refresh_expires_at = now + REFRESH_SECONDS
-                session.generation += 1
-                db.add(AuditLog(id=str(uuid.uuid4()), owner_id=session.owner_id, event="refresh_rotated",
-                                target_device_id=session.device_id, created_at=now))
-                result = {"device_id": session.device_id, "access_token": access, "refresh_token": refresh,
-                          "access_expires_at": now + ACCESS_SECONDS}
-        if result is None:
-            raise PermissionError("refresh unavailable")
         return result
 
+    def refresh(self, payload: dict) -> dict:
+        return self.tokens.refresh(payload, expected_type="windows")
+
     def authorize(self, token: str | None) -> tuple[str, str]:
-        if not token or len(token) > 128:
-            raise PermissionError("device unauthorized")
-        now = int(time.time())
-        with self.sessions() as db:
-            session = db.scalar(select(DeviceSession).where(DeviceSession.access_hash == digest(token),
-                                                               DeviceSession.access_expires_at > now,
-                                                               DeviceSession.revoked_at.is_(None)))
-            if session is None:
-                raise PermissionError("device unauthorized")
-            device = db.get(Device, session.device_id)
-            if device is None or device.revoked_at is not None:
-                raise PermissionError("device revoked")
-            return session.owner_id, session.device_id
+        return self.tokens.authorize(token, expected_type="windows")
 
     def heartbeat(self, device_id: str, payload: dict) -> None:
         if (set(payload) != {"device_id", "version", "state", "uptime", "lan_ip", "wol_capable"}
@@ -254,6 +196,8 @@ class WindowsProtocol:
             device = db.get(Device, device_id)
             if device is None or device.owner_id != owner_id or device.revoked_at is not None:
                 raise ValueError("device unavailable")
+            if device.protocol_version != "2":
+                raise ValueError("旧版设备请在服务器的旧版配置中移除")
             device.revoked_at = now
             for session in db.scalars(select(DeviceSession).where(DeviceSession.device_id == device_id,
                                                                   DeviceSession.revoked_at.is_(None))):

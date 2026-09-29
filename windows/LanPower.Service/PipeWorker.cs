@@ -88,15 +88,27 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
         {
             using var document = JsonDocument.Parse(line);
             var request = document.RootElement;
-            if (request.ValueKind != JsonValueKind.Object || request.EnumerateObject().Count() != 3 ||
-                request.GetProperty("op").GetString() != "enroll")
+            if (request.ValueKind != JsonValueKind.Object)
+                return JsonSerializer.Serialize(new { ok = false, error = "unknown request" });
+            var operation = request.GetProperty("op").GetString();
+            if (operation == "enroll_start" && request.EnumerateObject().Count() == 2)
+            {
+                var pairing = await cloud.BeginEnrollmentAsync(request.GetProperty("cloud_url").GetString() ?? "", token);
+                return JsonSerializer.Serialize(new { ok = true, pairing });
+            }
+            if (operation == "enroll_poll" && request.EnumerateObject().Count() == 2)
+            {
+                var state = await cloud.PollEnrollmentAsync(request.GetProperty("enrollment_id").GetGuid(), token);
+                return JsonSerializer.Serialize(new { ok = true, state });
+            }
+            if (operation != "enroll" || request.EnumerateObject().Count() != 3)
                 return JsonSerializer.Serialize(new { ok = false, error = "unknown request" });
             await cloud.EnrollAsync(request.GetProperty("cloud_url").GetString() ?? "",
                 request.GetProperty("code").GetString() ?? "", token);
             return JsonSerializer.Serialize(new { ok = true });
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or
-                                     ArgumentException or HttpRequestException or InvalidDataException)
+                                     ArgumentException or HttpRequestException or InvalidDataException or FormatException)
         {
             return JsonSerializer.Serialize(new { ok = false, error = "Cloud 配对失败，请检查地址和配对码" });
         }

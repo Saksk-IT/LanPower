@@ -18,7 +18,7 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 1. 按 [Windows 构建说明](windows/README.md) 生成并安装 Windows 应用，或等待新版安装包发布。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
-3. 登录 Cloud 网页，打开“连接 Windows 电脑”生成一次性配对码。在 Windows 应用中输入 Cloud 地址与配对码。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
+3. 在 Windows 应用中输入 Cloud 地址，点击“连接 Cloud”查看设备配对码。登录 Cloud 网页的“连接 Windows 电脑”，输入短码并核对名称后允许连接。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
 
 ## 最新版本
 

@@ -19,6 +19,7 @@ from webauthn.helpers.exceptions import WebAuthnException
 from cloud_app.app.auth import SESSION_SECONDS, create_session, current_session, digest, parse_form, read_limited, require_csrf
 from cloud_app.app.database import make_engine, migrate, session_factory
 from cloud_app.app.identity import BootstrapCode, Identity
+from cloud_app.app.enrollment import EnrollmentError
 from cloud_app.app.models import Device, User
 from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
@@ -31,6 +32,7 @@ ACTION_LABELS = {"status": "查看状态", "sleep": "睡眠", "hibernate": "休�
 ROUTE_LABELS = {"gateway_relay": "网关连接", "wake_gateway": "唤醒网关", "windows_direct": "云端直连"}
 STATE_LABELS = {"accepted": "已接收", "transitioning": "正在执行", "completed": "已完成", "failed": "未完成"}
 EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "setup_completed": "完成初始化", "device_renamed": "设备改名", "command_issued": "已发送命令", "enrollment_created": "创建配对码", "device_enrolled": "设备已连接", "device_revoked": "设备已移除", "refresh_rotated": "设备凭据已更新", "refresh_reuse": "设备凭据异常", "passkey_registered": "添加 Passkey", "passkey_login": "Passkey 登录", "recovery_created": "生成恢复码", "recovery_used": "使用恢复码"}
+EVENT_LABELS.update({"enrollment_approved": "允许设备连接", "enrollment_denied": "拒绝设备连接"})
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
@@ -93,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if identity.initialized(ADMIN_ID):
         bootstrap.disable()
     limiter = LoginLimiter()
+    enrollment_limiter = LoginLimiter()
     app = FastAPI(title="LanPower Cloud", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.platform = platform
     app.state.identity = identity
@@ -174,7 +177,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         origin = request.headers.get("origin")
         if (len(cookie) != 43 or len(supplied) > 128 or
                 not hmac.compare_digest(digest(cookie), digest(supplied)) or
-                (origin is not None and origin != settings.public_url.rstrip("/")) or
+                # Referrer-Policy: no-referrer can produce Origin: null on native
+                # form posts. The page token and SameSite cookie still bind them.
+                (origin not in (None, "null", settings.public_url.rstrip("/"))) or
                 request.headers.get("sec-fetch-site") == "cross-site"):
             raise HTTPException(403, "请刷新页面后重试")
         return cookie
@@ -441,6 +446,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if redirect: return redirect
         return page(request, "enroll", session, code=None)
 
+    @app.get("/enroll")
+    def approve_page(request: Request):
+        session, redirect = browser_guard(request)
+        if redirect: return redirect
+        return page(request, "approve", session, device=None, user_code="", message="", error="")
+
+    @app.post("/enroll/lookup")
+    async def approve_lookup(request: Request):
+        session = session_owner(request)
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        if not enrollment_limiter.allow_ceremony(session.owner_id):
+            raise HTTPException(429, "查询次数过多，请稍后重试")
+        code = form.get("user_code", "")
+        try:
+            device = platform.enrollment.lookup(code)
+            return page(request, "approve", session, device=device, user_code=code, message="", error="")
+        except ValueError as error:
+            return page(request, "approve", session, device=None, user_code="", message="", error=str(error), status=400)
+
+    @app.post("/enroll/decision")
+    async def approve_decision(request: Request):
+        session = session_owner(request)
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        if not enrollment_limiter.allow_ceremony(session.owner_id):
+            raise HTTPException(429, "尝试次数过多，请稍后重试")
+        decision = form.get("decision")
+        if decision not in {"approve", "deny"}:
+            raise HTTPException(400, "请选择允许或拒绝")
+        try:
+            platform.enrollment.decide(session.owner_id, form.get("user_code", ""), approved=decision == "approve")
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return page(request, "approve", session, device=None, user_code="", error="",
+                    message="已允许连接，请返回设备等待完成。" if decision == "approve" else "已拒绝此设备。")
+
     @app.post("/devices/enroll")
     async def enroll_code(request: Request):
         session, redirect = browser_guard(request)
@@ -464,6 +506,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if device is None: raise HTTPException(404, "device unavailable")
             device.name = name
         platform.record(session.owner_id, "device_renamed", device_id)
+        return RedirectResponse("/devices", status_code=303)
+
+    @app.post("/devices/{device_id}/revoke")
+    async def revoke_device(request: Request, device_id: str):
+        session = session_owner(request)
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        try:
+            platform.windows.revoke_device(session.owner_id, device_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
         return RedirectResponse("/devices", status_code=303)
 
     @app.get("/gateways")
@@ -524,6 +577,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return platform.windows.enroll(payload)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+
+    @app.post("/api/v2/enroll/start")
+    async def enroll_start(request: Request):
+        address = request.client.host if request.client else "unknown"
+        if not enrollment_limiter.allow_ceremony(address):
+            raise HTTPException(429, "enrollment rate limit")
+        try:
+            return platform.enrollment.start(await json_body(request))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/v2/enroll/token")
+    async def enroll_exchange(request: Request):
+        try:
+            return platform.enrollment.exchange(await json_body(request))
+        except EnrollmentError as error:
+            raise HTTPException(429 if str(error) == "slow_down" else 400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+
+    @app.post("/api/v2/devices/token")
+    async def device_token(request: Request):
+        try:
+            return platform.tokens.refresh(await json_body(request))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
 
     @app.post("/api/v2/windows/token")
     async def windows_token(request: Request):
