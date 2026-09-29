@@ -100,6 +100,39 @@ class LegacyClient(Base):
     created_at: Mapped[int] = mapped_column(Integer)
 
 
+class ClientSession(Base):
+    __tablename__ = "client_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    access_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    access_expires_at: Mapped[int] = mapped_column(Integer)
+    refresh_expires_at: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[int] = mapped_column(Integer)
+    last_seen_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ClientEnrollment(Base):
+    __tablename__ = "client_enrollments"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    expires_at: Mapped[int] = mapped_column(Integer)
+    used_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class UsedClientRefreshToken(Base):
+    __tablename__ = "used_client_refresh_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("client_sessions.id"), index=True)
+    used_at: Mapped[int] = mapped_column(Integer)
+
+
 class EnrollmentSession(Base):
     __tablename__ = "enrollment_sessions"
 

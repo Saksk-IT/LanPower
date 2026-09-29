@@ -14,6 +14,7 @@ from cloud_app.app.routing import select_route
 from cloud_app.app.settings import Settings
 from cloud_app.app.windows import WindowsProtocol
 from cloud_app.app.enrollment import Enrollment
+from cloud_app.app.clients import Clients
 from cloud_app.password import hash_password
 
 ADMIN_ID = "00000000-0000-0000-0000-000000000001"
@@ -73,6 +74,7 @@ class Platform:
         self.windows = WindowsProtocol(sessions)
         self.tokens = self.windows.tokens
         self.enrollment = Enrollment(sessions, settings.public_url)
+        self.mobile = Clients(sessions)
         if settings.legacy is None:
             seed_admin(settings, sessions)
             self.gateway_id, self.windows_id = None, None

@@ -1,0 +1,34 @@
+<view class="shell">
+  <view class="topbar"><view class="brand">⏻</view><view><view class="eyebrow">LANPOWER</view><view class="title">我的电脑</view></view></view>
+  <view class="pair-card" wx:if="{{!connected}}">
+    <view class="section-title">连接 Cloud</view><view class="muted">登录 Cloud 网页，在“已授权客户端”中为手机生成二维码。</view>
+    <button class="primary pair-button" bindtap="scanCloud" disabled="{{busy}}">扫描授权二维码</button>
+  </view>
+  <view wx:if="{{connected}}">
+    <picker range="{{devices}}" range-key="name" bindchange="selectDevice" disabled="{{busy}}"><view class="device-picker">{{device}} ▾</view></picker>
+    <view class="device-card"><view class="card-top"><text>{{modeText}}</text><text>{{stateText}}</text></view>
+      <view class="screen">⏻</view><view class="device-name">{{device}}</view><view class="detail">{{detail}}</view></view>
+    <view wx:if="{{selectedId}}">
+      <view class="section-head"><view class="section-title">电源控制</view><text bindtap="refresh">刷新状态</text></view>
+      <button class="wake-button" data-action="wake" bindtap="action" disabled="{{!canWake || busy}}"><view class="button-icon">↟</view><view>开机</view></button>
+      <view class="action-grid">
+        <button class="action" data-action="sleep" bindtap="action" disabled="{{!canControl || busy}}">睡眠</button>
+        <button class="action" data-action="hibernate" bindtap="action" disabled="{{!canControl || busy}}">休眠</button>
+        <button class="action" data-action="restart" bindtap="action" disabled="{{!canControl || busy}}">重启</button>
+        <button class="action danger" data-action="shutdown" bindtap="action" disabled="{{!canControl || busy}}">关机</button>
+      </view>
+      <view class="pair-card"><view class="section-title">局域网优先</view>
+        <view class="muted">为当前电脑扫描 Windows 应用的局域网二维码。在家时直接连接电脑，离家后自动连接 Cloud。</view>
+        <button class="primary pair-button" bindtap="scanLocal" disabled="{{busy}}">{{paired ? '重新关联局域网电脑' : '扫描这台电脑的局域网码'}}</button>
+        <view wx:if="{{paired}}"><view class="muted">局域网唤醒（可选）</view>
+          <input value="{{mac}}" bindinput="editMac" placeholder="网卡 MAC，如 02-11-22-33-44-55" maxlength="17" />
+          <input value="{{broadcast}}" bindinput="editBroadcast" placeholder="广播地址" maxlength="15" />
+          <button bindtap="saveWake" disabled="{{busy}}">保存唤醒设置</button><text class="remote-clear" bindtap="clearLocal">移除局域网关联</text>
+        </view>
+      </view>
+    </view>
+    <view class="footer"><text bindtap="reloadDevices">更新设备列表</text><text bindtap="scanCloud">重新授权</text><text bindtap="disconnect">断开 Cloud</text></view>
+  </view>
+  <view class="feedback" wx:if="{{feedback}}">{{feedback}}</view>
+  <view class="footer"><text bindtap="openLocal">仅使用局域网 / 旧版连接</text></view>
+</view>

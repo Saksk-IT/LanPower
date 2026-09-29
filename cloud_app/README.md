@@ -1,5 +1,7 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
+Cloud“已授权客户端”现在支持为每部手机生成一次性二维码，并逐个撤销。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。使用与验证边界见 [小程序 v2](../docs/mini-program-v2.md)。
+
 Cloud Web 是浏览器控制端，默认使用 Passkey 登录。Windows 应用可通过一次性配对码连接 Cloud，之后定期上报状态、领取命令并回传结果。在线 Windows 可直接接收状态、睡眠、休眠、重启和关机命令，无需 Wake Gateway。Cloud 保留旧 Gateway 与小程序使用的 `/api/v1/*` 协议；启用旧网关配置后继续兼容。Cloud 从不接收 Windows LAN 配对密钥。
 
 ## 本地验证

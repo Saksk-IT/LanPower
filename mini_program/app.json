@@ -1,5 +1,5 @@
 {
-  "pages": ["pages/index/index"],
+  "pages": ["pages/cloud/cloud", "pages/index/index"],
   "window": {
     "navigationBarTitleText": "电脑电源",
     "navigationBarBackgroundColor": "#0b1729",

@@ -18,10 +18,12 @@ function makeMagicPacket(mac) {
   return bytes.buffer;
 }
 
-function broadcastWake(wxApi, onError) {
+function broadcastWake(wxApi, onError, target = {mac: PC_MAC, broadcast: BROADCAST}) {
   if (typeof wxApi.createUDPSocket !== 'function') {
     throw new Error('当前微信版本不支持局域网唤醒');
   }
+  const packet = makeMagicPacket(target.mac);
+  const addresses = [...new Set(['255.255.255.255', target.broadcast || '255.255.255.255'])];
   const socket = wxApi.createUDPSocket();
   socket.onError((error) => onError(error && error.errMsg ? error.errMsg : 'UDP 发送失败'));
   try {
@@ -30,8 +32,6 @@ function broadcastWake(wxApi, onError) {
     socket.close();
     throw error;
   }
-  const packet = makeMagicPacket(PC_MAC);
-  const addresses = ['255.255.255.255', BROADCAST];
   let sent = 0;
   const send = () => {
     for (const address of addresses) {

@@ -4,3 +4,4 @@
 [hidden]{display:none!important}.auth-alternative{margin-top:24px}.auth-alternative summary{cursor:pointer;color:#35606b;font-size:.9rem}.auth-alternative .login-form{margin-top:16px}.setup-card{width:min(100%,540px)}.recovery-panel{margin-top:26px}.recovery-codes{padding:15px 15px 15px 40px;background:#f3f7f8;border-radius:8px;font: .85rem/2 ui-monospace,monospace;overflow-wrap:anywhere}.recovery-confirm{display:flex;align-items:center;gap:8px;margin:16px 0}.login-form input{min-width:0}.login-form .hint{margin-top:0}.login-form p{margin-bottom:0}
 @media(max-width:480px){.login-card{padding:24px}.login-body{padding:16px}.login-card h1{font-size:1.7rem}.recovery-codes{font-size:.7rem;padding-left:27px}}
 @media(max-width:800px){.shell{grid-template-rows:auto 1fr}.sidebar-bottom{display:flex;margin-top:0}}
+.pairing-qr{margin:24px 0;width:min(100%,300px);background:#fff}.pairing-qr svg{display:block;width:100%;height:auto}.rename-form{flex-wrap:wrap}

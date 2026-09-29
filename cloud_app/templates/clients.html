@@ -2,5 +2,25 @@
 {% block title %}已授权客户端{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">访问</p><h1>已授权客户端</h1></div></div>
-{% for client in clients %}<section class="card"><h2>{{ client.name }}</h2><p class="muted">旧版小程序仍可使用原有远程配对信息访问 Cloud。客户端独立授权和撤销将在统一账户阶段提供。</p></section>{% endfor %}
+<section class="card">
+  <h2>连接微信小程序</h2>
+  <p class="muted">为这部手机生成一次性二维码。授权后，小程序可以查看并控制你的电脑。</p>
+  <form method="post" action="/clients/enroll" class="rename-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>手机名称<input name="name" maxlength="100" placeholder="我的手机" required></label>
+    <button class="primary">生成二维码</button>
+  </form>
+  {% if pairing %}
+  <div class="pairing-qr" aria-label="小程序授权二维码">{{ pairing_svg }}</div>
+  <p>在小程序中选择“连接 Cloud”并扫码。二维码十分钟内有效，只能使用一次；重新生成后旧码失效。</p>
+  <p class="hint">请只用自己的手机扫描；二维码拥有你的设备控制权限。</p>
+  {% endif %}
+</section>
+{% for client in clients %}
+<section class="card list-card"><div><h2>{{ client.name }}</h2><p class="muted">最近使用：{{ client.last_seen_at | relative_time }}</p></div>
+<form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="确定移除此手机的 Cloud 控制权限？">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">移除客户端</button>
+</form></section>
+{% else %}<p class="muted">还没有授权的小程序。</p>{% endfor %}
+{% for client in legacy_clients %}<section class="card"><h2>{{ client.name }}</h2><p class="muted">旧版连接。扫描上方二维码可升级；旧凭据请在服务器的旧版配置中移除。</p></section>{% endfor %}
 {% endblock %}

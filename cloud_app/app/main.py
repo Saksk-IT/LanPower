@@ -7,6 +7,11 @@ import secrets
 import threading
 import time
 import json
+from io import BytesIO
+
+import qrcode
+from qrcode.image.svg import SvgPathImage
+from markupsafe import Markup
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -33,6 +38,9 @@ ROUTE_LABELS = {"gateway_relay": "网关连接", "wake_gateway": "唤醒网关",
 STATE_LABELS = {"accepted": "已接收", "transitioning": "正在执行", "completed": "已完成", "failed": "未完成"}
 EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "setup_completed": "完成初始化", "device_renamed": "设备改名", "command_issued": "已发送命令", "enrollment_created": "创建配对码", "device_enrolled": "设备已连接", "device_revoked": "设备已移除", "refresh_rotated": "设备凭据已更新", "refresh_reuse": "设备凭据异常", "passkey_registered": "添加 Passkey", "passkey_login": "Passkey 登录", "recovery_created": "生成恢复码", "recovery_used": "使用恢复码"}
 EVENT_LABELS.update({"enrollment_approved": "允许设备连接", "enrollment_denied": "拒绝设备连接"})
+EVENT_LABELS.update({"client_enrollment_created": "创建客户端二维码", "client_enrolled": "客户端已授权",
+                     "client_revoked": "客户端已移除", "client_refresh_rotated": "客户端凭据已更新",
+                     "client_refresh_reuse": "客户端凭据异常"})
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
@@ -156,6 +164,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if redirect:
             raise HTTPException(401, "unauthorized")
         return session
+
+    def client_owner(request: Request, *, mutation: bool = False) -> str:
+        authorization = request.headers.get("authorization")
+        if authorization is not None:
+            if not authorization.startswith("Bearer "):
+                raise HTTPException(401, "unauthorized")
+            try:
+                return platform.mobile.authorize(authorization[7:])[0]
+            except PermissionError as error:
+                raise HTTPException(401, str(error)) from error
+        session = session_owner(request)
+        if mutation:
+            json_csrf(request, session)
+        return session.owner_id
 
     def setup_available() -> bool:
         # Check persisted state on every request, including across worker restarts.
@@ -530,7 +552,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def clients_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "clients", session, clients=platform.clients(session.owner_id))
+        return page(request, "clients", session, clients=platform.mobile.list(session.owner_id),
+                    legacy_clients=platform.clients(session.owner_id), pairing=None)
+
+    @app.post("/clients/enroll")
+    async def client_enrollment(request: Request):
+        session = session_owner(request)
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        if not enrollment_limiter.allow_ceremony(session.owner_id):
+            raise HTTPException(429, "尝试次数过多，请稍后重试")
+        try:
+            code = platform.mobile.create_enrollment(session.owner_id, form.get("name", ""))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        pairing = settings.public_url.rstrip("/") + "/#lanpower-client=" + code
+        svg = BytesIO()
+        qrcode.make(pairing, image_factory=SvgPathImage, border=4, box_size=6).save(svg)
+        return page(request, "clients", session, clients=platform.mobile.list(session.owner_id),
+                    legacy_clients=platform.clients(session.owner_id), pairing=pairing,
+                    pairing_svg=Markup(svg.getvalue().decode("utf-8")))
+
+    @app.post("/clients/{client_id}/revoke")
+    async def revoke_client(request: Request, client_id: str):
+        session = session_owner(request)
+        require_csrf(request, session, await parse_form(request))
+        try:
+            platform.mobile.revoke(session.owner_id, client_id)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+        return RedirectResponse("/clients", status_code=303)
+
+    @app.post("/api/v2/clients/enroll")
+    async def mobile_enroll(request: Request):
+        if not enrollment_limiter.allow_ceremony(request.client.host if request.client else "unknown"):
+            raise HTTPException(429, "enrollment rate limit")
+        try:
+            return platform.mobile.enroll(await json_body(request))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/v2/clients/token")
+    async def mobile_token(request: Request):
+        try:
+            return platform.mobile.refresh(await json_body(request))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+
+    @app.post("/api/v2/clients/revoke")
+    def mobile_revoke(request: Request):
+        authorization = request.headers.get("authorization", "")
+        try:
+            owner_id, client_id = platform.mobile.authorize(authorization[7:] if authorization.startswith("Bearer ") else "")
+            platform.mobile.revoke(owner_id, client_id)
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+        return {"ok": True}
 
     @app.get("/activity")
     def activity_page(request: Request):
@@ -647,39 +728,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/devices")
     def api_devices(request: Request):
-        session = web_session(request)
-        if session is None: raise HTTPException(401, "unauthorized")
-        return [platform.device_status(session.owner_id, device.id) for device in platform.devices(session.owner_id)]
+        owner_id = client_owner(request)
+        return [platform.device_status(owner_id, device.id) for device in platform.devices(owner_id)]
 
     @app.get("/api/v2/devices/{device_id}")
     def api_device(request: Request, device_id: str):
-        session = web_session(request)
-        if session is None: raise HTTPException(401, "unauthorized")
+        owner_id = client_owner(request)
         try:
-            return platform.device_status(session.owner_id, device_id)
+            return platform.device_status(owner_id, device_id)
         except ValueError as error:
             raise HTTPException(404, str(error)) from error
 
     @app.post("/api/v2/devices/{device_id}/commands")
     async def api_command(request: Request, device_id: str):
-        session = web_session(request)
-        if session is None: raise HTTPException(401, "unauthorized")
-        token = request.headers.get("x-csrf-token", "")
-        require_csrf(request, session, {"csrf": token})
+        owner_id = client_owner(request, mutation=True)
         payload = await json_body(request)
         if set(payload) != {"action"} or not isinstance(payload["action"], str):
             raise HTTPException(400, "invalid command request")
         try:
-            return await run_in_threadpool(platform.issue_command, session.owner_id, device_id, payload["action"])
+            return await run_in_threadpool(platform.issue_command, owner_id, device_id, payload["action"])
         except (ValueError, ConnectionError, BlockingIOError) as error:
             raise relay_error(error) from error
 
     @app.get("/api/v2/commands/{command_id}")
     def api_command_result(request: Request, command_id: str):
-        session = web_session(request)
-        if session is None: raise HTTPException(401, "unauthorized")
+        owner_id = client_owner(request)
         try:
-            return platform.windows.command_result(session.owner_id, command_id)
+            return platform.windows.command_result(owner_id, command_id)
         except ValueError as error:
             raise HTTPException(404, str(error)) from error
 

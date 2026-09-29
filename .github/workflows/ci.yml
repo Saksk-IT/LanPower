@@ -62,6 +62,8 @@ jobs:
         run: docker build -f cloud_app/Dockerfile -t lanpower-cloud:ci .
       - name: Mini program tests
         run: node tests/test_mini_program.js
+      - name: Mini program v2 tests
+        run: node tests/test_mini_program_v2.js
 
   router-gateway:
     runs-on: ubuntu-latest
