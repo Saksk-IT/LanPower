@@ -103,6 +103,7 @@ public sealed class CloudTests
         private int _polls;
         public string? ReportedAction { get; private set; }
         public bool WolCapable { get; private set; }
+        public bool Revoked { get; private set; }
         public TaskCompletionSource ResultReported { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -136,6 +137,13 @@ public sealed class CloudTests
                     result = new { command = (object?)null };
                 }
             }
+            else if (path.EndsWith("/revoke"))
+            {
+                Revoked = true;
+                Assert.AreEqual("Bearer", request.Headers.Authorization?.Scheme);
+                Assert.AreEqual(new string('a', 43), request.Headers.Authorization?.Parameter);
+                result = new { ok = true };
+            }
             else if (path.EndsWith("/results"))
             {
                 var body = await request.Content!.ReadAsStringAsync(cancellationToken);
@@ -152,5 +160,36 @@ public sealed class CloudTests
                 Content = new StringContent(JsonSerializer.Serialize(result), Encoding.UTF8, "application/json")
             };
         }
+    }
+
+    [TestMethod]
+    public async Task DisconnectStopsCloudAndClearsCredentialsWithoutChangingLanPairing()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "LanPowerDisconnectTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            using var handler = new FakeCloudHandler(Guid.NewGuid().ToString(), Guid.NewGuid(), "none");
+            using var http = new HttpClient(handler);
+            var config = new LanConfig { Token = new string('a', 64), HostIp = "127.0.0.1", AllowedNetworks = ["127.0.0.0/8"] };
+            var credentials = new CloudCredentialStore(folder);
+            var log = new ServiceLog(Path.Combine(folder, "service.log"));
+            using var agent = new CloudAgent(config, credentials, new ReplayStore(folder), http,
+                new PowerGate(), new PowerExecutor(true, log), log);
+            await agent.EnrollAsync("https://cloud.example.test", new string('x', 24), CancellationToken.None);
+            await agent.StartAsync(CancellationToken.None);
+            try
+            {
+                await handler.ResultReported.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.IsTrue(await agent.DisconnectAsync(CancellationToken.None));
+                Assert.IsTrue(handler.Revoked);
+                Assert.IsNull(credentials.Load());
+                Assert.AreEqual("未配置", agent.State);
+                Assert.AreEqual("", agent.CloudUrl);
+                Assert.IsTrue(config.IsAuthorized("Bearer " + new string('a', 64)));
+            }
+            finally { await agent.StopAsync(CancellationToken.None); }
+        }
+        finally { Directory.Delete(folder, true); }
     }
 }

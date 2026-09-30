@@ -15,6 +15,7 @@ public partial class MainWindow : Window
     private CloudPairing? _cloudPairing;
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(20) };
     private bool _loadingStatus;
+    private bool _cloudConfigured;
 
     public MainWindow() => InitializeComponent();
 
@@ -43,6 +44,8 @@ public partial class MainWindow : Window
             LanIp.Text = status.LanIp;
             Mac.Text = string.IsNullOrEmpty(status.Mac) ? "未检测到" : status.Mac;
             WolState.Text = status.WolState;
+            _cloudConfigured = !string.IsNullOrEmpty(status.CloudUrl) || status.CloudState != "未配置";
+            if (_cloudWait is null) CloudDisconnectButton.IsEnabled = _cloudConfigured;
             if (_cloudWait is null && !CloudUrlBox.IsKeyboardFocused && CloudUrlBox.Text == "https://" && !string.IsNullOrWhiteSpace(status.CloudUrl))
                 CloudUrlBox.Text = status.CloudUrl;
         }
@@ -62,6 +65,7 @@ public partial class MainWindow : Window
     private async void ConnectCloud(object sender, RoutedEventArgs e)
     {
         CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudUrlBox.IsEnabled = false;
+        CloudDisconnectButton.IsEnabled = false;
         CloudNotice.Text = "正在请求配对…";
         using var wait = new CancellationTokenSource();
         _cloudWait = wait;
@@ -121,10 +125,49 @@ public partial class MainWindow : Window
             _cloudPairing = null;
             CloudPairingPanel.Visibility = Visibility.Collapsed;
             CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudUrlBox.IsEnabled = true;
+            CloudDisconnectButton.IsEnabled = _cloudConfigured;
         }
     }
 
-    private void CancelCloudWait(object sender, RoutedEventArgs e) => _cloudWait?.Cancel();
+    private async void CancelCloudWait(object sender, RoutedEventArgs e)
+    {
+        var id = _cloudPairing?.Id;
+        _cloudWait?.Cancel();
+        if (id is null) return;
+        try
+        {
+            using var result = await PipeClient.RequestAsync(JsonSerializer.Serialize(new { op = "enroll_cancel", enrollment_id = id }));
+            if (!result.RootElement.GetProperty("ok").GetBoolean()) CloudNotice.Text = "无法停止配对，请检查连接状态。";
+        }
+        catch { CloudNotice.Text = "无法联系服务，请检查连接状态。"; }
+    }
+
+    private async void DisconnectCloud(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(this, "断开后将停止这台电脑的云端控制。局域网功能继续可用。是否断开？",
+            "断开 Cloud", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudDisconnectButton.IsEnabled = false;
+        try
+        {
+            using var response = await PipeClient.RequestAsync("{\"op\":\"cloud_disconnect\"}");
+            if (!response.RootElement.GetProperty("ok").GetBoolean())
+            {
+                CloudNotice.Text = response.RootElement.GetProperty("error").GetString() ?? "无法断开连接";
+                return;
+            }
+            CloudNotice.Text = response.RootElement.GetProperty("revoked").GetBoolean()
+                ? "已断开 Cloud，原设备授权已失效。"
+                : "本机已断开。请在 Cloud 控制台移除原设备，清理云端授权。";
+            _cloudConfigured = false;
+            await LoadStatusAsync();
+        }
+        catch { CloudNotice.Text = "无法完成操作，请检查服务状态后重试。"; }
+        finally
+        {
+            CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = true;
+            CloudDisconnectButton.IsEnabled = _cloudConfigured;
+        }
+    }
 
     private void OpenCloud(object sender, RoutedEventArgs e)
     {

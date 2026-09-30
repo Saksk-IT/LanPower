@@ -163,3 +163,37 @@ def test_invalid_type_and_enrollment_rate_limit(cloud):
     for _ in range(16):
         start(client)
     assert client.post("/api/v2/enroll/start", json={}).status_code == 429
+
+
+@pytest.mark.parametrize("device_type", ["windows", "gateway"])
+def test_device_can_disconnect_itself_without_revoking_other_identities(cloud, device_type):
+    client, app = cloud
+    csrf = login(client)
+    enrolled = start(client, device_type)
+    approve(client, enrolled)
+    credentials = client.post("/api/v2/enroll/token", json={"device_code": enrolled["device_code"]}).json()
+    other = start(client, "windows")
+    approve(client, other)
+    other_credentials = client.post("/api/v2/enroll/token", json={"device_code": other["device_code"]}).json()
+    code = app.state.platform.mobile.create_enrollment(ADMIN_ID, "Phone")
+    phone = client.post("/api/v2/clients/enroll", json={"code": code}).json()
+    assert client.post("/api/v2/devices/revoke", headers={"x-csrf-token": csrf}).status_code == 401
+    assert client.post("/api/v2/devices/revoke", headers={"Authorization": "Bearer " + phone["access_token"]}).status_code == 401
+    headers = {"Authorization": "Bearer " + credentials["access_token"]}
+    pending = None
+    if device_type == "windows":
+        app.state.platform.windows.heartbeat(credentials["device_id"], {"device_id": credentials["device_id"],
+            "state": "online", "version": "1.4.0", "uptime": 1, "lan_ip": "192.168.1.20", "wol_capable": False})
+        pending = app.state.platform.issue_command(ADMIN_ID, credentials["device_id"], "status")
+    # A caller-supplied target cannot change the identity being removed.
+    assert client.post("/api/v2/devices/revoke", headers=headers,
+                       json={"device_id": other_credentials["device_id"]}).status_code == 200
+    assert client.post("/api/v2/devices/revoke", headers=headers).status_code == 401
+    assert client.post("/api/v2/devices/token", json={"device_id": credentials["device_id"],
+        "refresh_token": credentials["refresh_token"]}).status_code == 401
+    assert app.state.platform.tokens.authorize(other_credentials["access_token"], expected_type="windows")[1] == other_credentials["device_id"]
+    if pending:
+        assert app.state.platform.windows.command_result(ADMIN_ID, pending["command_id"])["state"] == "failed"
+    with app.state.platform.sessions() as db:
+        events = list(db.scalars(select(AuditLog).where(AuditLog.event == "device_revoked")))
+        assert len(events) == 1 and events[0].target_device_id == credentials["device_id"]

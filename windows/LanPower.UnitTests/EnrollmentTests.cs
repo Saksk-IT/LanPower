@@ -82,6 +82,18 @@ public sealed class EnrollmentTests
             await Assert.ThrowsExactlyAsync<ArgumentException>(() => enrollment.BeginAsync(address, CancellationToken.None));
     }
 
+    [TestMethod]
+    public async Task CancelledEnrollmentCannotRedeemLaterApproval()
+    {
+        using var handler = new EnrollmentHandler { Approved = true };
+        using var http = new HttpClient(handler);
+        var enrollment = new CloudEnrollment(http, (_, _, _) => throw new AssertFailedException("unexpected save"));
+        var pairing = await enrollment.BeginAsync("https://cloud.example.test", CancellationToken.None);
+        await enrollment.CancelAsync(pairing.Id, CancellationToken.None);
+        Assert.AreEqual("expired", await enrollment.PollAsync(pairing.Id, CancellationToken.None));
+        Assert.AreEqual(0, handler.Polls);
+    }
+
     private sealed class EnrollmentClock : TimeProvider
     {
         public DateTimeOffset Now = DateTimeOffset.UtcNow;

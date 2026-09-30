@@ -104,4 +104,16 @@ public sealed class CloudEnrollment(HttpClient client,
         _approved = null;
         return _state = state;
     }
+
+    public async Task CancelAsync(Guid? id, CancellationToken token)
+    {
+        await _lock.WaitAsync(token);
+        try
+        {
+            if (id is not null && _pairing?.Id != id) return;
+            _pairing = null;
+            Complete("expired");
+        }
+        finally { _lock.Release(); }
+    }
 }

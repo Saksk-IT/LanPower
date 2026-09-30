@@ -11,9 +11,9 @@ public sealed class CloudAgent(
     HttpClient client, PowerGate gate, PowerExecutor power, ServiceLog log,
     Func<LocalNetworkSnapshot>? networkStatus = null) : BackgroundService
 {
-    private readonly SemaphoreSlim _tokensLock = new(1, 1);
-    private string? _accessToken;
-    private long _accessExpiresAt;
+    private readonly CloudTokenSession _tokens = new(client, credentials);
+    private readonly object _connectionSync = new();
+    private CancellationTokenSource _connection = new();
     private string _state = "未配置";
     private string _gatewayState = "状态未知";
     private string _cloudUrl = "";
@@ -29,6 +29,51 @@ public sealed class CloudAgent(
 
     public Task<string> PollEnrollmentAsync(Guid id, CancellationToken token) => Enrollment.PollAsync(id, token);
 
+    public Task CancelEnrollmentAsync(Guid id, CancellationToken token) => Enrollment.CancelAsync(id, token);
+
+    public async Task<bool> DisconnectAsync(CancellationToken token)
+    {
+        await Enrollment.CancelAsync(null, token);
+        ResetConnection();
+        var removed = await _tokens.ClearAsync(token);
+        Volatile.Write(ref _cloudUrl, "");
+        Volatile.Write(ref _gatewayState, "未配置");
+        Volatile.Write(ref _state, "未配置");
+        ResetConnection();
+        log.Write("已断开本机 Cloud 连接");
+        if (removed.Credentials is null || removed.AccessToken is null) return false;
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            using var response = await AuthenticatedPostAsync(removed.Credentials.CloudUrl + "/api/v2/devices/revoke",
+                removed.AccessToken, new { }, deadline.Token);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException)
+        {
+            log.Write("本机已断开，请在 Cloud 控制台移除原设备");
+            return false;
+        }
+    }
+
+    private void ResetConnection()
+    {
+        lock (_connectionSync)
+        {
+            var previous = _connection;
+            _connection = new CancellationTokenSource();
+            previous.Cancel();
+            previous.Dispose();
+        }
+    }
+
+    private CancellationTokenSource ConnectionToken(CancellationToken stoppingToken)
+    {
+        lock (_connectionSync)
+            return CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _connection.Token);
+    }
+
     public async Task EnrollAsync(string cloudUrl, string code, CancellationToken token)
     {
         var origin = CloudEnrollment.NormalizeOrigin(cloudUrl);
@@ -43,23 +88,10 @@ public sealed class CloudAgent(
 
     private async Task SaveTokensAsync(string origin, JsonElement result, CancellationToken token)
     {
-        var deviceId = result.GetProperty("device_id").GetString()!;
-        var access = result.GetProperty("access_token").GetString()!;
-        var refresh = result.GetProperty("refresh_token").GetString()!;
-        var expires = result.GetProperty("access_expires_at").GetInt64();
-        if (!Guid.TryParse(deviceId, out _) || access.Length is < 32 or > 128 || refresh.Length is < 32 or > 128 ||
-            expires <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
-            throw new InvalidDataException("Cloud 配对响应无效");
-        await _tokensLock.WaitAsync(token);
-        try
-        {
-            credentials.Save(new CloudCredentials(origin, deviceId, refresh));
-            Volatile.Write(ref _cloudUrl, origin);
-            _accessToken = access;
-            _accessExpiresAt = expires;
-            Volatile.Write(ref _state, "连接中");
-        }
-        finally { _tokensLock.Release(); }
+        await _tokens.SaveEnrollmentAsync(origin, result, token);
+        Volatile.Write(ref _cloudUrl, origin);
+        Volatile.Write(ref _state, "连接中");
+        ResetConnection();
         log.Write("Windows 设备已完成 Cloud 配对");
     }
 
@@ -67,6 +99,9 @@ public sealed class CloudAgent(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            using var connection = ConnectionToken(stoppingToken);
+            var token = connection.Token;
+            CloudCredentials? saved = null;
             try
             {
                 var configured = credentials.Load();
@@ -77,16 +112,20 @@ public sealed class CloudAgent(
                     continue;
                 }
                 Volatile.Write(ref _cloudUrl, configured.CloudUrl);
-                var (saved, access) = await EnsureAccessAsync(stoppingToken);
+                var granted = await _tokens.GetAccessAsync(token);
+                saved = granted.Credentials;
+                var access = granted.Token;
+                token.ThrowIfCancellationRequested();
                 Volatile.Write(ref _cloudUrl, saved.CloudUrl);
                 var network = networkStatus?.Invoke() ?? LocalNetworkStatus.Read(lanConfig);
                 using (var heartbeat = await AuthenticatedPostAsync(saved.CloudUrl + "/api/v2/windows/heartbeat", access,
                     new { device_id = saved.DeviceId, version = "1.4.0", state = "online",
-                          uptime = Environment.TickCount64 / 1000, lan_ip = network.LanIp, wol_capable = network.WolCapable }, stoppingToken))
+                          uptime = Environment.TickCount64 / 1000, lan_ip = network.LanIp, wol_capable = network.WolCapable }, token))
                 {
                     if (heartbeat.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
                     heartbeat.EnsureSuccessStatusCode();
-                    using var presence = await heartbeat.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: stoppingToken);
+                    using var presence = await heartbeat.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token);
+                    token.ThrowIfCancellationRequested();
                     var gatewayState = "状态未知";
                     if (presence?.RootElement.TryGetProperty("wake_gateway", out var gateway) == true)
                     {
@@ -100,24 +139,32 @@ public sealed class CloudAgent(
                 Volatile.Write(ref _state, "已连接");
                 using var poll = new HttpRequestMessage(HttpMethod.Get, saved.CloudUrl + "/api/v2/windows/commands");
                 poll.Headers.Authorization = new AuthenticationHeaderValue("Bearer", access);
-                using var response = await client.SendAsync(poll, stoppingToken);
+                using var response = await client.SendAsync(poll, token);
                 if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
                 response.EnsureSuccessStatusCode();
-                using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: stoppingToken)
+                using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
                     ?? throw new InvalidDataException("Cloud 命令响应无效");
                 var command = data.RootElement.GetProperty("command");
                 if (command.ValueKind != JsonValueKind.Null)
-                    await ProcessCommandAsync(saved, access, command, stoppingToken);
+                    await ProcessCommandAsync(saved, access, command, token);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { continue; }
             catch (UnauthorizedAccessException)
             {
-                _accessToken = null;
+                if (saved is not null)
+                {
+                    try { await _tokens.BlockAsync(saved, stoppingToken); }
+                    catch (Exception error) when (error is IOException or System.Security.Cryptography.CryptographicException or UnauthorizedAccessException)
+                    { log.Write("无法保存 Cloud 连接状态：" + error.GetType().Name); }
+                }
+                if (token.IsCancellationRequested) continue;
                 Volatile.Write(ref _state, "需要重新连接");
                 await Task.Delay(5000, stoppingToken);
             }
             catch (Exception error)
             {
+                if (token.IsCancellationRequested) continue;
                 Volatile.Write(ref _state, "连接中断");
                 log.Write("Cloud 连接失败：" + error.GetType().Name);
                 await Task.Delay(5000, stoppingToken);
@@ -125,38 +172,10 @@ public sealed class CloudAgent(
         }
     }
 
-    private async Task<(CloudCredentials Credentials, string Access)> EnsureAccessAsync(CancellationToken token)
-    {
-        await _tokensLock.WaitAsync(token);
-        try
-        {
-            // Read the credential identity while holding the same lock as enrollment.
-            // A newly issued token must never be sent to a previous Cloud address.
-            var saved = credentials.Load() ?? throw new InvalidDataException("Cloud 未配置");
-            if (_accessToken is not null && _accessExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 60)
-                return (saved, _accessToken);
-            using var response = await client.PostAsJsonAsync(saved.CloudUrl + "/api/v2/windows/token",
-                new { device_id = saved.DeviceId, refresh_token = saved.RefreshToken }, token);
-            if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
-            response.EnsureSuccessStatusCode();
-            using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
-                ?? throw new InvalidDataException("Cloud 凭据响应无效");
-            var result = data.RootElement;
-            var refresh = result.GetProperty("refresh_token").GetString()!;
-            var access = result.GetProperty("access_token").GetString()!;
-            if (result.GetProperty("device_id").GetString() != saved.DeviceId || refresh.Length < 32 || access.Length < 32)
-                throw new InvalidDataException("Cloud 凭据响应无效");
-            credentials.Save(saved with { RefreshToken = refresh });
-            _accessToken = access;
-            _accessExpiresAt = result.GetProperty("access_expires_at").GetInt64();
-            return (saved, access);
-        }
-        finally { _tokensLock.Release(); }
-    }
-
     private async Task ProcessCommandAsync(CloudCredentials saved, string access, JsonElement payload, CancellationToken token)
     {
         var current = credentials.Load();
+        token.ThrowIfCancellationRequested();
         if (current?.CloudUrl != saved.CloudUrl || current.DeviceId != saved.DeviceId) return;
         CloudCommand command;
         try { command = CloudCommand.Parse(payload, saved.DeviceId, DateTimeOffset.UtcNow); }
@@ -172,6 +191,7 @@ public sealed class CloudAgent(
             new { command_id = result.CommandId, ok = result.Ok, state = result.State, error = result.Error }, token);
         if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
         response.EnsureSuccessStatusCode();
+        token.ThrowIfCancellationRequested();
         if (result.Ok && command.Action != "status" && !result.Executed)
         {
             replay.MarkExecuted(result);

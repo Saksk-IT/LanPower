@@ -87,6 +87,11 @@ try
     await writer.WriteLineAsync("status");
     var ipc = await reader.ReadLineAsync();
     Check(ipc is not null && ipc.Contains("lan_ip") && ipc.Contains("127.0.0.1"), "desktop status over named pipe");
+    using var disconnect = await RequestPipeAsync("{\"op\":\"cloud_disconnect\"}");
+    Check(disconnect.RootElement.GetProperty("ok").GetBoolean(), "unconfigured Cloud can be disconnected through IPC");
+    using var extraTarget = await RequestPipeAsync("{\"op\":\"cloud_disconnect\",\"device_id\":\"other\"}");
+    Check(!extraTarget.RootElement.GetProperty("ok").GetBoolean(), "IPC disconnect rejects extra targets");
+    Check((await client.GetAsync("/api/status")).IsSuccessStatusCode, "LAN remains paired after Cloud disconnect");
     Console.WriteLine("LanPower Windows tests passed");
 }
 finally
@@ -100,4 +105,14 @@ static void Check(bool condition, string message)
 {
     if (!condition) throw new Exception("FAILED: " + message);
     Console.WriteLine("PASS: " + message);
+}
+
+static async Task<JsonDocument> RequestPipeAsync(string command)
+{
+    await using var pipe = new NamedPipeClientStream(".", LanProtocol.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    await pipe.ConnectAsync(3000);
+    using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+    await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+    await writer.WriteLineAsync(command);
+    return JsonDocument.Parse(await reader.ReadLineAsync() ?? throw new IOException("IPC disconnected"));
 }

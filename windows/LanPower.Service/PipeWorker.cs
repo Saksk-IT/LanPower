@@ -98,6 +98,16 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
                 var state = await cloud.PollEnrollmentAsync(request.GetProperty("enrollment_id").GetGuid(), token);
                 return JsonSerializer.Serialize(new { ok = true, state });
             }
+            if (operation == "enroll_cancel" && request.EnumerateObject().Count() == 2)
+            {
+                await cloud.CancelEnrollmentAsync(request.GetProperty("enrollment_id").GetGuid(), token);
+                return JsonSerializer.Serialize(new { ok = true });
+            }
+            if (operation == "cloud_disconnect" && request.EnumerateObject().Count() == 1)
+            {
+                var revoked = await cloud.DisconnectAsync(token);
+                return JsonSerializer.Serialize(new { ok = true, revoked });
+            }
             if (operation != "enroll" || request.EnumerateObject().Count() != 3)
                 return JsonSerializer.Serialize(new { ok = false, error = "unknown request" });
             await cloud.EnrollAsync(request.GetProperty("cloud_url").GetString() ?? "",
@@ -105,9 +115,10 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
             return JsonSerializer.Serialize(new { ok = true });
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or
-                                     ArgumentException or HttpRequestException or InvalidDataException or FormatException)
+                                     ArgumentException or HttpRequestException or IOException or FormatException or
+                                     System.Security.Cryptography.CryptographicException or UnauthorizedAccessException)
         {
-            return JsonSerializer.Serialize(new { ok = false, error = "Cloud 配对失败，请检查地址和配对码" });
+            return JsonSerializer.Serialize(new { ok = false, error = "无法完成操作，请检查服务、Cloud 地址和连接状态" });
         }
     }
 

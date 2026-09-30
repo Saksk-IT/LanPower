@@ -272,7 +272,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if isinstance(error, BlockingIOError): return HTTPException(429, str(error))
         return HTTPException(400, str(error))
 
-    def device_identity(request: Request, device_type: str = "windows") -> tuple[str, str]:
+    def device_identity(request: Request, device_type: str | None = "windows") -> tuple[str, str]:
         authorization = request.headers.get("authorization", "")
         if not authorization.startswith("Bearer "):
             raise HTTPException(401, "device unauthorized")
@@ -697,6 +697,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(429 if str(error) == "slow_down" else 400, str(error)) from error
         except PermissionError as error:
             raise HTTPException(401, str(error)) from error
+
+    @app.post("/api/v2/devices/revoke")
+    def device_disconnect(request: Request):
+        # A device may only remove its own identity. Browser/client credentials
+        # cannot call this endpoint and no caller-supplied target is accepted.
+        owner_id, device_id = device_identity(request, None)
+        try:
+            platform.windows.revoke_device(owner_id, device_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return {"ok": True}
 
     @app.post("/api/v2/devices/token")
     async def device_token(request: Request):
