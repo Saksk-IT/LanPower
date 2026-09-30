@@ -19,6 +19,7 @@ from cloud_app.app.models import (
 ENROLL_SECONDS = 10 * 60
 ACTIONS = {"status", "sleep", "hibernate", "restart", "shutdown"}
 POWER_ACTIONS = ACTIONS - {"status"}
+PRESENCE_SECONDS = 75  # Older agents send one heartbeat per 25-second command poll.
 
 
 class WindowsProtocol:
@@ -71,12 +72,15 @@ class WindowsProtocol:
         return self.tokens.authorize(token, expected_type="windows")
 
     def heartbeat(self, device_id: str, payload: dict) -> None:
-        if (set(payload) != {"device_id", "version", "state", "uptime", "lan_ip", "wol_capable"}
-                or payload["device_id"] != device_id or payload["state"] != "online"
+        fields = {"device_id", "version", "state", "uptime", "lan_ip", "wol_capable"}
+        if (set(payload) not in (fields, fields | {"heartbeat_interval"})
+                or payload["device_id"] != device_id or payload["state"] not in ("online", "offline", "transitioning")
                 or not isinstance(payload["version"], str) or len(payload["version"]) > 32
                 or type(payload["uptime"]) is not int or payload["uptime"] < 0
                 or not isinstance(payload["lan_ip"], str) or len(payload["lan_ip"]) > 45
-                or type(payload["wol_capable"]) is not bool):
+                or type(payload["wol_capable"]) is not bool
+                or type(payload.get("heartbeat_interval", 25)) is not int
+                or not 5 <= payload.get("heartbeat_interval", 25) <= 25):
             raise ValueError("invalid heartbeat")
         try:
             ipaddress.ip_address(payload["lan_ip"])
@@ -89,14 +93,23 @@ class WindowsProtocol:
                 raise PermissionError("device revoked")
             device.last_seen_at = now
             device.version = payload["version"]
-            device.meta = {"lan_ip": payload["lan_ip"], "wol_capable": payload["wol_capable"]}
+            device.meta = {**device.meta, "lan_ip": payload["lan_ip"], "wol_capable": payload["wol_capable"],
+                           "presence_state": payload["state"], "heartbeat_interval": payload.get("heartbeat_interval", 25)}
             db.add(DeviceHeartbeat(id=str(uuid.uuid4()), device_id=device_id, seen_at=now,
-                                   state="online", uptime=payload["uptime"], lan_ip=payload["lan_ip"],
+                                   state=payload["state"], uptime=payload["uptime"], lan_ip=payload["lan_ip"],
                                    wol_capable=payload["wol_capable"]))
             db.execute(delete(DeviceHeartbeat).where(DeviceHeartbeat.seen_at < now - 30 * 86400))
 
+    @staticmethod
+    def presence_state(device: Device) -> str:
+        timeout = min(PRESENCE_SECONDS, device.meta.get("heartbeat_interval", 25) * 3 + 5)
+        if (device.revoked_at is not None or device.last_seen_at is None
+                or not 0 <= int(time.time()) - device.last_seen_at <= timeout):
+            return "offline"
+        return device.meta.get("presence_state", "online")
+
     def online(self, device: Device) -> bool:
-        return device.last_seen_at is not None and int(time.time()) - device.last_seen_at <= 75 and device.revoked_at is None
+        return self.presence_state(device) == "online"
 
     def issue(self, owner_id: str, device_id: str, action: str) -> dict:
         if action not in ACTIONS:
@@ -176,6 +189,10 @@ class WindowsProtocol:
             platform_command.state = payload["state"] if payload["ok"] and payload["state"] == "transitioning" else "completed" if payload["ok"] else "failed"
             platform_command.completed_at = now
             platform_command.error = payload["error"]
+            if payload["ok"] and command.action in POWER_ACTIONS and payload["state"] == "transitioning":
+                device = db.get(Device, device_id)
+                device.meta = {**device.meta, "presence_state": "transitioning"}
+                device.last_seen_at = now
             self.changed.notify_all()
 
     def command_result(self, owner_id: str, command_id: str) -> dict:

@@ -78,12 +78,25 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
             if (saved == _active && _access is not null && _expires > _clock.GetUtcNow().ToUnixTimeSeconds() + 60)
                 return new CloudAccess(saved, _access);
 
+            token.ThrowIfCancellationRequested();
             // A failed intent write must prevent the HTTP exchange altogether.
             store.Save(saved with { RefreshPending = true });
             _active = null;
             _access = null;
-            using var response = await client.PostAsJsonAsync(saved.CloudUrl + "/api/v2/windows/token",
-                new { device_id = saved.DeviceId, refresh_token = saved.RefreshToken }, token);
+            HttpResponseMessage exchanged;
+            try
+            {
+                exchanged = await client.PostAsJsonAsync(saved.CloudUrl + "/api/v2/windows/token",
+                    new { device_id = saved.DeviceId, refresh_token = saved.RefreshToken }, token);
+            }
+            catch (HttpRequestException error) when (error.HttpRequestError == HttpRequestError.NameResolutionError)
+            {
+                // DNS failed before an HTTP request could reach Cloud. Retrying
+                // is safe; a timeout or lost response still requires re-pairing.
+                store.Save(saved);
+                throw;
+            }
+            using var response = exchanged;
             if (response.StatusCode == HttpStatusCode.Unauthorized) throw new CloudReconnectRequiredException();
             response.EnsureSuccessStatusCode();
             using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
@@ -119,6 +132,18 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
             _active = null;
             _access = null;
             store.Save(expected with { RefreshPending = true });
+        }
+        finally { _lock.Release(); }
+    }
+
+    public async Task<CloudAccess?> GetCachedAccessAsync(CancellationToken token)
+    {
+        await _lock.WaitAsync(token);
+        try
+        {
+            var saved = store.Load();
+            return saved == _active && saved is not null && !saved.RefreshPending && _access is not null &&
+                _expires > _clock.GetUtcNow().ToUnixTimeSeconds() ? new CloudAccess(saved, _access) : null;
         }
         finally { _lock.Release(); }
     }

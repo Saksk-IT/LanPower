@@ -2,18 +2,19 @@
 {% block title %}我的设备{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">设备</p><h1>我的设备</h1><p class="muted">管理当前 Cloud 已登记的电脑和唤醒网关。</p></div><a class="button-link" href="/devices/enroll">连接 Windows 电脑</a></div>
+<p class="hint" data-status-sync role="status">每 5 秒自动同步状态。</p>
 {% for device in devices %}
 {% set current = statuses[device.id] %}
-<section class="card list-card">
-  <div><span class="device-type">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }}</span><h2>{{ device.name }}</h2>
-    <p class="muted">{{ '在线' if current.state == 'online' else '离线或状态未知' }} · 版本 {{ device.version }}</p>
+<section class="card list-card" data-status-id="{{ device.id }}">
+  <div><span class="device-type">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }}</span><h2 data-status-name>{{ device.name }}</h2>
+    <p class="muted"><span data-status-badge>{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span> · 版本 <span data-status-version>{{ device.version }}</span></p>
     {% if device.device_type == 'windows' %}
     <dl class="device-facts">
-      <dt>云端连接</dt><dd>{{ '已连接' if current.cloud_agent == 'online' else '未连接' }}</dd>
-      <dt>局域网地址</dt><dd>{{ current.lan_ip or '尚未上报' }}</dd>
-      <dt>网络唤醒</dt><dd>{{ '系统允许唤醒' if current.wol_capable is sameas true else '请检查电脑设置' if current.wol_capable is sameas false else '尚未上报' }}</dd>
-      <dt>唤醒网关</dt><dd>{{ current.wake_gateway.name ~ (' · 在线' if current.wake_gateway.state == 'online' else ' · 离线') if current.wake_gateway else '未配置' }}</dd>
-      <dt>最近连接</dt><dd>{{ device.last_seen_at | relative_time }}</dd>
+      <dt>云端连接</dt><dd data-status-cloud>{{ '已连接' if current.cloud_agent == 'online' else '未连接' }}</dd>
+      <dt>局域网地址</dt><dd data-status-lan>{{ current.lan_ip or '尚未上报' }}</dd>
+      <dt>网络唤醒</dt><dd data-status-wol>{{ '系统允许唤醒' if current.wol_capable is sameas true else '请检查电脑设置' if current.wol_capable is sameas false else '尚未上报' }}</dd>
+      <dt>唤醒网关</dt><dd data-status-gateway>{{ current.wake_gateway.name ~ (' · 在线' if current.wake_gateway.state == 'online' else ' · 离线') if current.wake_gateway else '未配置' }}</dd>
+      <dt>最近连接</dt><dd data-status-seen>{{ device.last_seen_at | relative_time }}</dd>
     </dl>
     {% endif %}
     {% if device.device_type == 'windows' %}<details class="hint"><summary>配置唤醒网关</summary><p>将此电脑编号填入网关本地配置：</p><code class="device-id">{{ device.id }}</code></details>{% endif %}

@@ -741,7 +741,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except PermissionError as error:
             raise HTTPException(401, str(error)) from error
         status = platform.device_status(owner_id, device_id)
-        return {"ok": True, "wake_available": status["wake_available"], "wake_gateway": status["wake_gateway"]}
+        return {"ok": True, "wake_available": status["wake_available"], "wake_gateway": status["wake_gateway"],
+                "presence_protocol": 1}
 
     @app.get("/api/v2/windows/commands")
     def windows_commands(request: Request):

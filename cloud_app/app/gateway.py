@@ -20,7 +20,7 @@ class GatewayProtocol:
     @staticmethod
     def online(device: Device) -> bool:
         return (device.protocol_version == "2" and device.revoked_at is None and device.last_seen_at is not None
-                and int(time.time()) - device.last_seen_at <= 75)
+                and 0 <= int(time.time()) - device.last_seen_at <= 75)
 
     @staticmethod
     def target(gateway: Device, windows_id: str) -> dict | None:

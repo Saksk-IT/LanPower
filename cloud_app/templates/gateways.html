@@ -2,9 +2,10 @@
 {% block title %}唤醒网关{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">连接</p><h1>唤醒网关</h1><p class="muted">电脑离线时，网关可以在家中发送网络唤醒包。</p></div></div>
+<p class="hint" data-status-sync role="status">每 5 秒自动同步状态。</p>
 {% for device in devices if device.device_type == 'gateway' %}
-<section class="card"><div class="card-heading"><div><span class="device-type">{{ 'Wake Gateway' if device.protocol_version == '2' else 'Legacy Gateway' }}</span><h2>{{ device.name }}</h2></div><span class="badge {{ 'good' if statuses[device.id].state == 'online' else '' }}">{{ '在线' if statuses[device.id].state == 'online' else '离线' }}</span></div>
-  <p class="muted">版本 {{ device.version }} · 最近连接：{{ device.last_seen_at | relative_time }}</p>
+<section class="card" data-status-id="{{ device.id }}"><div class="card-heading"><div><span class="device-type">{{ 'Wake Gateway' if device.protocol_version == '2' else 'Legacy Gateway' }}</span><h2 data-status-name>{{ device.name }}</h2></div><span data-status-badge class="badge {{ 'good' if statuses[device.id].state == 'online' else '' }}">{{ '在线' if statuses[device.id].state == 'online' else '离线' }}</span></div>
+  <p class="muted">版本 <span data-status-version>{{ device.version }}</span> · 最近连接：<span data-status-seen>{{ device.last_seen_at | relative_time }}</span></p>
   {% for link in links.get(device.id, []) %}
   <div class="gateway-link"><p><strong>{{ link.name }}</strong> · {{ '唤醒和备用控制' if link.backup else '唤醒' }}</p>
     {% if device.protocol_version == '2' %}<form method="post" action="/gateways/{{ device.id }}/links">

@@ -7,20 +7,22 @@ namespace LanPower.Service;
 
 public sealed class PowerExecutor(bool dryRun, ServiceLog log)
 {
-    public void Execute(string action)
+    public bool DryRun => dryRun;
+
+    public bool Execute(string action)
     {
         if (!LanProtocol.IsPowerAction(action)) throw new ArgumentException("未知电源动作", nameof(action));
         if (dryRun)
         {
             log.Write("演练模式，未执行电源动作：" + action);
-            return;
+            return true;
         }
         try
         {
             if (action == "sleep")
             {
                 if (!SetSuspendState(false, false, false)) throw new Win32Exception(Marshal.GetLastWin32Error());
-                return;
+                return true;
             }
             var parameters = action switch
             {
@@ -37,10 +39,12 @@ public sealed class PowerExecutor(bool dryRun, ServiceLog log)
             }) ?? throw new InvalidOperationException("无法启动 Windows 电源命令");
             if (!process.WaitForExit(5000) || process.ExitCode != 0)
                 throw new InvalidOperationException("Windows 电源命令执行失败");
+            return true;
         }
         catch (Exception error)
         {
             log.Write($"电源动作 {action} 失败：{error.GetType().Name}");
+            return false;
         }
     }
 

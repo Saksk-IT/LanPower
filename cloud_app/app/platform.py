@@ -112,12 +112,18 @@ class Platform:
                         "state": state, "cloud_agent": "offline", "wake_available": False,
                         "wake_gateway": None, "remote_control_available": False}
             direct = device.protocol_version == "2" and self.windows.online(device)
+            def current_observation(gateway):
+                # A pre-shutdown LAN observation must not resurrect the device.
+                return not (device.meta.get("presence_state") in {"offline", "transitioning"}
+                            and device.last_seen_at is not None
+                            and (gateway.last_seen_at or 0) <= device.last_seen_at)
+
             wake, backup = None, None
             for gateway in gateways:
                 if gateway.protocol_version == "2":
                     if wake is None and self.gateway.permitted(db, gateway.id, device.id, "wake"):
                         wake = gateway
-                    if backup is None and self.gateway.permitted(db, gateway.id, device.id, "status"):
+                    if backup is None and current_observation(gateway) and self.gateway.permitted(db, gateway.id, device.id, "status"):
                         backup = gateway
                 elif legacy and gateway.id == self.gateway_id:
                     relay = self.presence()
@@ -128,10 +134,15 @@ class Platform:
             linked = wake or (gateways[0] if gateways else None)
             linked_online = bool(linked and (self.gateway.online(linked) if linked.protocol_version == "2"
                                              else self.presence()["gateway"] == "online"))
-            state = "online" if direct or backup else "offline"
             lan_states = [self.gateway.target(gateway, device.id)["lan_state"] for gateway in gateways
-                          if self.gateway.online(gateway) and self.gateway.target(gateway, device.id) is not None]
+                          if self.gateway.online(gateway) and current_observation(gateway)
+                          and self.gateway.target(gateway, device.id) is not None]
             lan_state = "online" if "online" in lan_states else "offline" if "offline" in lan_states else "unknown"
+            transitioning = device.protocol_version == "2" and self.windows.presence_state(device) == "transitioning"
+            # Reachability is independent of permission to relay power commands.
+            state = "transitioning" if transitioning else "online" if direct or backup or lan_state == "online" else "offline"
+            if transitioning:
+                backup = None
             wake_reason = ("" if wake else "未配置唤醒网关" if not gateways else
                            "唤醒网关未连接" if not any(self.gateway.online(gateway) if gateway.protocol_version == "2"
                                                     else self.presence()["gateway"] == "online" for gateway in gateways)
@@ -143,7 +154,7 @@ class Platform:
                     "wake_available": wake is not None,
                     "wake_gateway": {"device_id": linked.id, "name": linked.name, "state": "online" if linked_online else "offline"} if linked else None,
                     "backup_gateway": {"device_id": backup.id, "name": backup.name, "state": "online"} if backup else None,
-                    "remote_control_available": direct or backup is not None}
+                    "remote_control_available": not transitioning and (direct or backup is not None)}
 
     def issue_command(self, owner_id: str, device_id: str, action: str) -> dict:
         status = self.device_status(owner_id, device_id)

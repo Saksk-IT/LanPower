@@ -98,9 +98,53 @@ public sealed class CloudTests
         finally { Directory.Delete(folder, true); }
     }
 
-    private sealed class FakeCloudHandler(string deviceId, Guid commandId, string gatewayState) : HttpMessageHandler
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task HeartbeatsContinueDuringLongPollAndServiceStopReportsOfflineWithoutRevokingCredentials(bool legacyHeartbeat)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "LanPowerPresenceTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            using var handler = new FakeCloudHandler(Guid.NewGuid().ToString(), Guid.NewGuid(), "none",
+                stalledPoll: true, legacyHeartbeat: legacyHeartbeat);
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+            var config = new LanConfig { Token = new string('a', 64), HostIp = "127.0.0.1", AllowedNetworks = ["127.0.0.0/8"] };
+            var store = new CloudCredentialStore(folder);
+            var log = new ServiceLog(Path.Combine(folder, "service.log"));
+            using var agent = new CloudAgent(config, store, new ReplayStore(folder), http,
+                new PowerGate(), new PowerExecutor(true, log), log,
+                () => new LocalNetworkSnapshot("192.168.1.20", "", "已连接", "需检查", false));
+            await agent.EnrollAsync("https://cloud.example.test", new string('x', 24), CancellationToken.None);
+            var saved = store.Load();
+            await agent.StartAsync(CancellationToken.None);
+            try
+            {
+                await handler.SecondHeartbeat.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.AreEqual(1, handler.Polls);
+                Assert.AreEqual("已连接", agent.State);
+                Assert.AreEqual(legacyHeartbeat ? 0 : 10, handler.HeartbeatInterval);
+                Assert.AreEqual(legacyHeartbeat ? 1 : 0, handler.RejectedHeartbeats);
+            }
+            finally { await agent.StopAsync(CancellationToken.None); }
+            Assert.AreEqual(legacyHeartbeat ? "online" : "offline", handler.LastHeartbeatState);
+            Assert.AreEqual(saved, store.Load());
+            Assert.IsFalse(handler.Revoked);
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    private sealed class FakeCloudHandler(string deviceId, Guid commandId, string gatewayState,
+        bool stalledPoll = false, bool legacyHeartbeat = false) : HttpMessageHandler
     {
         private int _polls;
+        private int _heartbeats;
+        public int Polls => Volatile.Read(ref _polls);
+        public string? LastHeartbeatState;
+        public int HeartbeatInterval;
+        public int RejectedHeartbeats;
+        public TaskCompletionSource SecondHeartbeat { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string? ReportedAction { get; private set; }
         public bool WolCapable { get; private set; }
         public bool Revoked { get; private set; }
@@ -118,7 +162,19 @@ public sealed class CloudTests
             else if (path.EndsWith("/heartbeat"))
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+                if (legacyHeartbeat && body.RootElement.TryGetProperty("heartbeat_interval", out _))
+                {
+                    Interlocked.Increment(ref RejectedHeartbeats);
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                    {
+                        Content = new StringContent("{\"error\":\"invalid heartbeat\"}", Encoding.UTF8, "application/json")
+                    };
+                }
+                if (legacyHeartbeat) Assert.AreEqual("online", body.RootElement.GetProperty("state").GetString());
                 WolCapable = body.RootElement.GetProperty("wol_capable").GetBoolean();
+                LastHeartbeatState = body.RootElement.GetProperty("state").GetString();
+                HeartbeatInterval = body.RootElement.TryGetProperty("heartbeat_interval", out var interval) ? interval.GetInt32() : 0;
+                if (Interlocked.Increment(ref _heartbeats) == 2) SecondHeartbeat.TrySetResult();
                 result = gatewayState == "legacy" ? new { ok = true } : (object)new
                 {
                     ok = true, wake_available = gatewayState == "online",
@@ -127,6 +183,11 @@ public sealed class CloudTests
             }
             else if (path.EndsWith("/commands"))
             {
+                if (stalledPoll)
+                {
+                    Interlocked.Increment(ref _polls);
+                    await Task.Delay(Timeout.Infinite, cancellationToken);
+                }
                 if (Interlocked.Increment(ref _polls) == 1)
                     result = new { command = new { command_id = commandId.ToString(), target_device_id = deviceId,
                         action = "status", issued_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),

@@ -14,7 +14,7 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanPower", "welcome-complete");
     private CancellationTokenSource? _cloudWait;
     private CloudPairing? _cloudPairing;
-    private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(20) };
+    private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private bool _loadingStatus;
     private bool _cloudConfigured;
     private readonly string _version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.4.0";

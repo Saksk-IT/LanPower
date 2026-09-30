@@ -14,13 +14,19 @@ public sealed class CloudAgent(
     private readonly CloudTokenSession _tokens = new(client, credentials);
     private readonly object _connectionSync = new();
     private CancellationTokenSource _connection = new();
+    private readonly SemaphoreSlim _heartbeatWakeup = new(0, 1);
+    private readonly SemaphoreSlim _heartbeatSend = new(1, 1);
+    private bool _legacyHeartbeat;
+    private long _powerPendingUntil;
+    private long _lastHeartbeat;
     private string _state = "未配置";
     private string _gatewayState = "状态未知";
     private string _cloudUrl = "";
     private CloudEnrollment? _enrollment;
     private CloudEnrollment Enrollment => LazyInitializer.EnsureInitialized(ref _enrollment,
         () => new CloudEnrollment(client, SaveTokensAsync));
-    public string State => Volatile.Read(ref _state);
+    public string State => Volatile.Read(ref _state) == "已连接" && Environment.TickCount64 - Volatile.Read(ref _lastHeartbeat) > 35000
+        ? "连接中断" : Volatile.Read(ref _state);
     public string CloudUrl => Volatile.Read(ref _cloudUrl);
     public string GatewayState => State == "未配置" ? "未配置" : State == "已连接" ? Volatile.Read(ref _gatewayState) : "等待云端连接";
 
@@ -114,50 +120,14 @@ public sealed class CloudAgent(
                 Volatile.Write(ref _cloudUrl, configured.CloudUrl);
                 var granted = await _tokens.GetAccessAsync(token);
                 saved = granted.Credentials;
-                var access = granted.Token;
                 token.ThrowIfCancellationRequested();
                 Volatile.Write(ref _cloudUrl, saved.CloudUrl);
-                var network = networkStatus?.Invoke() ?? LocalNetworkStatus.Read(lanConfig);
-                using (var heartbeat = await AuthenticatedPostAsync(saved.CloudUrl + "/api/v2/windows/heartbeat", access,
-                    new { device_id = saved.DeviceId, version = "1.4.0", state = "online",
-                          uptime = Environment.TickCount64 / 1000, lan_ip = network.LanIp, wol_capable = network.WolCapable }, token))
-                {
-                    if (heartbeat.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
-                    heartbeat.EnsureSuccessStatusCode();
-                    using var presence = await heartbeat.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token);
-                    token.ThrowIfCancellationRequested();
-                    var gatewayState = "状态未知";
-                    if (presence?.RootElement.TryGetProperty("wake_gateway", out var gateway) == true)
-                    {
-                        gatewayState = gateway.ValueKind == JsonValueKind.Null ? "未配置" :
-                            gateway.TryGetProperty("state", out var state) && state.GetString() == "online" ?
-                            presence.RootElement.TryGetProperty("wake_available", out var available) && available.ValueKind == JsonValueKind.True
-                                ? "已连接，远程唤醒可用" : "已连接，待配置电脑" : "未连接";
-                    }
-                    Volatile.Write(ref _gatewayState, gatewayState);
-                }
-                Volatile.Write(ref _state, "已连接");
-                using var poll = new HttpRequestMessage(HttpMethod.Get, saved.CloudUrl + "/api/v2/windows/commands");
-                poll.Headers.Authorization = new AuthenticationHeaderValue("Bearer", access);
-                using var response = await client.SendAsync(poll, token);
-                if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
-                response.EnsureSuccessStatusCode();
-                using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
-                    ?? throw new InvalidDataException("Cloud 命令响应无效");
-                var command = data.RootElement.GetProperty("command");
-                if (command.ValueKind != JsonValueKind.Null)
-                    await ProcessCommandAsync(saved, access, command, token);
+                await RunConnectionAsync(saved, token);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { continue; }
             catch (UnauthorizedAccessException)
             {
-                if (saved is not null)
-                {
-                    try { await _tokens.BlockAsync(saved, stoppingToken); }
-                    catch (Exception error) when (error is IOException or System.Security.Cryptography.CryptographicException or UnauthorizedAccessException)
-                    { log.Write("无法保存 Cloud 连接状态：" + error.GetType().Name); }
-                }
                 if (token.IsCancellationRequested) continue;
                 Volatile.Write(ref _state, "需要重新连接");
                 await Task.Delay(5000, stoppingToken);
@@ -172,7 +142,180 @@ public sealed class CloudAgent(
         }
     }
 
-    private async Task ProcessCommandAsync(CloudCredentials saved, string access, JsonElement payload, CancellationToken token)
+    private string PresenceState => Environment.TickCount64 < Volatile.Read(ref _powerPendingUntil) ? "transitioning" : "online";
+
+    private object HeartbeatBody(CloudCredentials saved, string state)
+    {
+        var network = networkStatus?.Invoke() ?? LocalNetworkStatus.Read(lanConfig);
+        var body = new Dictionary<string, object>
+        {
+            ["device_id"] = saved.DeviceId, ["version"] = "1.4.0",
+            ["state"] = _legacyHeartbeat ? "online" : state,
+            ["uptime"] = Environment.TickCount64 / 1000,
+            ["lan_ip"] = network.LanIp, ["wol_capable"] = network.WolCapable
+        };
+        if (!_legacyHeartbeat) body["heartbeat_interval"] = 10;
+        return body;
+    }
+
+    private async Task RunConnectionAsync(CloudCredentials saved, CancellationToken token)
+    {
+        _legacyHeartbeat = false;
+        await SendHeartbeatAsync(saved, token);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var heartbeats = MaintainHeartbeatsAsync(saved, lifetime.Token);
+        var commands = PollCommandsAsync(saved, lifetime.Token);
+        try { await await Task.WhenAny(heartbeats, commands); }
+        finally
+        {
+            lifetime.Cancel();
+            // Observe both workers; the first failure remains the reported cause.
+            try { await Task.WhenAll(heartbeats, commands); } catch { }
+        }
+    }
+
+    private async Task MaintainHeartbeatsAsync(CloudCredentials saved, CancellationToken token)
+    {
+        while (true)
+        {
+            await _heartbeatWakeup.WaitAsync(TimeSpan.FromSeconds(10), token);
+            await SendHeartbeatAsync(saved, token);
+        }
+    }
+
+    private async Task SendHeartbeatAsync(CloudCredentials saved, CancellationToken token)
+    {
+        await _heartbeatSend.WaitAsync(token);
+        try { await SendHeartbeatCoreAsync(saved, token); }
+        finally { _heartbeatSend.Release(); }
+    }
+
+    private async Task SendHeartbeatCoreAsync(CloudCredentials saved, CancellationToken token)
+    {
+        // A long command poll must never postpone the next presence update.
+        var heartbeat = await SendAuthorizedAsync(saved, HttpMethod.Post, "/api/v2/windows/heartbeat",
+            new Func<object>(() => HeartbeatBody(saved, PresenceState)), token);
+        if (heartbeat.StatusCode == HttpStatusCode.BadRequest && !_legacyHeartbeat)
+        {
+            using (heartbeat)
+            {
+                using var error = await heartbeat.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token);
+                if (error?.RootElement.TryGetProperty("error", out var detail) != true || detail.GetString() != "invalid heartbeat")
+                    heartbeat.EnsureSuccessStatusCode();
+            }
+            // Older Cloud versions reject the added presence fields before writing anything.
+            _legacyHeartbeat = true;
+            heartbeat = await SendAuthorizedAsync(saved, HttpMethod.Post, "/api/v2/windows/heartbeat",
+                new Func<object>(() => HeartbeatBody(saved, PresenceState)), token);
+        }
+        using var completed = heartbeat;
+        heartbeat.EnsureSuccessStatusCode();
+        using var presence = await heartbeat.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token);
+        token.ThrowIfCancellationRequested();
+        if (_legacyHeartbeat && presence?.RootElement.TryGetProperty("presence_protocol", out var protocol) == true &&
+            protocol.TryGetInt32(out var version) && version >= 1)
+        {
+            _legacyHeartbeat = false;
+            WakeHeartbeat();
+        }
+        var gatewayState = "状态未知";
+        if (presence?.RootElement.TryGetProperty("wake_gateway", out var gateway) == true)
+        {
+            gatewayState = gateway.ValueKind == JsonValueKind.Null ? "未配置" :
+                gateway.TryGetProperty("state", out var state) && state.GetString() == "online" ?
+                presence.RootElement.TryGetProperty("wake_available", out var available) && available.ValueKind == JsonValueKind.True
+                    ? "已连接，远程唤醒可用" : "已连接，待配置电脑" : "未连接";
+        }
+        Volatile.Write(ref _gatewayState, gatewayState);
+        Volatile.Write(ref _lastHeartbeat, Environment.TickCount64);
+        Volatile.Write(ref _state, "已连接");
+    }
+
+    private async Task PollCommandsAsync(CloudCredentials saved, CancellationToken token)
+    {
+        while (true)
+        {
+            using var response = await SendAuthorizedAsync(saved, HttpMethod.Get, "/api/v2/windows/commands", null, token);
+            using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
+                ?? throw new InvalidDataException("Cloud 命令响应无效");
+            token.ThrowIfCancellationRequested();
+            var command = data.RootElement.GetProperty("command");
+            if (command.ValueKind != JsonValueKind.Null) await ProcessCommandAsync(saved, command, token);
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendAuthorizedAsync(CloudCredentials saved, HttpMethod method,
+        string path, object? body, CancellationToken token)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var granted = await _tokens.GetAccessAsync(token);
+            token.ThrowIfCancellationRequested();
+            if (granted.Credentials.CloudUrl != saved.CloudUrl || granted.Credentials.DeviceId != saved.DeviceId)
+                throw new InvalidOperationException("Cloud 连接已更换");
+            using var request = new HttpRequestMessage(method, saved.CloudUrl + path);
+            if (body is not null) request.Content = JsonContent.Create(body is Func<object> factory ? factory() : body);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", granted.Token);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            if (path is "/api/v2/windows/heartbeat" or "/api/v2/windows/results") deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            var response = await client.SendAsync(request, deadline.Token);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                response.Dispose();
+                var latest = await _tokens.GetCachedAccessAsync(token);
+                // The heartbeat worker may have rotated while a poll was sent.
+                if (attempt == 0 && latest?.Credentials.DeviceId == saved.DeviceId && latest.Token != granted.Token) continue;
+                await _tokens.BlockAsync(granted.Credentials, token);
+                throw new UnauthorizedAccessException();
+            }
+            if (path == "/api/v2/windows/heartbeat" && response.StatusCode == HttpStatusCode.BadRequest) return response;
+            try { response.EnsureSuccessStatusCode(); return response; }
+            catch { response.Dispose(); throw; }
+        }
+    }
+
+    private void WakeHeartbeat()
+    {
+        try { _heartbeatWakeup.Release(); } catch (SemaphoreFullException) { }
+    }
+
+    public async Task ExecutePowerAsync(string action)
+    {
+        if (!LanProtocol.IsPowerAction(action)) throw new ArgumentException("未知电源动作", nameof(action));
+        if (!power.DryRun)
+        {
+            Volatile.Write(ref _powerPendingUntil, Environment.TickCount64 + 45000);
+            WakeHeartbeat();
+        }
+        await Task.Delay(1250);
+        var success = await Task.Run(() => power.Execute(action));
+        if (power.DryRun || !success || action == "sleep")
+        {
+            Volatile.Write(ref _powerPendingUntil, 0);
+            WakeHeartbeat();
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken);
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(3));
+            var granted = await _tokens.GetCachedAccessAsync(deadline.Token);
+            if (granted is not null && !_legacyHeartbeat)
+            {
+                using var response = await AuthenticatedPostAsync(granted.Credentials.CloudUrl + "/api/v2/windows/heartbeat",
+                    granted.Token, HeartbeatBody(granted.Credentials, "offline"), deadline.Token);
+                response.EnsureSuccessStatusCode();
+            }
+        }
+        catch (Exception error) { log.WriteFailure("Cloud 离线上报未完成", error); }
+        Volatile.Write(ref _state, "已停止");
+    }
+
+    private async Task ProcessCommandAsync(CloudCredentials saved, JsonElement payload, CancellationToken token)
     {
         var current = credentials.Load();
         token.ThrowIfCancellationRequested();
@@ -187,21 +330,21 @@ public sealed class CloudAgent(
         var existing = replay.Find(command);
         var accepted = existing is not null || command.Action == "status" || gate.TryAccept();
         var result = existing ?? replay.Prepare(command, accepted);
-        using var response = await AuthenticatedPostAsync(saved.CloudUrl + "/api/v2/windows/results", access,
-            new { command_id = result.CommandId, ok = result.Ok, state = result.State, error = result.Error }, token);
-        if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException();
-        response.EnsureSuccessStatusCode();
-        token.ThrowIfCancellationRequested();
-        if (result.Ok && command.Action != "status" && !result.Executed)
+        // Finish any older online heartbeat before acknowledging a power transition.
+        await _heartbeatSend.WaitAsync(token);
+        try
         {
-            replay.MarkExecuted(result);
-            log.Write("已接收 Cloud 电源命令：" + command.Action);
-            _ = Task.Run(async () =>
+            using var response = await SendAuthorizedAsync(saved, HttpMethod.Post, "/api/v2/windows/results",
+                new { command_id = result.CommandId, ok = result.Ok, state = result.State, error = result.Error }, token);
+            token.ThrowIfCancellationRequested();
+            if (result.Ok && command.Action != "status" && !result.Executed)
             {
-                await Task.Delay(1250);
-                power.Execute(command.Action);
-            });
+                replay.MarkExecuted(result);
+                log.Write("已接收 Cloud 电源命令：" + command.Action);
+                _ = ExecutePowerAsync(command.Action);
+            }
         }
+        finally { _heartbeatSend.Release(); }
     }
 
     private async Task<HttpResponseMessage> AuthenticatedPostAsync(string url, string access, object body, CancellationToken token)

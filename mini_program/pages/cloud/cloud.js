@@ -15,6 +15,14 @@ Page({
   onLoad() {
     this.client = CloudClient.load(wx);
     this.local = wx.getStorageSync(LOCAL_KEY) || {};
+    this.networkChanged = info => {
+      this.networkType = info.networkType || (info.isConnected === false ? 'none' : 'unknown');
+      this.serial = (this.serial || 0) + 1;
+      this.route = ''; this.wakeRoute = '';
+      this.setData({canControl: false, canWake: false, stateText: '正在同步状态'});
+      if (this.visible) this.refresh();
+    };
+    if (wx.onNetworkStatusChange) wx.onNetworkStatusChange(this.networkChanged);
     this.setData({connected: !!this.client});
     const cache = wx.getStorageSync(CACHE_KEY);
     if (this.client && cache && cache.url === this.client.session.url && cache.client_id === this.client.session.client_id && Array.isArray(cache.devices)) {
@@ -23,9 +31,19 @@ Page({
       this.syncPairing();
     }
   },
-  onShow() { this.visible = true; this.refresh(); this.timer = setInterval(() => this.refresh(), 15000); },
-  onHide() { this.visible = false; clearInterval(this.timer); this.serial = (this.serial || 0) + 1; },
-  onUnload() { this.onHide(); },
+  onShow() {
+    this.visible = true;
+    clearInterval(this.timer);
+    if (wx.getNetworkType) wx.getNetworkType({success: this.networkChanged});
+    this.refresh(); this.timer = setInterval(() => this.refresh(), 5000);
+  },
+  onHide() {
+    this.visible = false; clearInterval(this.timer); this.serial = (this.serial || 0) + 1;
+    this.refreshAgain = false;
+    this.route = ''; this.wakeRoute = '';
+    this.setData({canControl: false, canWake: false});
+  },
+  onUnload() { this.onHide(); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); },
   openLocal() { wx.navigateTo({url: '/pages/index/index'}); },
 
   scanCloud() {
@@ -71,6 +89,7 @@ Page({
 
   localKey(id = this.data.selectedId) { return this.client ? `${this.client.session.url}|${id}` : ''; },
   pairing() { return this.local[this.localKey()]; },
+  canUseLan() { return !this.networkType || this.networkType === 'wifi' || this.networkType === 'unknown'; },
   selectDevice(event) {
     if (this.data.busy) return;
     const device = this.data.devices[Number(event.detail.value)];
@@ -140,7 +159,7 @@ Page({
   },
 
   refresh() {
-    if (!this.client || this.data.busy) return Promise.resolve();
+    if (!this.client || this.data.busy || this.visible === false) return Promise.resolve();
     if (this.refreshing) { this.refreshAgain = true; return this.refreshing; }
     const promise = this.refreshOnce(); this.refreshing = promise;
     return promise.finally(() => {
@@ -155,7 +174,7 @@ Page({
     try {
       // Once selected, LAN remains usable even if Cloud is unavailable.
       const pairing = this.pairing();
-      if (pairing) {
+      if (pairing && this.canUseLan()) {
         const reachable = await new Promise(resolve => wx.request({url: `http://${pairing.host}:48211/api/status`,
           method: 'GET', timeout: 2500, header: {Authorization: `Bearer ${pairing.token}`},
           success: r => resolve(r.statusCode === 200 && r.data && r.data.state === 'online'), fail: () => resolve(false)}));
@@ -176,20 +195,24 @@ Page({
       this.cacheDevices();
       this.syncPairing();
       if (!device) {
+        this.route = ''; this.wakeRoute = '';
         this.setData({stateText: '没有设备', detail: '先在 Windows 应用中连接 Cloud', canControl: false, canWake: false}); return;
       }
       if (changed && this.pairing()) { this.refreshAgain = true; return; }
       this.route = 'cloud';
-      this.wakeRoute = device.wake_available ? 'cloud' : this.pairing() && this.pairing().mac ? 'local' : '';
-      this.setData({stateText: device.state === 'online' ? '在线 · Cloud' : '离线',
+      this.wakeRoute = device.wake_available ? 'cloud' : this.canUseLan() && this.pairing() && this.pairing().mac ? 'local' : '';
+      this.setData({stateText: device.state === 'online' ? '在线 · Cloud' : device.state === 'transitioning' ? '正在执行电源操作' : '离线 · Cloud',
         modeText: device.cloud_agent === 'online' ? '云端直连' : device.remote_control_available ? '网关连接' : 'Cloud',
-        detail: device.remote_control_available ? '可以控制这台电脑' : device.wake_available ? '可通过唤醒网关开机' :
+        detail: device.state === 'transitioning' ? '等待电脑完成操作并重新同步状态' : device.remote_control_available ? '可以控制这台电脑' :
+          device.state === 'online' ? '电脑在线，Cloud 未连接且未启用网关备用控制' : device.wake_available ? '可通过唤醒网关开机' :
           this.wakeRoute === 'local' ? '仍可尝试局域网唤醒' : '未连接唤醒网关，远程开机不可用',
-        canControl: !!device.remote_control_available, canWake: device.state !== 'online' && !!this.wakeRoute});
+        canControl: device.state === 'online' && !!device.remote_control_available,
+        canWake: device.state === 'offline' && !!this.wakeRoute});
     } catch (error) {
       if (!current()) return;
-      this.wakeRoute = this.pairing() && this.pairing().mac ? 'local' : '';
-      this.setData({stateText: '暂时无法连接', modeText: this.wakeRoute ? '局域网唤醒可用' : '未连接',
+      this.route = '';
+      this.wakeRoute = this.canUseLan() && this.pairing() && this.pairing().mac ? 'local' : '';
+      this.setData({stateText: '状态未知', modeText: this.wakeRoute ? '局域网唤醒可用' : '未连接',
         detail: error.message, canControl: false, canWake: !!this.wakeRoute});
     }
   },
@@ -200,7 +223,9 @@ Page({
     const id = this.data.selectedId, client = this.client, route = action === 'wake' ? this.wakeRoute : this.route;
     wx.showModal({title: `确定${ACTIONS[action]}？`, content: `目标电脑：${this.data.device}`,
       success: async ({confirm}) => {
-        if (!confirm || id !== this.data.selectedId || client !== this.client || this.data.busy) return;
+        if (!confirm || id !== this.data.selectedId || client !== this.client || this.data.busy ||
+            route !== (action === 'wake' ? this.wakeRoute : this.route) ||
+            (action === 'wake' ? !this.data.canWake : !this.data.canControl)) return;
         this.serial = (this.serial || 0) + 1;
         this.setData({busy: true, canControl: false, canWake: false, feedback: '正在发送指令…'});
         try {

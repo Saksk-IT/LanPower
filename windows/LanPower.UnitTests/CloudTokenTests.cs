@@ -11,6 +11,36 @@ namespace LanPower.UnitTests;
 public sealed class CloudTokenTests
 {
     [TestMethod]
+    public async Task DnsFailureBeforeSendingRefreshCanRetryWithoutReEnrollment()
+    {
+        var store = new MemoryStore();
+        using var handler = new RefreshHandler(store) { Failure = "dns" };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(() => session.GetAccessAsync(CancellationToken.None));
+        Assert.IsFalse(store.Saved!.RefreshPending);
+        Assert.IsNull(await session.GetCachedAccessAsync(CancellationToken.None));
+        handler.Failure = null;
+        var granted = await session.GetAccessAsync(CancellationToken.None);
+        Assert.AreEqual(2, handler.Requests);
+        Assert.AreEqual(granted, await session.GetCachedAccessAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task AlreadyCancelledRefreshDoesNotLeaveAnIntentOrSendARequest()
+    {
+        var store = new MemoryStore();
+        using var handler = new RefreshHandler(store);
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => session.GetAccessAsync(cancelled.Token));
+        Assert.IsFalse(store.Saved!.RefreshPending);
+        Assert.AreEqual(0, handler.Requests);
+    }
+
+    [TestMethod]
     public async Task ConcurrentRequestsRotateOnceAndUseTheNewIdentity()
     {
         var store = new MemoryStore();
@@ -159,6 +189,7 @@ public sealed class CloudTokenTests
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             Assert.AreEqual(new string('r', 43), body.RootElement.GetProperty("refresh_token").GetString());
             await Task.Delay(20, token);
+            if (Failure == "dns") throw new HttpRequestException(HttpRequestError.NameResolutionError, "test DNS failure");
             if (Failure == "lost") throw new HttpRequestException("test lost response");
             return new HttpResponseMessage(HttpStatusCode.OK)
             {

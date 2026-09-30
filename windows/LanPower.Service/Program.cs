@@ -60,7 +60,7 @@ app.MapGet("/api/status", (HttpContext context) =>
         Results.Json(new { ok = true, device = Environment.MachineName, state = "online" }) :
         Results.Json(new { error = "not paired" }, statusCode: 401));
 
-app.MapPost("/api/power", async (HttpContext context, PowerGate gate, PowerExecutor power) =>
+app.MapPost("/api/power", async (HttpContext context, PowerGate gate, CloudAgent cloud) =>
 {
     if (!config.IsAuthorized(context.Request.Headers.Authorization))
         return Results.Json(new { error = "not paired" }, statusCode: 401);
@@ -82,11 +82,7 @@ app.MapPost("/api/power", async (HttpContext context, PowerGate gate, PowerExecu
         return Results.Json(new { error = "unknown action" }, statusCode: 400);
     if (!gate.TryAccept())
         return Results.Json(new { error = "wait before sending another command" }, statusCode: 409);
-    _ = Task.Run(async () =>
-    {
-        await Task.Delay(1250);
-        power.Execute(action!);
-    });
+    _ = cloud.ExecutePowerAsync(action!);
     serviceLog.Write("已接收 LAN 电源命令：" + action);
     return Results.Json(new { ok = true, action }, statusCode: 202);
 });

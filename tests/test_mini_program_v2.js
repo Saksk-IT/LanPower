@@ -116,6 +116,75 @@ async function main() {
   await uncertain.refresh(); uncertain.action({currentTarget: {dataset: {action: 'restart'}}}); await tick();
   assert.match(uncertain.data.feedback, /未收到确认/);
   assert.equal(uncertainCalls.filter(c => c.method === 'POST').length, 1);
-  console.log('mini program v2 enrollment, token rotation, device selection, LAN First and Cloud Fallback: PASS');
+
+  // Switching to cellular invalidates an in-flight LAN response and follows Cloud.
+  const networkCalls = [];
+  let lanResponse, modal, cloudState = {...pc('a'), state: 'offline', cloud_agent: 'offline',
+    remote_control_available: false, wake_available: true};
+  const network = page(stored(), opts => {
+    networkCalls.push(opts);
+    if (opts.url.startsWith('http://')) lanResponse = opts;
+    else opts.success({statusCode: 200, data: [cloudState]});
+  });
+  global.wx.showModal = opts => {modal = opts;};
+  const pendingLan = network.refresh();
+  network.networkChanged({networkType: '5g', isConnected: true});
+  assert.equal(network.data.canControl, false);
+  lanResponse.success({statusCode: 200, data: {state: 'online'}});
+  await pendingLan; await tick();
+  assert.equal(network.route, 'cloud');
+  assert.equal(network.data.stateText, '离线 · Cloud');
+  assert.equal(network.data.canWake, true);
+  assert.equal(network.wakeRoute, 'cloud');
+  cloudState = {...pc('a'), state: 'transitioning'};
+  await network.refresh();
+  assert.equal(network.data.stateText, '正在执行电源操作');
+  assert.equal(network.data.canControl, false);
+  assert.equal(network.data.canWake, false);
+  cloudState = pc('a');
+  await network.refresh();
+  assert.equal(network.data.canControl, true);
+  network.action({currentTarget: {dataset: {action: 'shutdown'}}});
+  assert.ok(modal);
+  network.networkChanged({networkType: 'none', isConnected: false});
+  await modal.success({confirm: true}); await tick();
+  assert.equal(networkCalls.filter(c => c.method === 'POST').length, 0, 'Network change invalidates open power confirmation');
+  cloudState = {...pc('a'), state: 'offline', cloud_agent: 'offline', remote_control_available: false};
+  await network.refresh();
+  assert.equal(network.data.canWake, false, 'Cellular must not fall back to LAN WOL');
+  assert.equal(networkCalls.filter(c => c.url.startsWith('http://')).length, 1);
+  global.wx.request = opts => opts.fail({});
+  await network.refresh();
+  assert.equal(network.data.stateText, '状态未知');
+  assert.equal(network.data.canControl, false);
+  assert.equal(network.data.canWake, false);
+
+  // An old Cloud response cannot re-enable controls after a new network response.
+  let delayedResponse;
+  const stale = page(stored(), opts => {delayedResponse = opts;});
+  stale.networkType = '4g';
+  const pendingCloud = stale.refresh();
+  global.wx.request = opts => opts.success({statusCode: 200, data: [cloudState]});
+  stale.networkChanged({networkType: '5g', isConnected: true});
+  delayedResponse.success({statusCode: 200, data: [pc('a')]});
+  await pendingCloud; await tick();
+  assert.equal(stale.data.stateText, '离线 · Cloud');
+  assert.equal(stale.data.canControl, false);
+
+  let hiddenResponse, hiddenCalls = 0;
+  const hidden = page(stored(), opts => {hiddenCalls++; hiddenResponse = opts;});
+  hidden.networkType = '5g';
+  const pendingHidden = hidden.refresh();
+  hidden.refresh();
+  hidden.onHide();
+  hiddenResponse.success({statusCode: 200, data: [pc('a')]});
+  await pendingHidden; await tick();
+  assert.equal(hiddenCalls, 1, 'Hidden pages must not schedule a queued refresh');
+  assert.equal(hidden.data.canControl, false);
+  let removedListener;
+  global.wx.offNetworkStatusChange = listener => {removedListener = listener;};
+  hidden.onUnload();
+  assert.equal(removedListener, hidden.networkChanged);
+  console.log('mini program v2 enrollment, tokens, device selection, LAN/Cloud routing and network status synchronization: PASS');
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});
