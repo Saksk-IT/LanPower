@@ -63,6 +63,8 @@ dotnet run --project windows/LanPower.Desktop.Tests -c Release --no-build
 
 继续完成实际安装生命周期检查：使用保留的旧 Python 安装流程启动旧服务，再运行新版 Setup；原 LAN 配对密钥保持不变，旧开机任务在新版服务健康后移除，原 Cloud 授权恢复。解压便携包并实际安装后，服务仍从 Program Files 以 LocalSystem 运行，组件哈希与发布产物一致，已配对的 LAN 状态查询和 Cloud 连接通过。
 
-实际运行 Setup 卸载器，确认服务和安装的服务程序被移除，ProgramData 中的配置、加密凭据和命令记录哈希保持不变，日志目录保留。再次运行 Setup 后，原 LAN 配对继续可用，Cloud 自动恢复连接，安装组件哈希仍匹配。当前环境已恢复为 Setup 安装版本。
+实际运行 Setup 卸载器，确认服务和安装的服务程序被移除，ProgramData 中的配置、加密凭据和命令记录哈希保持不变，日志目录保留。再次运行 Setup 后，原 LAN 配对继续可用，Cloud 自动恢复连接，安装组件哈希仍匹配。此前验收结束时环境恢复为 Setup 安装版本。
+
+2026-09-30 按用户要求卸载本机旧 Windows 服务：使用已安装卸载程序完成卸载，`LanPowerService`、`LanPower LAN Only` 防火墙规则和 `C:\Program Files\LanPower` 已移除，`C:\ProgramData\LanPower` 数据目录保留。当前未同步远程仓库；后续如需使用桌面端，应重新安装 Setup 或便携包中的服务。
 
 本次首次安装由用户明确授权删除旧数据且不备份；后续旧版迁移使用仓库保留的 Python 分发程序重现实机升级。真实网卡变化和防火墙随地址变化仍待验收，真实电源动作由用户另行手动测试。
