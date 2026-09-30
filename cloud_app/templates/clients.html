@@ -1,26 +1,31 @@
 {% extends "base.html" %}
-{% block title %}已授权客户端{% endblock %}
+{% block title %}手机授权{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">访问</p><h1>已授权客户端</h1></div></div>
-<section class="card">
-  <h2>连接微信小程序</h2>
-  <p class="muted">为这部手机生成一次性二维码。扫码一次即可长期查看并控制你的电脑，直到你主动撤销授权。请使用最新版小程序。</p>
-  <form method="post" action="/clients/enroll" class="rename-form">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>手机名称<input name="name" maxlength="100" placeholder="我的手机" required></label>
-    <button class="primary">生成二维码</button>
-  </form>
-  {% if pairing %}
+<div class="page-heading"><div><p class="eyebrow">随身的控制入口</p><h1>手机授权</h1><p class="muted">连接微信小程序，在手机上查看和控制电脑。</p></div></div>
+<div class="two-column">
+<section class="card pairing-card"><div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('phone', 25) }}</span><div><span class="device-type">添加手机</span><h2>{{ '扫描二维码完成授权' if pairing else '连接微信小程序' }}</h2></div></div></div>
+{% if pairing %}
   <div class="pairing-qr" aria-label="小程序授权二维码">{{ pairing_svg }}</div>
-  <p>在小程序中选择“连接 Cloud”并扫码。二维码十分钟内有效，只能使用一次；重新生成后旧码失效。</p>
-  <p class="hint">请只用自己的手机扫描；二维码拥有你的设备控制权限。</p>
-  {% endif %}
+  <ol class="compact-steps"><li>在最新版小程序中选择“连接 Cloud”。</li><li>扫描上方二维码，完成后即可控制电脑。</li></ol>
+  <p class="notice">二维码十分钟内有效，只能使用一次。请只用自己的手机扫描。</p>
+  <a class="button-link secondary" href="/clients">已完成，查看授权手机 {{ icon('arrow', 16) }}</a>
+  <details class="advanced-options"><summary>二维码过期？重新生成</summary>
+{% else %}
+  <p class="muted">为手机取个方便识别的名称，然后生成授权二维码。</p>
+{% endif %}
+  <form method="post" action="/clients/enroll" class="login-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>手机名称<input name="name" maxlength="100" placeholder="例如：我的 iPhone" required autocomplete="off"></label>
+    <button type="submit" class="primary">{{ icon('plus', 18) }}{{ '重新生成二维码' if pairing else '生成授权二维码' }}</button>
+  </form>
+{% if pairing %}</details>{% endif %}
 </section>
+<aside class="guidance-panel"><span class="icon-tile">{{ icon('shield', 25) }}</span><h2>一次扫码，长期连接</h2><p>完成授权后，手机可持续使用。断网、重启或退出微信后，连接会自动恢复。</p><div class="guidance-point"><strong>每部手机，独立授权</strong><p>你可以随时撤销其中一部手机，不影响其他设备。</p></div><div class="guidance-point"><strong>局域网优先，外出也能用</strong><p>需要在家直连时，可在小程序内为电脑扫描局域网配对码。</p></div></aside>
+</div>
+<div class="section-heading"><h2>已授权手机 <span class="count">{{ clients | length }}</span></h2><span class="muted small">只保留你信任的手机</span></div>
 {% for client in clients %}
-<section class="card list-card"><div><h2>{{ client.name }}</h2><p class="muted">最近使用：{{ client.last_seen_at | relative_time }}</p><p class="muted">授权时版本：{{ client.version or '尚未上报' }}</p></div>
-<form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="确定移除此手机的 Cloud 控制权限？">
-  <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">移除客户端</button>
-</form></section>
-{% else %}<p class="muted">还没有授权的小程序。</p>{% endfor %}
-{% for client in legacy_clients %}<section class="card"><h2>{{ client.name }}</h2><p class="muted">旧版连接。扫描上方二维码可升级；旧凭据请在服务器的旧版配置中移除。</p></section>{% endfor %}
+<section class="card list-card"><div class="device-identity"><span class="icon-tile subtle">{{ icon('phone', 23) }}</span><div><h2>{{ client.name }}</h2><p class="hint">最近使用 {{ client.last_seen_at | relative_time }}<span class="text-divider">·</span>授权时版本：{{ client.version or '尚未上报' }}</p></div></div>
+<form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="撤销后，此手机将无法再通过 Cloud 控制电脑，需要重新扫码授权。" data-confirm-target="{{ client.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="danger-quiet">撤销授权</button></form></section>
+{% else %}<section class="card quiet-empty">{{ icon('phone', 24) }}<p>还没有授权手机，使用上方二维码开始连接。</p></section>{% endfor %}
+{% if legacy_clients %}<details class="help-details"><summary>旧版客户端连接（{{ legacy_clients | length }}）</summary>{% for client in legacy_clients %}<h3>{{ client.name }}</h3><p>扫描新二维码可升级为独立手机授权。旧凭据请在服务器的旧版配置中移除。</p>{% endfor %}</details>{% endif %}
 {% endblock %}

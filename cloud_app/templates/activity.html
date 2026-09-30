@@ -1,14 +1,11 @@
 {% extends "base.html" %}
 {% block title %}活动记录{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">记录</p><h1>活动记录</h1><p class="muted">这里只记录操作与所用连接方式，不显示任何配对密钥。</p></div></div>
-<section class="card"><h2>远程操作</h2>
-  {% if commands %}<div class="table-wrap"><table><thead><tr><th>动作</th><th>连接方式</th><th>结果</th><th>时间</th></tr></thead><tbody>
-  {% for command in commands %}<tr><td>{{ command.action | action_label }}</td><td>{{ command.route | route_label }}</td><td>{{ command.state | state_label }}</td><td>{{ command.issued_at | relative_time }}</td></tr>{% endfor %}
-  </tbody></table></div>{% else %}<p class="muted">还没有操作记录。</p>{% endif %}
+<div class="page-heading"><div><p class="eyebrow">操作可追溯</p><h1>活动记录</h1><p class="muted">查看远程操作结果与账户活动。</p></div></div>
+<section class="card"><div class="card-heading"><h2>{{ icon('activity', 20) }}远程操作</h2><span class="muted small">最近 {{ commands | length }} 条</span></div>
+{% if commands %}<div class="table-wrap"><table><thead><tr><th scope="col">电脑</th><th scope="col">动作</th><th scope="col">连接方式</th><th scope="col">结果</th><th scope="col">时间</th></tr></thead><tbody>{% for command in commands %}<tr><td>{{ device_names.get(command.target_device_id, '已移除电脑') }}</td><td><strong>{{ command.action | action_label }}</strong></td><td>{{ command.route | route_label }}</td><td><span class="result-status {{ command.state }}">{{ command.state | state_label }}</span></td><td class="muted">{{ command.issued_at | relative_time }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="quiet-empty">{{ icon('clock', 25) }}<p>还没有远程操作。发出指令后，可在这里查看结果。</p></div>{% endif %}
 </section>
-<section class="card"><h2>账户活动</h2>
-  {% if events %}<ul class="timeline">{% for event in events %}<li><strong>{{ event.event | event_label }}</strong><span>{{ event.created_at | relative_time }}</span></li>{% endfor %}</ul>
-  {% else %}<p class="muted">还没有账户活动。</p>{% endif %}
+<section class="card"><div class="card-heading"><h2>{{ icon('shield', 20) }}账户活动</h2><span class="muted small">登录、授权与设备管理</span></div>
+{% if events %}<ul class="timeline">{% for event in events %}<li><strong>{{ event.event | event_label }}</strong><span>{{ event.created_at | relative_time }}</span></li>{% endfor %}</ul>{% else %}<div class="quiet-empty">{{ icon('shield', 25) }}<p>还没有账户活动。</p></div>{% endif %}
 </section>
 {% endblock %}

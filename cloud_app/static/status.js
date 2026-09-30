@@ -11,6 +11,7 @@
   };
 
   function renderCard(card, status) {
+    card.dataset.state = status.state;
     const known = ['online', 'offline', 'transitioning'].includes(status.state);
     const canControl = known && status.state === 'online' && !!status.remote_control_available;
     setText(card, 'badge', stateLabels[status.state] || stateLabels.unknown);
@@ -24,9 +25,19 @@
       ? '正在执行电源操作，等待状态更新。' : status.cloud_agent === 'online'
         ? 'Cloud 已连接，可直接远程控制。' : canControl ? '通过唤醒网关连接。' : status.state === 'online'
           ? '电脑在线，Cloud 未连接且未启用网关备用控制。' : 'Cloud 未连接。';
-    setText(card, 'connection', connection + (known ? status.wake_available ? ' 远程唤醒可用。' : ' 远程唤醒不可用。' : ''));
+    setText(card, 'connection', connection);
+    setText(card, 'wake-state', !known ? '状态未知' : status.wake_available ? '已就绪' : status.wake_unavailable_reason || '尚未配置');
+    card.querySelectorAll('form input[name="action"]').forEach(input => {
+      if (!['wake', 'sleep'].includes(input.value)) return;
+      const button = input.form.querySelector('button[type="submit"]');
+      if (!button.classList) return;
+      const primary = input.value === 'wake' ? status.state === 'offline' : status.state !== 'offline';
+      button.classList.toggle('primary', primary);
+      button.classList.toggle('secondary', !primary);
+    });
     const hint = status.state === 'transitioning' ? '等待电脑完成电源操作。' :
-      known ? '电脑当前不可远程控制。' : '状态尚未确认，暂时不能发送电源指令。';
+      known ? status.state === 'offline' && status.wake_available ? '电脑已离线，可以使用远程开机。' :
+        '电脑当前不可远程控制。' : '状态尚未确认，暂时不能发送电源指令。';
     setText(card, 'control-hint', hint);
     card.querySelectorAll('[data-status-control-hint]').forEach(element => { element.hidden = canControl; });
     setText(card, 'wake-hint', known ? `${status.wake_unavailable_reason || '远程唤醒不可用'}，远程开机不可用。` : '等待同步唤醒网关状态。');
@@ -74,12 +85,14 @@
         const [type, state] = element.dataset.statusSummary.split('-');
         element.textContent = devices.filter(device => device.device_type === type && device.state === state).length;
       });
-      message.textContent = '状态已同步，每 5 秒自动更新。';
+      message.textContent = '状态已同步 · 每 5 秒更新';
+      if (message.dataset) message.dataset.state = 'synced';
     } catch {
       if (requestId !== serial || document.hidden) return;
       cards.forEach(card => renderCard(card, {state: 'unknown'}));
       document.querySelectorAll('[data-status-summary]').forEach(element => { element.textContent = '—'; });
       message.textContent = '暂时无法同步状态，正在重试。';
+      if (message.dataset) message.dataset.state = 'error';
     } finally {
       clearTimeout(deadline);
       if (requestId === serial && !document.hidden) timer = setTimeout(sync, 5000);

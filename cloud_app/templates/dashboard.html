@@ -1,35 +1,45 @@
 {% extends "base.html" %}
 {% block title %}总览{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">总览</p><h1>我的设备</h1><p class="muted">在这里查看电脑与唤醒网关的连接状态。</p></div><a class="button-link" href="/devices/enroll">连接 Windows 电脑</a></div>
-<p class="hint" data-status-sync role="status">每 5 秒自动同步状态。</p>
-<div class="summary-grid">
-  <div class="summary"><span>在线的 Windows 电脑</span><strong data-status-summary="windows-online">{{ statuses.values() | selectattr('device_type', 'equalto', 'windows') | selectattr('state', 'equalto', 'online') | list | length }}</strong></div>
-  <div class="summary"><span>离线的 Windows 电脑</span><strong data-status-summary="windows-offline">{{ statuses.values() | selectattr('device_type', 'equalto', 'windows') | selectattr('state', 'equalto', 'offline') | list | length }}</strong></div>
-  <div class="summary"><span>在线的唤醒网关</span><strong data-status-summary="gateway-online">{{ statuses.values() | selectattr('device_type', 'equalto', 'gateway') | selectattr('state', 'equalto', 'online') | list | length }}</strong></div>
-  <div class="summary"><span>Cloud 版本</span><strong>{{ version }}</strong></div>
-</div>
-{% for device in devices if device.device_type == 'windows' %}
-{% set current = statuses[device.id] %}
-<section class="card device-card" data-status-id="{{ device.id }}">
-  <div class="card-heading"><div><p class="eyebrow">Windows</p><h2 data-status-name>{{ device.name }}</h2></div><span data-status-badge class="badge {{ 'good' if current.state == 'online' else '' }}">{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span></div>
-  <p class="muted" data-status-connection>{{ '正在执行电源操作，等待状态更新。' if current.state == 'transitioning' else 'Cloud 已连接，可直接远程控制。' if current.cloud_agent == 'online' else '通过唤醒网关连接。' if current.remote_control_available else 'Cloud 未连接。' }} {{ '远程唤醒可用。' if current.wake_available else '远程唤醒不可用。' }}</p>
-  <div class="controls">
-    {% for action, label in [('status','查看状态'),('sleep','睡眠'),('hibernate','休眠'),('restart','重启'),('shutdown','关机'),('wake','开机')] %}
-    {% set can_run = current.wake_available and current.state == 'offline' if action == 'wake' else current.remote_control_available %}
-    <form method="post" action="/devices/{{ device.id }}/commands" data-confirm="{{ label if action in ['sleep','hibernate','restart','shutdown','wake'] else '' }}">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <input type="hidden" name="action" value="{{ action }}">
-      <button type="submit" class="{{ 'danger' if action == 'shutdown' else 'secondary' if action == 'status' else 'primary' }}" {% if not can_run %}disabled{% endif %}>{{ label }}</button>
-    </form>
-    {% endfor %}
+{% set computers = devices | selectattr('device_type', 'equalto', 'windows') | list %}
+<div class="page-heading"><div><p class="eyebrow">你的控制中心</p><h1>一切，尽在掌握。</h1><p class="muted">查看连接状态，随时管理电脑电源。</p></div><a class="button-link" href="/enroll">{{ icon('plus', 18) }}连接电脑</a></div>
+<section class="overview-banner" aria-label="设备概况">
+  <div class="overview-intro"><span class="banner-symbol">{{ icon('cloud', 32) }}</span><div><h2>你的设备，始终在这里</h2><p>在线时远程控制，离线时通过网关唤醒。</p></div></div>
+  <div class="summary-grid">
+    <div class="summary"><span>在线电脑</span><strong data-status-summary="windows-online">{{ statuses.values() | selectattr('device_type', 'equalto', 'windows') | selectattr('state', 'equalto', 'online') | list | length }}</strong><small>可以开始工作</small></div>
+    <div class="summary"><span>离线电脑</span><strong data-status-summary="windows-offline">{{ statuses.values() | selectattr('device_type', 'equalto', 'windows') | selectattr('state', 'equalto', 'offline') | list | length }}</strong><small>等待下次连接</small></div>
+    <div class="summary"><span>在线唤醒网关</span><strong data-status-summary="gateway-online">{{ statuses.values() | selectattr('device_type', 'equalto', 'gateway') | selectattr('state', 'equalto', 'online') | list | length }}</strong><small>为远程开机待命</small></div>
   </div>
-  <p class="hint" data-status-control-hint {% if current.remote_control_available %}hidden{% endif %}>{{ '等待电脑完成电源操作。' if current.state == 'transitioning' else '电脑当前不可远程控制。' }}</p>
-  <p class="hint" data-status-wake-hint {% if current.wake_available %}hidden{% endif %}>{{ current.wake_unavailable_reason }}，远程开机不可用。</p>
+</section>
+<div class="section-heading"><h2>我的设备 <span class="count">{{ computers | length }}</span></h2><p class="sync-status" data-status-sync role="status">每 5 秒自动同步状态</p></div>
+{% if computers %}
+<div class="device-grid">
+{% for device in computers %}{% set current = statuses[device.id] %}
+<section class="card device-card" data-status-id="{{ device.id }}" data-state="{{ current.state }}">
+  <div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('computer', 25) }}</span><div><span class="device-type">Windows 电脑</span><h2 data-status-name>{{ device.name }}</h2></div></div><span data-status-badge class="badge {{ 'good' if current.state == 'online' else '' }}">{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span></div>
+  <p class="connection-copy" data-status-connection>{{ '正在执行电源操作，等待状态更新。' if current.state == 'transitioning' else 'Cloud 已连接，可直接远程控制。' if current.cloud_agent == 'online' else '通过唤醒网关连接。' if current.remote_control_available else 'Cloud 未连接。' }}</p>
+  <div class="device-meta"><span>{{ icon('gateway', 16) }}远程唤醒</span><strong data-status-wake-state>{{ '已就绪' if current.wake_available else current.wake_unavailable_reason }}</strong></div>
+  <div class="controls">
+    {% for action, label, glyph in [('wake','开机','power'),('sleep','睡眠','moon')] %}
+    {% set can_run = current.wake_available and current.state == 'offline' if action == 'wake' else current.state == 'online' and current.remote_control_available %}
+    <form method="post" action="/devices/{{ device.id }}/commands" data-confirm="{{ label }}" data-confirm-target="{{ device.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="{{ action }}"><button type="submit" class="{{ 'primary' if (action == 'wake' and current.state == 'offline') or (action == 'sleep' and current.state != 'offline') else 'secondary' }}" {% if not can_run %}disabled{% endif %}>{{ icon(glyph, 17) }}{{ label }}</button></form>
+    {% endfor %}
+    <details class="more-actions"><summary class="secondary">{{ icon('more', 18) }}更多操作</summary><div class="action-menu">
+      {% for action, label in [('hibernate','休眠'),('restart','重启'),('shutdown','关机')] %}
+      <form method="post" action="/devices/{{ device.id }}/commands" data-confirm="{{ label }}" data-confirm-target="{{ device.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="{{ action }}"><button type="submit" class="{{ 'danger-text' if action == 'shutdown' else '' }}" {% if not current.remote_control_available or current.state != 'online' %}disabled{% endif %}>{{ label }}</button></form>
+      {% endfor %}
+    </div></details>
+  </div>
+  <p class="hint" data-status-control-hint {% if current.remote_control_available %}hidden{% endif %}>{{ '等待电脑完成电源操作。' if current.state == 'transitioning' else '电脑离线时，可用操作仅限已配置的远程开机。' }}</p>
+  <div class="card-footer"><span>最近连接 · <span data-status-seen>{{ device.last_seen_at | relative_time }}</span></span><a href="/devices#device-{{ device.id }}">设备详情 {{ icon('arrow', 15) }}</a></div>
 </section>
 {% endfor %}
-<section class="card"><div class="card-heading"><h2>最近操作</h2><a href="/activity">查看全部</a></div>
-  {% if commands %}<ul class="timeline">{% for command in commands[:5] %}<li><strong>{{ command.action | action_label }}</strong><span>{{ command.route | route_label }} · {{ command.state | state_label }}</span></li>{% endfor %}</ul>
-  {% else %}<p class="muted">还没有远程操作记录。</p>{% endif %}
+</div>
+{% else %}
+<section class="card empty-state"><span class="empty-icon">{{ icon('computer', 34) }}</span><h2>从连接第一台电脑开始</h2><p>在电脑上打开 LanPower，连接 Cloud 后输入配对码。<br>电脑在线后，即可在这里管理电源。</p><a class="button-link" href="/enroll">连接第一台电脑 {{ icon('arrow', 18) }}</a><span class="hint">在线控制无需安装唤醒网关</span></section>
+{% endif %}
+<section class="card activity-preview"><div class="card-heading"><h2>{{ icon('clock', 19) }}最近操作</h2><a href="/activity">全部记录 {{ icon('arrow', 15) }}</a></div>
+{% if commands %}<ul class="timeline">{% for command in commands[:4] %}<li><div><strong>{{ command.action | action_label }}</strong><span>{{ device_names.get(command.target_device_id, '已移除电脑') }} · {{ command.route | route_label }} · {{ command.issued_at | relative_time }}</span></div><span class="result-status {{ command.state }}">{{ command.state | state_label }}</span></li>{% endfor %}</ul>
+{% else %}<div class="quiet-empty">{{ icon('activity', 22) }}<p>还没有远程操作，下一次操作的结果会显示在这里。</p></div>{% endif %}
 </section>
 {% endblock %}

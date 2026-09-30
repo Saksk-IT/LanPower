@@ -1,9 +1,72 @@
+const confirmation = document.querySelector('[data-confirm-dialog]');
+const approvedForms = new WeakSet();
+let pendingConfirmation;
 document.querySelectorAll('form[data-confirm], form[data-confirm-message]').forEach((form) => {
   form.addEventListener('submit', (event) => {
+    if (approvedForms.delete(form)) return;
     const action = form.dataset.confirm;
     const message = form.dataset.confirmMessage || (action ? `确定要让电脑${action}吗？` : '');
-    if (message && !window.confirm(message)) event.preventDefault();
+    if (!message) return;
+    if (!confirmation?.showModal) {
+      if (!window.confirm(message)) event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    pendingConfirmation = {form, submitter: event.submitter};
+    confirmation.querySelector('#confirm-title').textContent = form.dataset.confirmTarget || '确认操作';
+    confirmation.querySelector('#confirm-description').textContent = message;
+    confirmation.querySelector('[data-confirm-accept]').textContent = action ? `确认${action}` : '确认继续';
+    confirmation.showModal();
   });
+});
+confirmation?.querySelector('[data-confirm-cancel]').addEventListener('click', () => confirmation.close());
+confirmation?.addEventListener('close', () => { pendingConfirmation = null; });
+confirmation?.querySelector('[data-confirm-accept]').addEventListener('click', () => {
+  const pending = pendingConfirmation;
+  pendingConfirmation = null;
+  confirmation.close();
+  if (!pending || pending.submitter?.disabled) return;
+  approvedForms.add(pending.form);
+  pending.form.requestSubmit(pending.submitter || undefined);
+});
+
+let toastTimer;
+document.querySelectorAll('[data-copy]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const input = document.getElementById(button.dataset.copy);
+    const toast = document.querySelector('[data-toast]');
+    try {
+      await navigator.clipboard.writeText(input.value);
+      toast.textContent = '已复制';
+    } catch {
+      input.focus();
+      input.select();
+      toast.textContent = '已选中内容，请手动复制';
+    }
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
+  });
+});
+
+document.addEventListener('click', event => {
+  document.querySelectorAll('.more-actions[open]').forEach(menu => {
+    if (!menu.contains(event.target)) menu.open = false;
+  });
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') document.querySelectorAll('.more-actions[open]').forEach(menu => {
+    menu.open = false;
+    menu.querySelector('summary').focus();
+  });
+});
+
+document.querySelectorAll('.gateway-link-form select').forEach(select => {
+  const updateBackup = () => {
+    select.form.querySelector('[name="backup"]').checked = select.selectedOptions[0]?.dataset.backup === 'true';
+  };
+  select.addEventListener('change', updateBackup);
+  updateBackup();
 });
 
 const decodeBase64url = (value) => {

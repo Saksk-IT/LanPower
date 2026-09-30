@@ -1,3 +1,4 @@
+{% from "components.html" import icon %}
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -5,20 +6,26 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="lp-auth" content="{{ auth_token }}">
   <title>登录 · LanPower</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script defer src="/static/app.js"></script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v={{ version }}">
+  <script defer src="/static/app.js?v={{ version }}"></script>
 </head>
 <body class="login-body">
+  <div class="auth-shell">
+  <aside class="auth-story">
+    <div class="brand"><span class="brand-icon">{{ icon('power', 24) }}</span><span>LanPower<small>让连接，触手可及</small></span></div>
+    <div><h2>无论身在何处，<br>电脑就在手边。</h2><p>一个轻巧的控制台，连接家中的每一台电脑。</p><div class="auth-illustration" aria-hidden="true"><span>{{ icon('computer', 30) }}</span>{{ icon('arrow', 22) }}<span>{{ icon('cloud', 30) }}</span>{{ icon('arrow', 22) }}<span>{{ icon('phone', 28) }}</span></div></div>
+    <small>为你的设备而生 · Cloud {{ version }}</small>
+  </aside>
   <main class="login-card">
-    <div class="login-logo">↯</div>
-    <p class="eyebrow">LanPower Cloud</p>
+    <p class="eyebrow">你的个人控制台</p>
     <h1>欢迎回来</h1>
     <p class="muted">登录后查看和控制自己的设备。</p>
     <p class="error" role="alert" data-auth-error hidden></p>
     {% if passkey_enabled %}
     <form class="login-form" data-auth="passkey-login">
       <p class="muted">使用指纹、面容、Windows Hello 或安全密钥。</p>
-      <button type="submit" class="primary">使用 Passkey 登录</button>
+      <button type="submit" class="primary">{{ icon('key', 18) }}使用 Passkey 登录</button>
     </form>
     <details class="auth-alternative">
       <summary>无法使用 Passkey？使用恢复码</summary>
@@ -43,5 +50,6 @@
     {% endif %}
     <p class="login-foot">局域网控制可以独立使用，不需要登录 Cloud。</p>
   </main>
+  </div>
 </body>
 </html>

@@ -1,8 +1,12 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-Cloud“已授权客户端”支持为每部手机生成一次性二维码，并逐个撤销。Cloud `1.5.1` 配合小程序 `2.0.2` 支持一次扫码长期授权：访问凭据每 15 分钟续期，手机长期凭据不因断网、响应丢失、重启或长期闲置过期。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。升级顺序和旧凭据恢复边界见 [小程序 v2](../docs/mini-program-v2.md#长期授权升级)。
+Cloud“手机授权”支持为每部手机生成一次性二维码，并逐个撤销。Cloud `1.6.0` 配合小程序 `2.0.2` 支持一次扫码长期授权：访问凭据每 15 分钟续期，手机长期凭据不因断网、响应丢失、重启或长期闲置过期。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。升级顺序和旧凭据恢复边界见 [小程序 v2](../docs/mini-program-v2.md#长期授权升级)。
 
 Cloud Web 是浏览器控制端，默认使用 Passkey 登录。Windows 应用可通过一次性配对码连接 Cloud，之后定期上报状态、领取命令并回传结果。在线 Windows 可直接接收状态、睡眠、休眠、重启和关机命令，无需 Wake Gateway。Cloud 保留旧 Gateway 与小程序使用的 `/api/v1/*` 协议；启用旧网关配置后继续兼容。Cloud 从不接收 Windows LAN 配对密钥。
+
+## 控制台分工
+
+Cloud 1.6.0 的总览负责电源控制，“我的电脑”负责电脑详情与管理，“远程唤醒”负责网关和关联，“手机授权”负责扫码与撤销。服务信息并入设置；旧链接兼容跳转。连接步骤、界面行为和验证记录见 [Cloud 界面指南](../docs/cloud-ui.md)。
 
 ## 本地验证
 
@@ -21,7 +25,7 @@ python -m venv cloud_app/.venv
 1. 新安装将 `deploy/docker/.env.example` 复制为 `deploy/docker/.env`，设置实际 `LANPOWER_DOMAIN`；`LANPOWER_PUBLIC_URL` 随之生成。已有安装保留原 `.env` 和数据挂载。新安装无需设置管理员密码。`.env`、`private/`、`data/` 和 `backups/` 不应提交。
 2. 在 `deploy/docker/` 运行 `docker compose up -d --build`。新示例默认启用 Caddy 和 Cloud 数据卷；已有 `./data` 目录需保持 UID 10001 可写。应用入口只绑定宿主机 `127.0.0.1:8765`；公网 HTTPS 由 Caddy 提供。已有反向代理时将 `COMPOSE_PROFILES` 留空。不要把 `8765`、Windows `48211` 或路由器 SSH 直接暴露到公网。
 3. 检查本机 `http://127.0.0.1:8765/healthz`。在服务器运行 `docker compose exec cloud cat /var/lib/lanpower-cloud/setup-code` 读取初始化验证码，并在自己的 HTTPS 地址打开 `/setup`。填入验证码，按浏览器提示创建管理员 `admin` 的 Passkey，保存随后显示的 10 个恢复码，再进入控制台。验证码不会写入应用日志；初始化完成后会删除验证码文件并永久关闭 `/setup`，重启也不会重新开放。
-4. 在 Windows 应用中填写 Cloud 地址并点击“连接 Cloud”，电脑将显示短配对码。打开 Cloud 的 `/enroll`（也可从“连接 Windows 电脑”进入），输入短码、核对设备名称并允许连接。设备在线后可在网页中直接控制。旧版 Windows 仍可使用网页生成的一次性长配对码。
+4. 在 Windows 应用中填写 Cloud 地址并点击“连接 Cloud”，电脑将显示短配对码。打开 Cloud 的 `/enroll`（也可从“连接电脑”进入），输入短码、核对设备名称并允许连接。设备在线后可在网页中直接控制。旧版 Windows 仍可使用网页生成的一次性长配对码。
 
 已有 Gateway 的部署额外使用 `deploy/docker/compose.legacy.yml`：把旧 `cloud.json` 放到 `deploy/docker/private/cloud.json`，其中 `database` 路径为 `/var/lib/lanpower-cloud/relay.db`；将旧 `relay.db` 保留在 `deploy/docker/data/relay.db`。确保 `private/cloud.json` 对容器 UID 10001 可读且权限为 `0600`，然后运行：
 
@@ -49,7 +53,7 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 设备按返回的 `interval` 调用 `POST /api/v2/enroll/token`，请求体为 `{"device_code":"..."}`。未批准时返回 `authorization_pending`，过快轮询返回 `slow_down`，拒绝或过期分别返回 `access_denied`、`expired_token`。批准后仅能兑换一次独立设备凭据；短配对码不能兑换凭据。`POST /api/v2/devices/token` 为 Windows 和网关提供统一刷新入口，Windows 原 `/api/v2/windows/token` 仍兼容。网关凭据不能调用 Windows 协议。
 
-“我的设备”中的“移除设备”会撤销该设备及其所有会话。批准、拒绝、连接和撤销均记录审计。旧版网关使用共享配置，需由部署者在服务器上移除其配置。
+“我的电脑”或“远程唤醒”的“名称与管理”中的“移除设备”会撤销该设备及其所有会话。批准、拒绝、连接和撤销均记录审计。旧版网关使用共享配置，需由部署者在服务器上移除其配置。
 
 已知设备或客户端凭据过期、撤销或身份校验失败时，活动页记录授权失败；五分钟内重复失败会合并，未知凭据不会被归到请求者指定的账户。设备与旧手机轮换接口的旧凭据重用仍会撤销会话并记录异常；新版手机的 `/api/v2/clients/renew` 保留长期凭据，允许重试，不触发重用撤销。记录中不保存 Token、授权头或其哈希，详见 [认证与授权](../docs/authentication-v2.md)。
 
@@ -61,18 +65,18 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 ## Wake Gateway v2
 
-注册网关后，在“唤醒网关”页面选择电脑，点击“使用这个网关”。桌面入口会通过 `?computer=` 预选本机，服务器仅接受当前账户的电脑。新版网关自动从该电脑的局域网接口获取并保存唤醒信息，网页显示配置进度和失败原因，无需另填本地配置；仅做 WOL 无需 Windows LAN Token。启用备用控制时，仍需手工配置 LAN 凭据，Cloud 关联与网关本地 `backup_relay` 必须同时允许，且网关报告局域网电脑在线。Windows 云端在线时始终优先 `windows_direct`，离线唤醒走 `wake_gateway`，备用控制走 `gateway_relay`。多网关关联会选择满足条件的在线网关。
+注册网关后，在“远程唤醒”页面选择电脑，点击“使用这个网关”。桌面入口会通过 `?computer=` 预选本机，服务器仅接受当前账户的电脑。新版网关自动从该电脑的局域网接口获取并保存唤醒信息，网页显示配置进度和失败原因，无需另填本地配置；仅做 WOL 无需 Windows LAN Token。启用备用控制时，仍需手工配置 LAN 凭据，Cloud 关联与网关本地 `backup_relay` 必须同时允许，且网关报告局域网电脑在线。Windows 云端在线时始终优先 `windows_direct`，离线唤醒走 `wake_gateway`，备用控制走 `gateway_relay`。多网关关联会选择满足条件的在线网关。
 
 Windows 心跳响应以 `wake_setup_protocol: 1` 协商自动配置；后续心跳的 `wake_profile` 只携带短效只读票据、端口及过期时间。网关通过 `POST /api/v2/gateway/wake-setup` 领取同账户已关联电脑的票据、上报配置结果。MAC、广播地址仍由网关直接从局域网读取，LAN Token 不参与此过程。网页、普通状态 API 与审计不暴露票据；未持久保存或只有配置结果而没有网关能力心跳时，不开放开机按钮。旧客户端继续兼容，界面会提示升级对应组件。
 
 网关使用 `/api/v2/gateway/heartbeat`、`commands`、`results`，不能调用 Windows 协议。命令同时绑定网关和 Windows，45 秒有效；轮询原子领取，重试结果保持幂等。移除设备或修改关联会取消未完成队列；已经送达的电源动作无法撤回。被移除的 Windows 不再计入网关状态，其余电脑仍可用。
 
-安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。此前自动配置更新后 Cloud 共 108 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离、授权失败审计、客户端版本迁移、状态同步、票据隔离及自动配置流程；网页关联和设备详情已在桌面和手机宽度验证。当前 `/healthz` 返回 Cloud 版本 `1.5.1` 与协议版本 `2`，长期授权修复的本地验证见 [小程序 v2](../docs/mini-program-v2.md#本地验证2026-09-30)。
+安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。此前自动配置更新后 Cloud 共 108 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离、授权失败审计、客户端版本迁移、状态同步、票据隔离及自动配置流程；网页关联和设备详情已在桌面和手机宽度验证。当前 `/healthz` 返回 Cloud 版本 `1.6.0` 与协议版本 `2`，长期授权修复的本地验证见 [小程序 v2](../docs/mini-program-v2.md#本地验证2026-09-30)。
 
 Windows 状态上报的响应额外提供该电脑的 `wake_gateway` 和 `wake_available`，用于桌面端显示实际连接情况；不会暴露其他电脑或设备凭据。设备列表提供版本、最近连接、局域网地址和系统唤醒能力，网页在开机不可用时区分未配置网关、网关离线和网关尚未配置电脑。
 
 ## 状态同步
 
-总览、我的设备和唤醒网关页每 5 秒自动更新状态，失败时显示“状态未知”并禁用远程电源按钮。Windows 每 10 秒独立上报心跳，新服务失联 35 秒后判定直连离线；旧服务仍按 75 秒处理。非局域网模式的小程序采用同一 Cloud 设备状态，网络切换后的旧响应不能覆盖新结果。
+总览、我的电脑和远程唤醒页每 5 秒自动更新状态，失败时显示“状态未知”并禁用远程电源按钮。Windows 每 10 秒独立上报心跳，新服务失联 35 秒后判定直连离线；旧服务仍按 75 秒处理。非局域网模式的小程序采用同一 Cloud 设备状态，网络切换后的旧响应不能覆盖新结果。
 
-电脑可由有效的 Windows 心跳或网关局域网观察确认为在线，备用控制仍需单独授权。已上报的电源过渡或离线状态不会被网关的旧观察覆盖。最新 97 项 Cloud 测试及网页状态脚本回归通过，升级顺序、协议兼容和验收边界见 [三端状态同步](../docs/status-sync.md)。
+电脑可由有效的 Windows 心跳或网关局域网观察确认为在线，备用控制仍需单独授权。已上报的电源过渡或离线状态不会被网关的旧观察覆盖。状态同步功能引入时的 97 项 Cloud 测试及网页状态脚本回归通过；Cloud `1.6.0` 更新后共 119 项测试通过，升级顺序、协议兼容和验收边界见 [三端状态同步](../docs/status-sync.md) 与 [界面指南](../docs/cloud-ui.md)。

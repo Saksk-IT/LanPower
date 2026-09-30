@@ -1,18 +1,8 @@
 {% extends "base.html" %}
-{% block title %}连接 Windows 电脑{% endblock %}
+{% block title %}旧版 Windows 配对{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">连接设备</p><h1>连接 Windows 电脑</h1></div></div>
-<section class="card">
-  <h2>从电脑发起连接</h2>
-  <p>在 Windows 应用中填写此 Cloud 地址，点击“连接 Cloud”。然后在这里核对电脑显示的短配对码并批准连接。</p>
-  <p>Cloud 地址：<strong>{{ public_url }}</strong></p>
-  <a class="button-link" href="/enroll">输入设备配对码</a>
-</section>
-<section class="card">
-  <h2>旧版 Windows 配对</h2>
-  <p>在电脑上打开 LanPower，在 Cloud 连接中输入此 Cloud 地址和一次性配对码。配对码十分钟内有效，只能使用一次。</p>
-  <p>Cloud 地址：<strong>{{ public_url }}</strong></p>
-  {% if code %}<p>一次性配对码：<strong class="pair-code">{{ code }}</strong></p>{% endif %}
-  <form method="post" action="/devices/enroll"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">{{ '重新生成配对码' if code else '生成配对码' }}</button></form>
-</section>
+<div class="page-heading"><div><p class="eyebrow">兼容连接</p><h1>旧版 Windows 配对</h1><p class="muted">在旧版 Windows 应用中填写下面的地址和一次性配对码。</p></div><a class="back-link" href="/enroll">返回新版连接方式</a></div>
+<section class="card narrow-card"><label class="field-label" for="cloud-address">Cloud 地址</label><div class="copy-field"><input id="cloud-address" value="{{ public_url }}" readonly><button type="button" class="secondary" data-copy="cloud-address">复制</button></div>
+{% if code %}<label class="field-label" for="legacy-code">一次性配对码</label><div class="copy-field"><input id="legacy-code" value="{{ code }}" readonly><button type="button" class="secondary" data-copy="legacy-code">复制</button></div>{% endif %}
+<p class="hint">十分钟内有效，只能使用一次。请只在自己的电脑上输入。</p><form method="post" action="/devices/enroll" class="controls"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="secondary">{{ '重新生成配对码' if code else '生成配对码' }}</button><a class="button-link" href="/devices">查看我的电脑</a></form></section>
 {% endblock %}

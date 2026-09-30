@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 {% block title %}操作结果{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">操作结果</p><h1 id="command-title">{{ '命令已发送' if pending else '命令已完成' if success else '操作未完成' }}</h1></div></div>
-<section class="card result-card" {% if command_id %}data-command-id="{{ command_id }}"{% endif %}>
-  <p>动作：<strong>{{ action | action_label }}</strong></p>
-  {% if route %}<p>连接方式：<strong>{{ route | route_label }}</strong></p>{% endif %}
-  {% if pending %}<p id="command-progress" class="muted">正在等待电脑确认。</p>{% elif message %}<p class="muted">{{ message }}</p>{% endif %}
-  <a class="button-link" href="/dashboard">返回总览</a>
-</section>
+<div class="page-heading"><div><p class="eyebrow">操作反馈</p><h1 id="command-title">{{ '命令已发送' if pending else '命令已完成' if success else '操作未完成' }}</h1></div></div>
+<section class="card result-card narrow-card" {% if command_id and pending %}data-command-id="{{ command_id }}"{% endif %}><span class="icon-tile">{{ icon('clock' if pending else 'check' if success else 'activity', 28) }}</span>
+<dl class="fact-grid"><div><dt>执行动作</dt><dd>{{ action | action_label }}</dd></div>{% if route %}<div><dt>连接方式</dt><dd>{{ route | route_label }}</dd></div>{% endif %}</dl>
+{% if pending %}<p id="command-progress" class="notice" role="status">正在等待电脑确认，请稍候。</p>{% elif message %}<p class="notice">{{ message }}</p>{% else %}<p class="notice">设备已收到操作结果。</p>{% endif %}
+<div class="controls"><a class="button-link" href="/dashboard">返回总览 {{ icon('arrow', 17) }}</a><a class="button-link secondary" href="/activity">查看活动记录</a></div></section>
 {% endblock %}

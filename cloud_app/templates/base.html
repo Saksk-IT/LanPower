@@ -1,36 +1,53 @@
+{% from "components.html" import icon %}
+{% set gateway_enrollment = page == 'approve' and (request.query_params.get('type') == 'gateway' or (device and device.device_type == 'gateway')) %}
+{% set nav_page = 'gateways' if gateway_enrollment else 'devices' if page in ['enroll', 'approve'] else 'dashboard' if page == 'result' else page %}
+{% set page_names = {'dashboard':'总览', 'devices':'我的电脑', 'gateways':'远程唤醒', 'clients':'手机授权', 'activity':'活动记录', 'settings':'设置'} %}
 <!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="lp-csrf" content="{{ csrf }}">
-  <title>{% block title %}LanPower{% endblock %} · LanPower</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script defer src="/static/app.js"></script>
-  <script defer src="/static/status.js"></script>
+  <meta name="theme-color" content="#f5f7f9">
+  <title>{% block title %}控制台{% endblock %} · LanPower</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v={{ version }}">
+  <script defer src="/static/app.js?v={{ version }}"></script>
+  <script defer src="/static/status.js?v={{ version }}"></script>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">跳到主要内容</a>
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="/dashboard"><span class="brand-icon">↯</span><span>LanPower<small>电源管理</small></span></a>
+      <a class="brand" href="/dashboard"><span class="brand-icon">{{ icon('power', 24) }}</span><span>LanPower<small>让连接，触手可及</small></span></a>
       <nav aria-label="主要导航">
-        <a class="{{ 'active' if page == 'dashboard' else '' }}" href="/dashboard">总览</a>
-        <a class="{{ 'active' if page == 'devices' else '' }}" href="/devices">我的设备</a>
-        <a class="{{ 'active' if page == 'gateways' else '' }}" href="/gateways">唤醒网关</a>
-        <a class="{{ 'active' if page == 'clients' else '' }}" href="/clients">已授权客户端</a>
-        <a class="{{ 'active' if page == 'activity' else '' }}" href="/activity">活动记录</a>
-        <a class="{{ 'active' if page == 'settings' else '' }}" href="/settings">设置</a>
-        <a class="{{ 'active' if page == 'system' else '' }}" href="/system">系统</a>
+        <span class="nav-label">工作空间</span>
+        {% for key, label, glyph, url in [('dashboard','总览','grid','/dashboard'),('devices','我的电脑','computer','/devices'),('gateways','远程唤醒','gateway','/gateways'),('clients','手机授权','phone','/clients')] %}
+        <a class="nav-item {{ 'active' if nav_page == key else '' }}" href="{{ url }}" {% if nav_page == key %}aria-current="page"{% endif %}>{{ icon(glyph) }}<span>{{ label }}</span></a>
+        {% endfor %}
+        <span class="nav-label nav-label-second">管理</span>
+        {% for key, label, glyph in [('activity','活动记录','activity'),('settings','设置','settings')] %}
+        <a class="nav-item {{ 'active' if nav_page == key else '' }}" href="/{{ key }}" {% if nav_page == key %}aria-current="page"{% endif %}>{{ icon(glyph) }}<span>{{ label }}</span></a>
+        {% endfor %}
       </nav>
       <div class="sidebar-bottom">
-        <span>Cloud {{ version }}</span>
-        <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="text-button" type="submit">退出登录</button></form>
+        <a class="version-link" href="/settings#service">{{ icon('cloud', 18) }}<span>LanPower Cloud<small>v{{ version }}</small></span></a>
+        <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="icon-button" type="submit" aria-label="退出登录" title="退出登录">{{ icon('logout', 18) }}</button></form>
       </div>
     </aside>
-    <main class="content">
-      <header class="topbar"><span>LanPower Cloud</span><span class="account">管理员</span></header>
-      {% block content %}{% endblock %}
-    </main>
+    <div class="workspace">
+      <header class="topbar"><div class="breadcrumb">个人控制台 <span>/</span> <strong>{{ page_names.get(nav_page, '控制台') }}</strong></div><div class="account"><span class="avatar">管</span><span>管理员</span></div></header>
+      <main class="content" id="main-content" tabindex="-1">
+        {% block content %}{% endblock %}
+        <footer class="workspace-footer"><span>LanPower · 连接你的每一台电脑</span><span>Cloud {{ version }}</span></footer>
+      </main>
+    </div>
   </div>
+  <dialog class="confirm-dialog" data-confirm-dialog aria-labelledby="confirm-title" aria-describedby="confirm-description">
+    <div class="icon-tile warning">{{ icon('power', 26) }}</div><p class="eyebrow">确认操作</p>
+    <h2 id="confirm-title"></h2><p id="confirm-description" class="muted"></p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-confirm-cancel autofocus>取消</button><button type="button" class="primary" data-confirm-accept>确认继续</button></div>
+  </dialog>
+  <div class="toast" data-toast role="status" hidden></div>
 </body>
 </html>

@@ -30,7 +30,7 @@ from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -454,6 +454,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if redirect: return redirect
         devices = platform.devices(session.owner_id)
         return page(request, "dashboard", session, devices=devices,
+                    device_names={device.id: device.name for device in devices},
                     statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices},
                     presence=platform.presence(), commands=platform.recent_commands(session.owner_id))
 
@@ -469,7 +470,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def enroll_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "enroll", session, code=None)
+        return RedirectResponse("/enroll", status_code=303)
 
     @app.get("/enroll")
     def approve_page(request: Request):
@@ -530,19 +531,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             device = db.scalar(select(Device).where(Device.id == device_id, Device.owner_id == session.owner_id, Device.revoked_at.is_(None)))
             if device is None: raise HTTPException(404, "device unavailable")
             device.name = name
+            destination = "/gateways" if device.device_type == "gateway" else "/devices"
         platform.record(session.owner_id, "device_renamed", device_id)
-        return RedirectResponse("/devices", status_code=303)
+        return RedirectResponse(destination, status_code=303)
 
     @app.post("/devices/{device_id}/revoke")
     async def revoke_device(request: Request, device_id: str):
         session = session_owner(request)
         form = await parse_form(request)
         require_csrf(request, session, form)
+        device = platform.device(session.owner_id, device_id)
+        destination = "/gateways" if device and device.device_type == "gateway" else "/devices"
         try:
             platform.windows.revoke_device(session.owner_id, device_id)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
-        return RedirectResponse("/devices", status_code=303)
+        return RedirectResponse(destination, status_code=303)
 
     @app.get("/gateways")
     def gateways_page(request: Request):
@@ -648,6 +652,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session, redirect = browser_guard(request)
         if redirect: return redirect
         return page(request, "activity", session, events=platform.audit(session.owner_id),
+                    device_names={device.id: device.name for device in platform.devices(session.owner_id)},
                     commands=platform.recent_commands(session.owner_id))
 
     @app.get("/settings")
@@ -662,9 +667,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def system_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        devices = platform.devices(session.owner_id)
-        return page(request, "system", session,
-                    statuses=[platform.device_status(session.owner_id, device.id) for device in devices])
+        return RedirectResponse("/settings#service", status_code=303)
 
     @app.post("/devices/{device_id}/commands")
     async def web_command(request: Request, device_id: str):

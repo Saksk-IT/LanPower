@@ -1,35 +1,15 @@
 {% extends "base.html" %}
-{% block title %}我的设备{% endblock %}
+{% from "components.html" import manage_device %}
+{% block title %}我的电脑{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">设备</p><h1>我的设备</h1><p class="muted">管理当前 Cloud 已登记的电脑和唤醒网关。</p></div><a class="button-link" href="/devices/enroll">连接 Windows 电脑</a></div>
-<p class="hint" data-status-sync role="status">每 5 秒自动同步状态。</p>
-{% for device in devices %}
-{% set current = statuses[device.id] %}
-<section class="card list-card" data-status-id="{{ device.id }}">
-  <div><span class="device-type">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }}</span><h2 data-status-name>{{ device.name }}</h2>
-    <p class="muted"><span data-status-badge>{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span> · 版本 <span data-status-version>{{ device.version }}</span></p>
-    {% if device.device_type == 'windows' %}
-    <dl class="device-facts">
-      <dt>云端连接</dt><dd data-status-cloud>{{ '已连接' if current.cloud_agent == 'online' else '未连接' }}</dd>
-      <dt>局域网地址</dt><dd data-status-lan>{{ current.lan_ip or '尚未上报' }}</dd>
-      <dt>网络唤醒</dt><dd data-status-wol>{{ '系统允许唤醒' if current.wol_capable is sameas true else '请检查电脑设置' if current.wol_capable is sameas false else '尚未上报' }}</dd>
-      <dt>唤醒网关</dt><dd data-status-gateway>{{ current.wake_gateway.name ~ (' · 在线' if current.wake_gateway.state == 'online' else ' · 离线') if current.wake_gateway else '未配置' }}</dd>
-      <dt>最近连接</dt><dd data-status-seen>{{ device.last_seen_at | relative_time }}</dd>
-    </dl>
-    {% endif %}
-    {% if device.device_type == 'windows' %}<p class="hint" data-status-setup>{{ current.wake_setup_message }}</p><a class="button-link" href="/gateways?computer={{ device.id }}">配置远程唤醒</a><details class="hint"><summary>旧版网关手动配置</summary><p>旧版网关可继续使用此电脑编号；升级后可自动配置。</p><code class="device-id">{{ device.id }}</code></details>{% endif %}
-  </div>
-  <form method="post" action="/devices/{{ device.id }}/rename" class="rename-form">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>显示名称<input name="name" value="{{ device.name }}" maxlength="100" required></label>
-    <button class="secondary" type="submit">保存名称</button>
-  </form>
-  {% if device.protocol_version == '2' %}
-  <form method="post" action="/devices/{{ device.id }}/revoke" data-confirm-message="移除后，此设备将无法再连接 Cloud，需重新配对。确定继续吗？">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button class="danger" type="submit">移除设备</button>
-  </form>
-  {% endif %}
+<div class="page-heading"><div><p class="eyebrow">设备管理</p><h1>我的电脑</h1><p class="muted">查看连接详情，管理名称与远程唤醒。</p></div><a class="button-link" href="/enroll">{{ icon('plus', 18) }}连接电脑</a></div>
+<div class="section-heading"><p class="sync-status" data-status-sync role="status">每 5 秒自动同步状态</p><a href="/dashboard">前往电源控制 {{ icon('arrow', 16) }}</a></div>
+{% for device in devices if device.device_type == 'windows' %}{% set current = statuses[device.id] %}
+<section class="card" id="device-{{ device.id }}" data-status-id="{{ device.id }}" data-state="{{ current.state }}">
+  <div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('computer', 25) }}</span><div><span class="device-type">Windows · <span data-status-version>{{ device.version }}</span></span><h2 data-status-name>{{ device.name }}</h2></div></div><span data-status-badge class="badge {{ 'good' if current.state == 'online' else '' }}">{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span></div>
+  <dl class="fact-grid"><div><dt>云端连接</dt><dd data-status-cloud>{{ '已连接' if current.cloud_agent == 'online' else '未连接' }}</dd></div><div><dt>局域网地址</dt><dd data-status-lan>{{ current.lan_ip or '尚未上报' }}</dd></div><div><dt>网络唤醒</dt><dd data-status-wol>{{ '系统允许唤醒' if current.wol_capable is sameas true else '请检查电脑设置' if current.wol_capable is sameas false else '尚未上报' }}</dd></div><div><dt>最近连接</dt><dd data-status-seen>{{ device.last_seen_at | relative_time }}</dd></div></dl>
+  <div class="setting-row"><div><h3>{{ icon('gateway', 18) }}远程唤醒</h3><p class="muted" data-status-gateway>{{ current.wake_gateway.name ~ (' · 在线' if current.wake_gateway.state == 'online' else ' · 离线') if current.wake_gateway else '尚未配置唤醒网关' }}</p><p class="hint" data-status-setup>{{ current.wake_setup_message }}</p></div><a class="button-link secondary" href="/gateways?computer={{ device.id }}">{{ '管理唤醒' if current.wake_gateway else '配置唤醒' }} {{ icon('arrow', 16) }}</a></div>
+  {{ manage_device(device, csrf) }}
 </section>
-{% endfor %}
+{% else %}<section class="card empty-state"><span class="empty-icon">{{ icon('computer', 34) }}</span><h2>还没有连接电脑</h2><p>添加电脑后，在这里查看连接与唤醒详情。</p><a class="button-link" href="/enroll">连接第一台电脑 {{ icon('arrow', 18) }}</a></section>{% endfor %}
 {% endblock %}

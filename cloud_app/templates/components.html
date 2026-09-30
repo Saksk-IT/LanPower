@@ -1,0 +1,43 @@
+{% macro icon(name, size=20) -%}
+<svg class="icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if name == 'power' %}<path d="M12 3v9m-5-7a9 9 0 1 0 10 0"/>
+{% elif name == 'grid' %}<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>
+{% elif name == 'computer' %}<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>
+{% elif name == 'gateway' %}<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 17h.01M11 17h.01M7 9a7 7 0 0 1 10 0M4 6a11 11 0 0 1 16 0m-8 7V9"/>
+{% elif name == 'phone' %}<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4m-2 14h.01"/>
+{% elif name == 'activity' %}<path d="M3 12h4l3-8 4 16 3-8h4"/>
+{% elif name == 'settings' %}<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2" fill="currentColor"/><circle cx="16" cy="12" r="2" fill="currentColor"/><circle cx="10" cy="18" r="2" fill="currentColor"/>
+{% elif name == 'arrow' %}<path d="M5 12h14m-5-5 5 5-5 5"/>
+{% elif name == 'plus' %}<path d="M12 5v14M5 12h14"/>
+{% elif name == 'moon' %}<path d="M20.8 13A9 9 0 0 1 11 3.2 9 9 0 1 0 20.8 13Z"/>
+{% elif name == 'more' %}<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+{% elif name == 'shield' %}<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/>
+{% elif name == 'check' %}<path d="m5 12 4 4L19 6"/>
+{% elif name == 'copy' %}<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
+{% elif name == 'logout' %}<path d="M9 4H4v16h5m6-12 4 4-4 4m-7-4h11"/>
+{% elif name == 'key' %}<circle cx="8" cy="9" r="5"/><path d="m12 13 8 8m-5-5 3-3m-1 5 3-3"/>
+{% elif name == 'clock' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{% elif name == 'cloud' %}<path d="M6 19a5 5 0 1 1 1-10 7 7 0 0 1 13 3 4 4 0 0 1-1 7Z"/>
+{% endif %}</svg>
+{%- endmacro %}
+
+{% macro manage_device(device, csrf) -%}
+<details class="manage-details">
+  <summary>名称与管理 {{ icon('settings', 16) }}</summary>
+  <div class="manage-content">
+    <form method="post" action="/devices/{{ device.id }}/rename" class="inline-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>显示名称<input name="name" value="{{ device.name }}" maxlength="100" required></label>
+      <button class="secondary" type="submit">保存名称</button>
+    </form>
+    {% if device.device_type == 'windows' %}<details class="legacy-details"><summary>兼容旧版网关</summary><p class="hint">旧版网关手动配置时可使用此电脑编号；新版网关会自动配置。</p><code class="device-id">{{ device.id }}</code></details>{% endif %}
+    {% if device.protocol_version == '2' %}
+    <div class="danger-zone"><p class="hint">移除后需重新配对，才能再次连接 Cloud。</p>
+      <form method="post" action="/devices/{{ device.id }}/revoke" data-confirm-message="移除后，此设备将无法再连接 Cloud，需重新配对。" data-confirm-target="{{ device.name }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger-quiet" type="submit">移除设备</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{%- endmacro %}

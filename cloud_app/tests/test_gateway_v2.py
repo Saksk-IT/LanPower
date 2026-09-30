@@ -229,4 +229,7 @@ def test_windows_presence_exposes_details_and_own_gateway_only(cloud):
     assert "must-not-leak" not in status.text
     page = client.get("/devices").text
     assert "192.168.1.20" in page and "系统允许唤醒" in page and "最近连接" in page
-    assert "在线的唤醒网关</span><strong>1" in client.get("/system").text
+    old_system = client.get("/system", follow_redirects=False)
+    assert old_system.status_code == 303
+    assert old_system.headers["location"] == "/settings#service"
+    assert 'data-status-summary="gateway-online">1' in client.get("/dashboard").text
