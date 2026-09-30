@@ -25,7 +25,8 @@ try {
     [Environment]::SetEnvironmentVariable('CGO_ENABLED', $previousCgo, 'Process')
 }
 # Archive the committed public tree so local AppIDs and preview credentials cannot enter the package.
-& git -C $repoDir archive --format=zip --output=(Join-Path $outputDir 'LanPower-mini-program.zip') HEAD mini_program
+$miniProgramArchive = Join-Path $outputDir 'LanPower-mini-program.zip'
+& git -C $repoDir archive --format=zip "--output=$miniProgramArchive" HEAD mini_program
 if ($LASTEXITCODE -ne 0) { throw '小程序源码打包失败。' }
 $artifacts = @('LanPowerSetup-x64.exe', 'LanPower-portable-x64.zip', 'lanpower-gateway-linux-arm64', 'LanPower-mini-program.zip')
 $hashes = foreach ($name in $artifacts) {
