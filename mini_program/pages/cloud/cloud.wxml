@@ -31,4 +31,5 @@
   </view>
   <view class="feedback" wx:if="{{feedback}}">{{feedback}}</view>
   <view class="footer"><text bindtap="openLocal">仅使用局域网 / 旧版连接</text></view>
+  <view class="version-note">小程序版本 {{version}}</view>
 </view>

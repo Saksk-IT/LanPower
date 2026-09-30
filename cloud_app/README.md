@@ -29,7 +29,7 @@ python -m venv cloud_app/.venv
 docker compose -f compose.yml -f compose.legacy.yml up -d --build
 ```
 
-Cloud 启动时会对 `platform.db` 执行 Alembic 迁移，目前为 `0006_gateway_commands`。启用旧网关配置后，还会登记现有 Gateway 与一台关联的旧版 Windows 设备。旧 `relay.db` 由原中继逻辑继续使用，不会被迁移脚本修改。
+Cloud 启动时会对 `platform.db` 执行 Alembic 迁移，目前为 `0007_client_versions`。客户端授权时保存应用版本和协议版本，旧客户端凭据保持有效，未上报版本的记录显示“尚未上报”。启用旧网关配置后，还会登记现有 Gateway 与一台关联的旧版 Windows 设备。旧 `relay.db` 由原中继逻辑继续使用，不会被迁移脚本修改。
 
 需要在正式切换前单独核对迁移结果时，可先运行 `docker compose -f compose.yml -f compose.legacy.yml run --rm cloud python -m cloud_app.cli migrate-v1`。命令只读取旧 `relay.db` 和 `cloud.json`，将旧 Gateway、Windows 与客户端登记到新的 `platform.db`，不会改写旧数据。
 
@@ -57,7 +57,7 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 - 当前 Web 为单管理员；设备表与 API 已按 `owner_id` 和设备关系设计。旧 `/api/v1/*` 保留单家庭配置。
 - 小程序 v2 使用独立客户端授权，见 [小程序 v2](../docs/mini-program-v2.md)；微信原生扫码与真机网络切换尚待验收。
-- Docker 镜像构建、普通用户容器启动、新数据卷、重启数据保留、Caddy 本地 HTTPS 和备份恢复已通过。真实公网证书与 Windows 电源动作仍需在可恢复环境中验收，未安装到当前工作电脑。
+- Docker 镜像构建、普通用户容器启动、新数据卷、重启数据保留、Caddy 本地 HTTPS 和备份恢复已通过。公网与 Windows 实机验收进展见 [开发与验收清单](../docs/implementation-checklist.md)。
 
 ## Wake Gateway v2
 
@@ -65,6 +65,6 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 网关使用 `/api/v2/gateway/heartbeat`、`commands`、`results`，不能调用 Windows 协议。命令同时绑定网关和 Windows，45 秒有效；轮询原子领取，重试结果保持幂等。移除设备或修改关联会取消未完成队列；已经送达的电源动作无法撤回。被移除的 Windows 不再计入网关状态，其余电脑仍可用。
 
-安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。本地 Cloud 共 64 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离；网页关联和设备详情已在桌面和手机宽度验证。
+安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。本地 Cloud 最新共 83 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离、授权失败审计及客户端版本迁移；网页关联和设备详情已在桌面和手机宽度验证。`/healthz` 同时返回产品版本 `1.4.0` 与协议版本 `2`。
 
 Windows 状态上报的响应额外提供该电脑的 `wake_gateway` 和 `wake_available`，用于桌面端显示实际连接情况；不会暴露其他电脑或设备凭据。设备列表提供版本、最近连接、局域网地址和系统唤醒能力，网页在开机不可用时区分未配置网关、网关离线和网关尚未配置电脑。

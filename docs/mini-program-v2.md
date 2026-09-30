@@ -10,9 +10,11 @@
 
 原有局域网与 v1 远程功能保留在“仅使用局域网 / 旧版连接”入口，原存储键和接口保留。局域网独立模式无需 Cloud。小程序 v2 缓存已选择电脑及列表，因此重启小程序后 Cloud 故障也可以继续尝试已配对电脑的局域网控制。
 
+小程序应用版本为 `2.0.0`，协议版本为 `2`，首页显示应用版本。Cloud 的客户端页面显示授权时上报的版本。
+
 ## 身份与协议
 
-- `POST /api/v2/clients/enroll` 只接收一次性 `code`，返回该手机独立的 `client_id`、Access Token、Refresh Token 和过期时间。
+- `POST /api/v2/clients/enroll` 接收一次性 `code` 及 `version: "2.0.0"`、`protocol_version: "2"`，返回该手机独立的 `client_id`、Access Token、Refresh Token 和过期时间。旧版仅提交 `code` 仍可使用；新客户端仅在旧 Cloud 明确拒绝额外字段且未消费授权码时重试旧格式，网络超时或结果不确定时不重试兑换。
 - Access Token 十五分钟，Refresh Token 三十天；数据库只保存哈希。刷新原子轮换，旧凭据重用或并发重用撤销该客户端会话并审计。
 - `POST /api/v2/clients/token` 刷新凭据。小程序合并并发刷新；响应丢失或应用在刷新途中退出时，需要重新扫码，避免重复使用旧刷新凭据。
 - 客户端调用 `GET /api/v2/devices`、`GET /api/v2/devices/{id}`、`POST /api/v2/devices/{id}/commands` 和 `GET /api/v2/commands/{id}`。请求中不需要网关编号。
@@ -22,8 +24,8 @@
 
 ## 本地验证（2026-09-30）
 
-- Cloud 49 项测试通过，包含一次性兑换、并发兑换/刷新、过期、重用撤销、管理员及设备归属隔离、客户端和设备身份隔离、无网关的完整指令往返。
-- 原版小程序测试及新增 v2 测试通过：多设备选择、LAN First、Cloud Fallback、Cloud 故障时局域网可用、凭据不上传 Cloud、轮换响应丢失以及避免重复发送。
+- Cloud 最新 83 项测试通过，包含一次性兑换、并发兑换/刷新、过期、重用撤销、管理员及设备归属隔离、客户端和设备身份隔离、无网关的完整指令往返，以及版本校验和旧凭据迁移保留。
+- 原版小程序测试及新增 v2 测试通过：多设备选择、LAN First、Cloud Fallback、Cloud 故障时局域网可用、凭据不上传 Cloud、轮换响应丢失、避免重复发送、授权版本上报和旧 Cloud 格式兼容。
 - Cloud 网页 Playwright 验证通过：登录 → 授权客户端 → 生成二维码；1280×900、390×844，无页面错误或横向溢出，二维码 SVG 正常显示。Browser 插件不可用，使用已有 Playwright。
 - CI 已添加 v2 小程序测试步骤；未推送远程，因此没有新增远程 CI Run。
 

@@ -106,6 +106,8 @@ class ClientSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
+    version: Mapped[str] = mapped_column(String(32), default="")
+    protocol_version: Mapped[str] = mapped_column(String(16), default="2")
     access_hash: Mapped[str] = mapped_column(String(64), unique=True)
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
     access_expires_at: Mapped[int] = mapped_column(Integer)

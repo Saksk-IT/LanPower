@@ -1,4 +1,5 @@
 const CLIENT_KEY = 'lanpower_client_v2';
+const {VERSION, PROTOCOL_VERSION} = require('./version');
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 
@@ -51,7 +52,13 @@ class CloudClient {
 
   static async enroll(wxApi, pairing) {
     cloudOrigin(pairing.url);
-    const response = await request(wxApi, pairing.url + '/api/v2/clients/enroll', 'POST', {code: pairing.code});
+    let response = await request(wxApi, pairing.url + '/api/v2/clients/enroll', 'POST',
+      {code: pairing.code, version: VERSION, protocol_version: PROTOCOL_VERSION});
+    // Earlier v2 Clouds reject extra fields before consuming the one-time code.
+    // Retry only that explicit response, never a lost or uncertain response.
+    if (response.statusCode === 400 && response.data && response.data.error === 'invalid enrollment') {
+      response = await request(wxApi, pairing.url + '/api/v2/clients/enroll', 'POST', {code: pairing.code});
+    }
     if (response.statusCode !== 200 || !validTokens(response.data)) throw new Error('授权码无效或已使用，请在 Cloud 重新生成');
     const session = savedSession(pairing.url, response.data);
     wxApi.setStorageSync(CLIENT_KEY, session);

@@ -31,7 +31,7 @@ docker compose -f compose.yml -f compose.legacy.yml up -d --build
 
 ## 更新
 
-先 [备份数据](migration-v1.md)，再使用经过验证的源码或固定镜像更新。Cloud 启动自动升级平台数据库，当前迁移为 `0006_gateway_commands`。不要使用本地测试数据库覆盖服务器数据，不要运行 `docker compose down -v`。
+先 [备份数据](migration-v1.md)，再使用经过验证的源码或固定镜像更新。Cloud 启动自动升级平台数据库，当前迁移为 `0007_client_versions`；新增的客户端版本字段不会替换旧凭据。不要使用本地测试数据库覆盖服务器数据，不要运行 `docker compose down -v`。
 
 更新后分别检查本机与公网 `/healthz`、网页登录、设备状态和只读状态命令，再安排真实电源验收。证书申请、外网可达性和真实设备仍需在目标服务器上确认。
 

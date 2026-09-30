@@ -31,6 +31,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
 VERSION = "1.4.0"
+PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 ACTION_LABELS = {"status": "查看状态", "sleep": "睡眠", "hibernate": "休眠", "restart": "重启", "shutdown": "关机", "wake": "开机"}
@@ -284,7 +285,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz():
-        return {"ok": True, "version": VERSION}
+        return {"ok": True, "version": VERSION, "protocol_version": PROTOCOL_VERSION}
 
     @app.post("/api/v1/gateway/heartbeat")
     async def v1_heartbeat(request: Request):

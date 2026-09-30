@@ -17,7 +17,7 @@
   {% endif %}
 </section>
 {% for client in clients %}
-<section class="card list-card"><div><h2>{{ client.name }}</h2><p class="muted">最近使用：{{ client.last_seen_at | relative_time }}</p></div>
+<section class="card list-card"><div><h2>{{ client.name }}</h2><p class="muted">最近使用：{{ client.last_seen_at | relative_time }}</p><p class="muted">授权时版本：{{ client.version or '尚未上报' }}</p></div>
 <form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="确定移除此手机的 Cloud 控制权限？">
   <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">移除客户端</button>
 </form></section>

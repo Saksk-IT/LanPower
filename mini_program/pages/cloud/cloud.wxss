@@ -1,3 +1,4 @@
 @import "../index/index.wxss";
 .device-picker{margin-bottom:24rpx;padding:24rpx;border:1rpx solid #46617f;border-radius:20rpx;color:#f1f7ff;font-size:30rpx}
 .pair-card input{background:#10273d;color:#f1f7ff;padding:18rpx;margin:20rpx 0;border-radius:12rpx;font-size:25rpx}
+.version-note{text-align:center;color:#9eafc5;font-size:22rpx;margin-top:24rpx}

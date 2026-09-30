@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const {CloudClient, CLIENT_KEY, parseCloudPairing} = require('../mini_program/utils/cloud');
+const {VERSION, PROTOCOL_VERSION} = require('../mini_program/utils/version');
 const session = {url: 'https://power.example.com', client_id: '00000000-0000-0000-0000-000000000010',
   access_token: 'a'.repeat(43), refresh_token: 'r'.repeat(43), access_expires_at: Math.floor(Date.now() / 1000) + 900};
 const pc = id => ({device_id: id, name: 'PC ' + id, device_type: 'windows', state: 'online', cloud_agent: 'online',
@@ -22,6 +23,30 @@ async function main() {
   assert.deepEqual(parseCloudPairing(`https://power.example.com/#lanpower-client=${'c'.repeat(43)}`), {url: session.url, code: 'c'.repeat(43)});
   for (const url of ['http://power.example.com', 'https://bad..example.com', 'https://good.example.com@bad.example.com', 'https://power.example.com:65536', 'https://power.example.com/path']) {
     assert.throws(() => parseCloudPairing(`${url}/#lanpower-client=${'c'.repeat(43)}`));
+  }
+  const pairing = {url: session.url, code: 'c'.repeat(43)};
+  const enrollmentCalls = [];
+  await CloudClient.enroll(runtime({}, opts => {
+    enrollmentCalls.push(opts);
+    opts.success({statusCode: 200, data: session});
+  }), pairing);
+  assert.deepEqual(enrollmentCalls[0].data, {code: pairing.code, version: VERSION, protocol_version: PROTOCOL_VERSION});
+  const compatibleCalls = [];
+  await CloudClient.enroll(runtime({}, opts => {
+    compatibleCalls.push(opts);
+    opts.success(compatibleCalls.length === 1 ? {statusCode: 400, data: {error: 'invalid enrollment'}} :
+      {statusCode: 200, data: session});
+  }), pairing);
+  assert.equal(compatibleCalls.length, 2);
+  assert.deepEqual(compatibleCalls[1].data, {code: pairing.code});
+  for (const unavailable of ['response-lost', 'enrollment unavailable']) {
+    let calls = 0;
+    await assert.rejects(CloudClient.enroll(runtime({}, opts => {
+      calls++;
+      if (unavailable === 'response-lost') opts.fail({});
+      else opts.success({statusCode: 400, data: {error: unavailable}});
+    }), pairing));
+    assert.equal(calls, 1, 'Enrollment must not be retried after an uncertain or consumed code');
   }
   const saved = {[CLIENT_KEY]: {...session, access_expires_at: 1}}, calls = [];
   let finish;

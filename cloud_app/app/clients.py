@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+import re
 import time
 import uuid
 
@@ -41,8 +42,13 @@ class Clients:
         return code
 
     def enroll(self, payload: dict) -> dict:
-        if set(payload) != {"code"} or not isinstance(payload["code"], str) or not 32 <= len(payload["code"]) <= 128:
+        if (set(payload) not in ({"code"}, {"code", "version", "protocol_version"}) or
+                not isinstance(payload["code"], str) or not 32 <= len(payload["code"]) <= 128):
             raise ValueError("invalid enrollment")
+        version, protocol = payload.get("version", ""), payload.get("protocol_version", "2")
+        if (protocol != "2" or not isinstance(version, str) or len(version) > 32 or
+                ("version" in payload and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?", version))):
+            raise ValueError("invalid client version or unsupported protocol")
         now = int(time.time())
         with self.sessions.begin() as db:
             enrollment = db.get(ClientEnrollment, digest(payload["code"]))
@@ -55,6 +61,7 @@ class Clients:
                 raise ValueError("enrollment unavailable")
             client_id, access, refresh = str(uuid.uuid4()), secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             db.add(ClientSession(id=client_id, owner_id=enrollment.owner_id, name=enrollment.name,
+                                 version=version, protocol_version=protocol,
                                  access_hash=digest(access), refresh_hash=digest(refresh),
                                  access_expires_at=now + ACCESS_SECONDS, refresh_expires_at=now + REFRESH_SECONDS,
                                  created_at=now, last_seen_at=now))

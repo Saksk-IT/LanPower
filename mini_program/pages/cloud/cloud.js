@@ -1,6 +1,7 @@
 const {CLIENT_KEY, CloudClient, parseCloudPairing} = require('../../utils/cloud');
 const {parsePairingLink} = require('../../utils/pairing');
 const {broadcastWake, makeMagicPacket} = require('../../utils/wol');
+const {VERSION} = require('../../utils/version');
 
 const LOCAL_KEY = 'lanpower_device_lan_v2';
 const CACHE_KEY = 'lanpower_device_cache_v2';
@@ -9,7 +10,7 @@ const ACTIONS = {sleep: '睡眠', hibernate: '休眠', restart: '重启', shutdo
 Page({
   data: {connected: false, devices: [], selectedId: '', device: '选择一台电脑', stateText: '未连接 Cloud',
     detail: '在 Cloud 的已授权客户端页面生成二维码', modeText: '未连接', paired: false,
-    canControl: false, canWake: false, busy: false, feedback: '', mac: '', broadcast: '255.255.255.255'},
+    canControl: false, canWake: false, busy: false, feedback: '', mac: '', broadcast: '255.255.255.255', version: VERSION},
 
   onLoad() {
     this.client = CloudClient.load(wx);

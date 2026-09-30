@@ -9,8 +9,8 @@
 | M1 Windows 产品化 | .NET 服务、WPF 桌面、命名管道、安装器、LAN 兼容；网络检测、Wi-Fi/离线安装、设置与更新检查 | Release 构建、48 项单元测试、6 项安装网络选择检查、服务/IPC 演练、实际 WPF 布局与物理网卡只读检查 | 管理员首次安装、升级、卸载重装、防火墙更新、真实网络变化 |
 | M2 Cloud Web 平台 | FastAPI、设备模型、七个网页入口、旧 Gateway 兼容、Docker/Caddy HTTPS、备份恢复 | 路由/迁移测试、桌面和手机浏览器流程、镜像与实际 Compose 本地 HTTPS、数据保留及恢复演练 | 公网域名、自动证书与正式环境恢复 |
 | M3 Windows Cloud Direct | Windows 出站连接、状态上报、取命令、结果回传、直连优先、失效隔离、防重放 | 无网关的五动作模拟、API 往返、命令记录、刷新与连接管理检查 | **关闭网关，在公网 Web 对在线 Windows 执行 status、sleep、hibernate、restart、shutdown** |
-| M4 统一身份 | Passkey、单管理员、恢复码、设备短码批准、独立会话、轮换与重用撤销、授权失败审计 | 真实签名与虚拟验证器、并发与失效边界；最新 Cloud 全部 74 项测试通过 | 真实 Windows Hello、Face ID、Touch ID 或安全密钥 |
-| M5 小程序 v2 | 独立手机授权、电脑列表、逐电脑 LAN 配对、LAN First/Cloud Fallback、结果轮询 | 新旧 Node 测试、掉线缓存与不重复跨路径执行检查 | 微信原生编译、扫码、存储、Wi-Fi/5G 切换 |
+| M4 统一身份 | Passkey、单管理员、恢复码、设备短码批准、独立会话、轮换与重用撤销、授权失败审计 | 真实签名与虚拟验证器、并发与失效边界；最新 Cloud 全部 83 项测试通过 | 真实 Windows Hello、Face ID、Touch ID 或安全密钥 |
+| M5 小程序 v2 | 独立手机授权、电脑列表、逐电脑 LAN 配对、LAN First/Cloud Fallback、结果轮询、应用/协议版本上报 | 新旧 Node 测试、掉线缓存与不重复跨路径执行检查、版本校验与旧会话迁移 | 微信原生编译、扫码、存储、Wi-Fi/5G 切换 |
 | M6 Gateway v2 | 短码注册、持久凭据、多电脑关联与唤醒、双方允许的备用控制、执行记录 | Go Linux 测试和静态检查、ARM64 构建、安装回滚模拟、Cloud 关联/队列隔离 | 多电脑 WOL、真实备用控制、硬件断网与重启恢复 |
 
 本地自动检查不改变当前电脑电源状态；服务演练使用 `--dry-run`。当前会话未提升管理员权限，未将新版安装到工作电脑。
