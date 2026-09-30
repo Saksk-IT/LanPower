@@ -38,7 +38,8 @@ builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRe
     { Timeout = TimeSpan.FromSeconds(35) });
 builder.Services.AddSingleton<CloudAgent>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<CloudAgent>());
-builder.Services.AddHostedService<PipeWorker>();
+builder.Services.AddHostedService(provider => new PipeWorker(provider.GetRequiredService<CloudAgent>(),
+    provider.GetRequiredService<ServiceLog>(), provider.GetRequiredService<LanNetworkManager>(), dryRun));
 var app = builder.Build();
 
 app.Use(async (context, next) =>

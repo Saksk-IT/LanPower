@@ -5,6 +5,8 @@ namespace LanPower.Shared;
 public static class LanProtocol
 {
     public const string PipeName = "LanPower.Service";
+    public static string DryRunPipeName(int processId) => $"{PipeName}.DryRun.{processId}";
+    public static string Version => typeof(LanProtocol).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     public static readonly string[] Actions = ["sleep", "hibernate", "restart", "shutdown"];
 
     public static bool IsPowerAction(string? action) => action is "sleep" or "hibernate" or "restart" or "shutdown";

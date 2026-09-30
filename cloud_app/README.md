@@ -1,5 +1,7 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
+当前公开版本：Cloud `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`；下文保留此前部署验证记录。
+
 Cloud“手机授权”支持为每部手机生成一次性二维码，并逐个撤销。Cloud `1.6.0` 配合小程序 `2.0.2` 支持一次扫码长期授权：访问凭据每 15 分钟续期，手机长期凭据不因断网、响应丢失、重启或长期闲置过期。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。升级顺序和旧凭据恢复边界见 [小程序 v2](../docs/mini-program-v2.md#长期授权升级)。
 
 Cloud Web 是浏览器控制端，默认使用 Passkey 登录。Windows 应用可通过一次性配对码连接 Cloud，之后定期上报状态、领取命令并回传结果。在线 Windows 可直接接收状态、睡眠、休眠、重启和关机命令，无需 Wake Gateway。Cloud 保留旧 Gateway 与小程序使用的 `/api/v1/*` 协议；启用旧网关配置后继续兼容。Cloud 从不接收 Windows LAN 配对密钥。

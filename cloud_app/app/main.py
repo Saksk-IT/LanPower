@@ -30,7 +30,7 @@ from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))

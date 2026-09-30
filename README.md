@@ -1,12 +1,12 @@
 # LanPower
 
-当前源码版本：Cloud `1.6.0`，微信小程序 `2.0.2`，Windows `1.5.0`，Wake Gateway `2.1.0`。Cloud 控制台重新划分总览、我的电脑、远程唤醒、手机授权、活动记录和设置；统一桌面与手机布局、设备连接引导及操作确认。使用分工见 [Cloud 界面指南](docs/cloud-ui.md)，完整改动见 [更新说明](docs/release-notes.md)。
+当前发布版本：**[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。Windows 与 Cloud `1.6.1`，微信小程序 `2.0.3`，Wake Gateway `2.1.1`。包含 Windows 桌面端和安装诊断、Cloud 控制台、手机长期授权、状态同步与自动配置远程唤醒。使用分工见 [Cloud 界面指南](docs/cloud-ui.md)，完整改动见 [更新说明](docs/release-notes.md)。
 
-Cloud `1.6.0` 已于 2026-10-01（北京时间）保留数据部署至正式环境。119 项 Cloud 测试、状态脚本和桌面/手机浏览器检查通过；公网 HTTPS、真实电脑与网关在线状态已核对，未执行真实电源动作。本轮未同步远程仓库或发布 Release。手机长期授权仍按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；手机端需重新预览或上传 `2.0.2`，已撤销或已丢失的旧授权需重新扫码。
+Cloud `1.6.0` 已于 2026-10-01（北京时间）保留数据部署至正式环境，119 项 Cloud 测试及桌面/手机浏览器检查通过。`1.6.1` 整理为公开发布，运行环境的升级需另按部署说明执行。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.0.3`，已撤销或已丢失的旧授权需重新扫码。
 
-LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新 Windows 应用、Cloud Web 与 Cloud Direct 已在指定公网服务器和本机 Windows 部署，真实 Passkey 初始化和无网关只读状态链路已通过；新版尚未正式发布，物理电源动作仍待手动验收。
+LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新架构已完成指定环境部署、Passkey 初始化和无网关只读状态验证；新版物理电源动作及多电脑硬件场景仍待手动验收。
 
-阶段收尾（2026-09-30）：用户反馈基本流程正常，但仍有问题。按用户要求暂停本阶段开发，后续再处理问题；本次仅同步主分支源码，安装包和其他发布资源暂缓。详细验证记录与剩余项见 [开发与验收清单](docs/implementation-checklist.md)。
+2026-10-01 发布整理：同步主分支与完整发布资源，清理公开历史中的个人邮箱、网络示例与小程序 AppID，增加发布检查。历史提交哈希已更新；已有克隆请先保存本地工作，再从主分支重新克隆。详细验证记录与剩余项见 [开发与验收清单](docs/implementation-checklist.md)。
 
 ## 使用方式
 
@@ -17,17 +17,17 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 | 小程序 v2 | 新 Windows 应用 + Cloud + 微信小程序 | 原生编译已由用户确认通过；扫码授权、设备列表及网络切换待微信真机验收 |
 | Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新版路由器注册与单电脑关联已通过，物理唤醒和多电脑仍待验收 |
 
-普通用户可先使用下方已发布版本。开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建新服务、桌面端和安装包；新安装包尚未发布。
+普通用户可从下方发布页下载安装器；开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建服务、桌面端和安装包。
 
 新版 [Cloud Web 部署说明](cloud_app/README.md) 介绍 Passkey 初始化与登录、恢复码、无网关模式、浏览器控制与旧版 Gateway 兼容。[Cloud Direct 说明](docs/cloud-direct.md) 列出配对步骤、控制路径和验收边界。
 
 完整文档入口：[架构与实现状态](docs/architecture-v2.md)、[Windows 应用](docs/windows-app.md)、[Docker 一键 HTTPS](deploy/docker/README.md)、[认证](docs/authentication-v2.md)、[数据迁移](docs/migration-v1.md)、[安全边界](docs/security-model.md)、[故障排查](docs/troubleshooting.md)。
 
-新版安装器、便携分发包、ARM64 网关及校验清单已在本地生成并校验。Setup 首次安装、旧 Python 版本迁移、新版就地升级、便携包实际安装及卸载重装已通过，原 LAN 配对和 Cloud 连接可保留。开发者可按 [构建与发布](docs/releasing.md) 重现；剩余验收见 [开发与验收清单](docs/implementation-checklist.md)，本轮未正式发布。
+发布资源包含安装器、便携分发包、ARM64 网关、小程序源码包及校验清单，Cloud 镜像发布至 GHCR。此前已验证 Setup 首次安装、旧 Python 迁移、就地升级、便携安装及卸载重装，可保留原 LAN 配对和 Cloud 连接。构建方法见 [构建与发布](docs/releasing.md)。
 
-## 新架构快速开始（源码版本）
+## 快速开始
 
-1. 按 [Windows 构建说明](windows/README.md) 生成并安装 Windows 应用，或等待新版安装包发布。安装后，局域网控制无需 Cloud。
+1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
 3. 在 Windows 应用中输入 Cloud 地址，点击“连接 Cloud”查看设备配对码。登录 Cloud 网页的“连接电脑”，输入短码并核对名称后允许连接。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
 4. 手机需要远程控制时，在 Cloud“手机授权”页面生成二维码，用新版小程序扫码。选中电脑后，可单独扫描该电脑的局域网码以启用局域网优先；详见 [小程序 v2](docs/mini-program-v2.md)。
@@ -35,7 +35,19 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 ## 最新版本
 
-已发布版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息。一套实际部署已在 iPhone 5G 下完成远程状态、睡眠和唤醒实测。
+从 **[v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)** 下载：
+
+| 资源 | 用途 |
+|---|---|
+| `LanPowerSetup-x64.exe` | Windows 安装器 |
+| `LanPower-portable-x64.zip` | 便携分发包，仍需管理员安装服务 |
+| `lanpower-gateway-linux-arm64` | Linux ARM64 Wake Gateway |
+| `LanPower-mini-program.zip` | 微信开发者工具可导入的公开小程序源码 |
+| `SHA256SUMS.txt` | 以上四个文件的 SHA-256 校验值 |
+
+Cloud 镜像：`ghcr.io/saksk-it/lanpower-cloud:1.6.1`，同时提供 `sha-<源码提交>` 标签。完整源码可使用该标签的 GitHub Source code 下载。小程序包使用 `touristappid`；发布到自己的微信账号时需自行配置 AppID。远程功能需要自己的 HTTPS 域名、Cloud 和私有凭据。
+
+下方为历史 v1.1.2 的安装与验证说明，适用于 [v1.1.2 发布包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。新版优先使用上述安装器和文档。
 
 ## 已发布 v1.1.2 的安装
 

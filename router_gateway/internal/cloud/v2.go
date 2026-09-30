@@ -185,7 +185,7 @@ func (c *V2Client) Enroll(ctx context.Context, show func(code, uri string)) erro
 		Interval        int    `json:"interval"`
 	}
 	_, err := c.raw(ctx, "POST", "/api/v2/enroll/start", "", map[string]any{
-		"device_type": "gateway", "name": c.config.Name, "version": "2.1.0", "protocol_version": "2"}, &start)
+		"device_type": "gateway", "name": c.config.Name, "version": "2.1.1", "protocol_version": "2"}, &start)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,7 @@ type TargetStatus struct {
 func (c *V2Client) DeviceID() string { c.mu.Lock(); defer c.mu.Unlock(); return c.credentials.DeviceID }
 func (c *V2Client) Heartbeat(ctx context.Context, targets []TargetStatus, uptime int64) error {
 	return c.request(ctx, "POST", "/api/v2/gateway/heartbeat", map[string]any{
-		"device_id": c.DeviceID(), "version": "2.1.0", "uptime": uptime, "targets": targets}, nil)
+		"device_id": c.DeviceID(), "version": "2.1.1", "uptime": uptime, "targets": targets}, nil)
 }
 func (c *V2Client) Poll(ctx context.Context) (*protocol.Command, error) {
 	var response struct {

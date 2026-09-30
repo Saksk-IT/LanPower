@@ -2,6 +2,10 @@ param([string]$DotnetPath = 'dotnet', [string]$GoPath = 'go', [string]$IsccPath 
 $ErrorActionPreference = 'Stop'
 $repoDir = Split-Path -Parent $PSScriptRoot
 $outputDir = Join-Path $repoDir 'windows\out'
+& python (Join-Path $repoDir 'scripts\validate-public-files.py')
+if ($LASTEXITCODE -ne 0) { throw '公开文件检查失败。' }
+& python (Join-Path $repoDir 'scripts\validate-release-tag.py') ('refs/tags/v' + (Get-Content -LiteralPath (Join-Path $repoDir 'VERSION') -Raw).Trim())
+if ($LASTEXITCODE -ne 0) { throw '发布版本检查失败。' }
 & (Join-Path $repoDir 'windows\installer\build-installer.ps1') -DotnetPath $DotnetPath -IsccPath $IsccPath
 & (Join-Path $repoDir 'windows\installer\build-portable.ps1') -SkipPublish -DotnetPath $DotnetPath
 $previousGoOs = [Environment]::GetEnvironmentVariable('GOOS', 'Process')
@@ -20,7 +24,10 @@ try {
     [Environment]::SetEnvironmentVariable('GOARCH', $previousGoArch, 'Process')
     [Environment]::SetEnvironmentVariable('CGO_ENABLED', $previousCgo, 'Process')
 }
-$artifacts = @('LanPowerSetup-x64.exe', 'LanPower-portable-x64.zip', 'lanpower-gateway-linux-arm64')
+# Archive the committed public tree so local AppIDs and preview credentials cannot enter the package.
+& git -C $repoDir archive --format=zip --output=(Join-Path $outputDir 'LanPower-mini-program.zip') HEAD mini_program
+if ($LASTEXITCODE -ne 0) { throw '小程序源码打包失败。' }
+$artifacts = @('LanPowerSetup-x64.exe', 'LanPower-portable-x64.zip', 'lanpower-gateway-linux-arm64', 'LanPower-mini-program.zip')
 $hashes = foreach ($name in $artifacts) {
     (Get-FileHash -LiteralPath (Join-Path $outputDir $name) -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $name
 }

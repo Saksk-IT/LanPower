@@ -1,8 +1,8 @@
 # 构建与发布
 
-新架构仍处于源码验证阶段。构建发布产物不代表正式发布，也不替代公网、Windows 管理员安装、微信和网关实机验收。
+当前整套发布为 `v1.6.1`：Windows / Cloud `1.6.1`、小程序 `2.0.3`、Wake Gateway `2.1.1`。发布流程完成源码检查、构建和产物校验；各硬件场景的实机边界仍以验收文档为准。
 
-2026-09-30 自动配置更新：`1.5.0` 已完成本地构建与现有环境升级，本次源码仅提交本地，尚未推送或正式发布。推送 `main` 触发 CI 检查，不触发版本标签发布流程。
+2026-10-01：将此前本地累积更新整理为公开发布，更新组件版本、README、发布说明和资源清单。推送 `main` 触发 CI；推送版本标签触发验证、Release 与 GHCR 发布。
 
 ## 公开文件检查
 
@@ -12,7 +12,7 @@
 python scripts/validate-public-files.py
 ```
 
-检查 Git 跟踪的私有文件路径、暂存的网关配置示例和旧小程序 WOL 默认值。公开示例只使用脚本中规定的演示 MAC、地址和 Cloud URL，凭据保留 `REPLACE_` 占位符。CI 也执行该检查；本地运行配置、设备凭据、恢复码和含环境信息的原稿由 `.gitignore` 排除。此检查不能替代对源码和提交记录的个人信息审查。
+检查 Git 暂存区的私有路径、AppID、私钥、常见凭据、真实网卡地址，检查主分支提交邮箱使用 GitHub noreply 地址，以及网关配置示例和旧小程序 WOL 默认值。公开示例只使用脚本中规定的演示 MAC、地址和 Cloud URL，凭据保留 `REPLACE_` 占位符。CI 也执行该检查；本地运行配置、设备凭据、恢复码和含环境信息的原稿由 `.gitignore` 排除。此检查不能替代对源码和提交记录的个人信息审查。
 
 ## 本地生成产物
 
@@ -30,9 +30,10 @@ Windows 构建环境需要 .NET 10 SDK、Go 1.27.1 和 Inno Setup 6。在仓库�
 | `LanPowerSetup-x64.exe` | 自包含 Windows 安装器，安装服务和桌面端 |
 | `LanPower-portable-x64.zip` | 不使用 Setup.exe 的分发包，仍需管理员安装 Windows 服务 |
 | `lanpower-gateway-linux-arm64` | 同时支持旧协议和二代协议的 Linux ARM64 网关 |
-| `SHA256SUMS.txt` | 三个发布文件的 SHA-256 校验值 |
+| `LanPower-mini-program.zip` | 从已提交公开源码生成的小程序包，不含个人 AppID 或私有配置 |
+| `SHA256SUMS.txt` | 四个发布文件的 SHA-256 校验值 |
 
-当前 Cloud 版本为 `1.5.1`，小程序版本为 `2.0.2`，修复长期授权与断线续期；Windows 应用版本为 `1.5.0`，网关为 `2.1.0`。Cloud 已保留数据部署，并通过公网续期重试和撤销检查；本机小程序源码已更新，微信预览或上传仍需在开发者工具完成。本轮未推送远程或发布 Release。网关同时支持协议 1 和 2，小程序新入口使用协议 2 并保留旧入口。产品标签不是所有组件的协议版本；下一次整套发布前需统一确定新的产品标签，不能覆盖现有版本资产。
+产品版本以根目录 `VERSION` 为准，必须与 Windows 程序版本、Cloud 包版本及运行时版本一致。小程序和网关保持独立组件版本，协议仍为 2（网关兼容协议 1）。构建前提交公开改动，小程序包通过 `git archive HEAD mini_program` 生成；本地忽略的预览配置不会进入包。
 
 便携包使用固定文件白名单：服务和桌面组件、安装脚本（含 `install-diagnostics.ps1`）、打开入口及说明，共 22 个文件。包内 `FILES.sha256` 校验 17 个安装组件；外部 `SHA256SUMS.txt` 校验整个 ZIP。包内不含运行时配置、设备凭据、配对码、数据库、日志或调试符号。安装脚本使用 UTF-8 BOM，支持 Windows PowerShell 5.1。
 
@@ -42,29 +43,37 @@ Windows 构建环境需要 .NET 10 SDK、Go 1.27.1 和 Inno Setup 6。在仓库�
 
 CI 使用 Windows PowerShell 5.1 验证安装配置、服务健康检查、错误诊断和失败清理；使用真实 Inno Setup 编译模拟安装器，验证服务失败时退出码非零、完成页显示未完成且不新建快捷方式或自动启动。测试只写临时目录，不安装真实服务。具体命令见 [Windows 验证记录](../windows/README.md#验证边界)。这些回归检查不代表故障电脑已经修复。
 
-发布校验检查三个文件的哈希、网关 ELF 架构、ZIP 完整白名单以及所有安装组件的哈希。解压后的服务也可复用 LAN 与命名管道演练：
+发布校验检查四个文件的哈希、网关 ELF 架构、便携 ZIP 白名单与组件哈希、小程序包的公开清单、AppID 和版本。解压后的服务也可复用 LAN 与命名管道演练：
 
 ```powershell
 Expand-Archive windows/out/LanPower-portable-x64.zip -DestinationPath "$env:TEMP/LanPower-portable-test" -Force
 dotnet run --project windows/LanPower.Tests -c Release -- "$env:TEMP/LanPower-portable-test/Service/LanPower.Service.exe"
 ```
 
-该演练使用独立临时配置和 `--dry-run`，不会安装服务、修改防火墙或执行真实电源动作。正式发布仍需完成 [架构验收清单](architecture-v2.md#阶段证据与剩余项)，尤其是关闭网关后的公网 Windows 控制。
+该演练使用独立临时配置、`--dry-run` 和按进程隔离的命名管道，不会连接已安装的生产服务、修改防火墙或执行真实电源动作。尚未完成的实机项目列于 [架构验收清单](architecture-v2.md#阶段证据与剩余项)，包括新版物理电源动作和多电脑硬件场景。
 
 ## GitHub Actions
 
-`.github/workflows/release.yml` 复用 CI 的 Windows、Cloud、小程序和 Gateway 检查，随后生成并校验四个发布文件、演练解压后的服务，以及构建 Cloud 镜像。
+`.github/workflows/release.yml` 复用 CI 的 Windows、Cloud、小程序和 Gateway 检查，随后生成并校验五个发布文件、演练解压后的服务，以及构建 Cloud 镜像。
 
 - 手动运行默认只构建和保存工作流产物，不上传 Release 或 GHCR。
 - 发布仅在版本标签触发，或手动选择版本标签并明确开启 `publish` 时执行。
-- 发布标签必须与 `windows/Directory.Build.props` 一致，当前为 `v1.5.0`；分支和错误版本会被拒绝。
+- 发布标签必须与根目录 `VERSION`、Windows 和 Cloud 版本一致，当前为 `v1.6.1`；分支和错误版本会被拒绝。
 - Windows 文件和 Cloud 镜像均构建、验证成功后，才进入上传步骤。Cloud 镜像保存为 `ghcr.io/<仓库所有者小写>/lanpower-cloud:<产品版本>` 和 `sha-<源码提交>`，不覆盖 `latest`。
-- Release 只上传四个明确列出的文件；说明来自 `docs/release-notes.md`。已有相同版本 Release 时更新对应附件。
+- Release 只上传五个明确列出的文件；说明来自 `docs/release-notes.md`。已有相同版本 Release 时更新对应附件。
 
-发布前应按实际验收结果更新说明草稿，确认标签内容和公开文件。打标签和推送会触发外部发布，只在用户明确要求同步远程时执行。
+发布前应按实际验收结果更新说明，确认标签内容和公开文件。打标签和推送会触发外部发布，只在用户明确要求同步远程时执行。
 
-## 当前验证记录
+## 历史验证记录
+
+2026-10-01 发布前本地验证：Cloud 119 项、旧 LAN API 5 项、旧 Relay 3 项、Windows 55 项单元测试、36 项桌面检查、小程序两套回归与网页状态脚本通过；安装器网络选择、配置序列化、健康诊断、失败恢复和真实 Inno Setup 模拟流程通过。新增 4 项公开文件检查回归、标签正向和拒绝检查通过，工作流静态检查通过。服务 IPC 演练已隔离到测试进程，验证版本上报与 Cloud 断开操作仅作用于临时配置。完整平台构建与发布结果以该版本的 GitHub Actions 为准。
 
 2026-09-30：三个二进制产物与校验清单本地生成成功；ZIP 白名单、组件哈希、编码与 Windows 程序版本检查通过；解压后自包含服务的 LAN/命名管道演练通过；Go Linux 静态检查和 `-version` 实际运行通过；工作流静态检查与发布标签正向/拒绝检查通过。上述记录为本地构建验证；后续主分支同步触发的 CI 结果以对应提交的 Actions 为准，正式发布工作流暂缓。
 
 同日实际运行解压后的便携安装入口，确认 LocalSystem 服务从受保护的 Program Files 运行，安装组件与构建哈希一致，原 LAN 配对与 Cloud 连接恢复。旧 Python 到 Setup 迁移、Setup 卸载保留数据及重新安装也已通过，当前环境恢复为 Setup 安装版本；真实网络变化和电源动作仍见架构验收清单。
+
+## 2026-10-01 公开信息清理
+
+本地先备份完整 Git 历史、Release 元数据与全部旧附件，并核对原附件 SHA-256。随后仅对公开主分支和版本标签清理个人提交邮箱、个人网络示例、小程序 AppID 与私有原稿；当前功能源码保持完整。历史附件保留原程序二进制，替换个人示例或文档后更新校验文件。
+
+远程历史更新使用逐个引用的旧哈希作为 `--force-with-lease` 条件，避免覆盖新出现的远程提交。已有克隆请保存工作后重新克隆。此操作不保证清除 GitHub 缓存、旧提交直链、Fork 或其他人的本地副本。日常提交已改用 GitHub noreply 地址；`.gitignore`、CI 内容检查、安装包白名单和仅从 Git 提交打包共同防止再次夹带私有配置。

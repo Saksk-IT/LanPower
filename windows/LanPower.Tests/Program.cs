@@ -53,6 +53,7 @@ using var service = Process.Start(new ProcessStartInfo(serviceExe)
     WorkingDirectory = Path.GetDirectoryName(serviceExe)!,
     CreateNoWindow = true
 }) ?? throw new Exception("service did not start");
+var testPipeName = LanProtocol.DryRunPipeName(service.Id);
 try
 {
     using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{config.Port}"), Timeout = TimeSpan.FromSeconds(3) };
@@ -88,13 +89,16 @@ try
     using var duplicate = await client.PostAsync("/api/power", new StringContent("{\"action\":\"restart\"}", Encoding.UTF8, "application/json"));
     Check((int)duplicate.StatusCode == 409, "power command cooldown");
 
-    await using var pipe = new NamedPipeClientStream(".", LanProtocol.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    await using var pipe = new NamedPipeClientStream(".", testPipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
     await pipe.ConnectAsync(3000);
     using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
     await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
     await writer.WriteLineAsync("status");
     var ipc = await reader.ReadLineAsync();
     Check(ipc is not null && ipc.Contains("lan_ip") && ipc.Contains("127.0.0.1"), "desktop status over named pipe");
+    using var ipcStatus = JsonDocument.Parse(ipc!);
+    Check(ipcStatus.RootElement.GetProperty("status").GetProperty("version").GetString() == LanProtocol.Version,
+        "service reports its build version");
     using var disconnect = await RequestPipeAsync("{\"op\":\"cloud_disconnect\"}");
     Check(disconnect.RootElement.GetProperty("ok").GetBoolean(), "unconfigured Cloud can be disconnected through IPC");
     using var extraTarget = await RequestPipeAsync("{\"op\":\"cloud_disconnect\",\"device_id\":\"other\"}");
@@ -120,9 +124,9 @@ static void Check(bool condition, string message)
     Console.WriteLine("PASS: " + message);
 }
 
-static async Task<JsonDocument> RequestPipeAsync(string command)
+async Task<JsonDocument> RequestPipeAsync(string command)
 {
-    await using var pipe = new NamedPipeClientStream(".", LanProtocol.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    await using var pipe = new NamedPipeClientStream(".", testPipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
     await pipe.ConnectAsync(3000);
     using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
     await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };

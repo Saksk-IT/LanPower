@@ -98,7 +98,7 @@ public sealed class CloudAgent(
         var origin = CloudEnrollment.NormalizeOrigin(cloudUrl);
         if (code.Length is < 10 or > 80) throw new ArgumentException("配对码无效");
         using var response = await client.PostAsJsonAsync(origin + "/api/v2/windows/enroll",
-            new { code, name = Environment.MachineName, version = "1.5.0", protocol_version = "2" }, token);
+            new { code, name = Environment.MachineName, version = LanProtocol.Version, protocol_version = "2" }, token);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException("配对失败，请检查地址和配对码");
         using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
             ?? throw new InvalidDataException("Cloud 配对响应无效");
@@ -164,7 +164,7 @@ public sealed class CloudAgent(
         var network = networkStatus?.Invoke() ?? LocalNetworkStatus.Read(lanConfig);
         var body = new Dictionary<string, object>
         {
-            ["device_id"] = saved.DeviceId, ["version"] = "1.5.0",
+            ["device_id"] = saved.DeviceId, ["version"] = LanProtocol.Version,
             ["state"] = _legacyHeartbeat ? "online" : state,
             ["uptime"] = Environment.TickCount64 / 1000,
             ["lan_ip"] = network.LanIp, ["wol_capable"] = network.WolCapable

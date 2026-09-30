@@ -68,6 +68,10 @@ jobs:
           python-version: '3.12'
       - name: Validate public files and example configuration
         run: python scripts/validate-public-files.py
+      - name: Publication privacy checks
+        run: python -m unittest discover -s scripts/tests -v
+      - name: Product version consistency
+        run: python scripts/validate-release-tag.py "refs/tags/v$(cat VERSION)"
       - uses: actions/setup-node@v7
         with:
           node-version: '22'

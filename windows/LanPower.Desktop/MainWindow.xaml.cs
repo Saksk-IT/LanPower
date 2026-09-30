@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private bool _loadingStatus;
     private bool _cloudConfigured;
-    private readonly string _version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.5.0";
+    private readonly string _version = LanProtocol.Version;
     private string? _releasePage;
     private bool _loadingSettings;
     private readonly string _preferencesPath = Path.Combine(

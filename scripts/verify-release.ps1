@@ -1,7 +1,8 @@
 param([string]$ArtifactDir = '')
 $ErrorActionPreference = 'Stop'
 if (-not $ArtifactDir) { $ArtifactDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'windows\out' }
-$names = @('LanPowerSetup-x64.exe', 'LanPower-portable-x64.zip', 'lanpower-gateway-linux-arm64')
+$repoDir = Split-Path -Parent $PSScriptRoot
+$names = @('LanPowerSetup-x64.exe', 'LanPower-portable-x64.zip', 'lanpower-gateway-linux-arm64', 'LanPower-mini-program.zip')
 $lines = @(Get-Content -LiteralPath (Join-Path $ArtifactDir 'SHA256SUMS.txt') -Encoding UTF8)
 if ($lines.Count -ne $names.Count) { throw '发布校验清单无效。' }
 foreach ($index in 0..($names.Count - 1)) {
@@ -45,4 +46,20 @@ try {
         if ($actualHash -ne $hash) { throw '便携组件哈希不匹配。' }
     }
 } finally { $zip.Dispose() }
-Write-Output '发布产物验证通过：三个文件哈希、ARM64 格式、便携包白名单及组件哈希。'
+$miniZip = [IO.Compression.ZipFile]::OpenRead((Join-Path $ArtifactDir 'LanPower-mini-program.zip'))
+try {
+    $expected = @(& git -C $repoDir ls-tree -r --name-only HEAD -- mini_program)
+    if ($LASTEXITCODE -ne 0 -or $expected.Count -eq 0) { throw '无法读取小程序公开文件清单。' }
+    $actual = @($miniZip.Entries | Where-Object { -not $_.FullName.EndsWith('/') } | ForEach-Object { $_.FullName })
+    if (Compare-Object ($expected | Sort-Object) ($actual | Sort-Object)) { throw '小程序包包含缺失或未允许的文件。' }
+    foreach ($path in @('mini_program/project.config.json', 'mini_program/utils/version.js')) {
+        $reader = [IO.StreamReader]::new($miniZip.GetEntry($path).Open(), [Text.Encoding]::UTF8)
+        try { $content = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        if ($path.EndsWith('.json')) {
+            if (($content | ConvertFrom-Json).appid -ne 'touristappid') { throw '小程序包包含个人 AppID。' }
+        } elseif ($content.Trim() -ne (Get-Content -LiteralPath (Join-Path $repoDir $path) -Raw).Trim()) {
+            throw '小程序包版本与当前源码不一致；请先提交发布改动。'
+        }
+    }
+} finally { $miniZip.Dispose() }
+Write-Output '发布产物验证通过：四个文件哈希、ARM64 格式、便携包白名单与组件哈希、小程序公开文件和版本。'

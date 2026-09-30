@@ -7,7 +7,7 @@ using LanPower.Shared;
 
 namespace LanPower.Service;
 
-public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManager network) : BackgroundService
+public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManager network, bool dryRun = false) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,7 +38,7 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
         }
     }
 
-    private static NamedPipeServerStream CreatePipe()
+    private NamedPipeServerStream CreatePipe()
     {
         var security = new PipeSecurity();
         security.AddAccessRule(new PipeAccessRule(
@@ -48,7 +48,8 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.InteractiveSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
         return NamedPipeServerStreamAcl.Create(
-            LanProtocol.PipeName, PipeDirection.InOut, 4, PipeTransmissionMode.Byte,
+            dryRun ? LanProtocol.DryRunPipeName(Environment.ProcessId) : LanProtocol.PipeName,
+            PipeDirection.InOut, 4, PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous, 1024, 16384, security);
     }
 
@@ -153,6 +154,6 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
     {
         var status = network.ReadStatus();
         return new ServiceStatus(Environment.MachineName, status.LanIp, status.Mac,
-            status.WolState, status.LanState, cloud.State, cloud.GatewayState, "1.5.0", cloud.CloudUrl, cloud.DeviceId, cloud.GatewayHint);
+            status.WolState, status.LanState, cloud.State, cloud.GatewayState, LanProtocol.Version, cloud.CloudUrl, cloud.DeviceId, cloud.GatewayHint);
     }
 }
