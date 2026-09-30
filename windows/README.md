@@ -20,6 +20,10 @@ dotnet run --project windows/LanPower.Desktop.Tests -c Release --no-build
 
 安装包输出为 `windows/out/LanPowerSetup-x64.exe`。构建脚本将服务和桌面端发布为自包含的 win-x64 程序，终端用户无需安装 .NET SDK 或运行命令。安装包需要管理员授权配置 LocalSystem 服务、防火墙和受保护的配对密钥。安装完成后自动打开桌面端。
 
+Setup 在文件复制后、创建快捷方式前验证后台服务，使用原配对密钥直连本机 `/api/status`，不使用安装用户的 HTTP 代理。失败时显示阶段、异常类型与错误码，返回非零退出码，完成页显示“安装未完成”，不新建快捷方式或启动桌面端。原有快捷方式可能继续保留；这不是完整的升级回滚。安装脚本会尝试清理本轮新建但未通过检查的服务，并恢复旧版后台任务，不删除原配对数据。
+
+安装诊断保存在 `%ProgramData%\LanPower\logs\install.log`（需管理员权限读取）；Setup 自身也会在安装进程的 `%TEMP%` 下生成 `Setup Log *.txt`。数据目录保护之前失败时，可能只有弹窗和 Setup 日志。诊断只记录阶段、类型和错误码，不记录配置内容、密钥或异常消息。完整排查方法见 [Windows 安装失败排查](../docs/windows-app.md#安装失败排查)。
+
 运行根目录 `scripts/build-release.ps1` 可同时生成安装器、`LanPower-portable-x64.zip`、Linux ARM64 网关和校验清单，随后用 `scripts/verify-release.ps1` 检查。便携分发包同样需要管理员安装服务，并将程序复制到受保护的 Program Files 目录；运行时配置和凭据不包含在发布包中。Setup 首次安装、保留 LAN 配对的就地升级、便携包实际安装和卸载重装已通过。详见 [构建与发布](../docs/releasing.md)。
 
 安装向导使用 Inno Setup 简体中文翻译，来源为 [Inno Setup 官方源码中的用户贡献译文](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl)。
@@ -43,6 +47,18 @@ dotnet run --project windows/LanPower.Desktop.Tests -c Release --no-build
 - 卸载新应用会移除服务和防火墙规则，并保留 ProgramData 配对配置，供重装沿用。旧版 `source/`、`LanPower/` 与 `Install.cmd` 仍保留。
 
 ## 验证边界
+
+2026-09-30 安装失败专项检查：用户反馈部分完整版 Windows 11 使用 Setup 时在末尾出现服务错误；用户在本机 Windows 沙盒安装两次均成功，故障机尚未复现，不能认定为普遍缺少运行库或已确认代理故障。本次改进安装检查、失败提示与诊断，不改动桌面端内存实现。Windows PowerShell 5.1 的直连检查、异常响应拒绝、诊断编码/隐私、服务清理及旧任务恢复回归通过；使用真实 Inno Setup 编译的隔离安装器验证成功、服务失败和无诊断文件三条路径，失败均返回非零、无新快捷方式/自动启动，完成页提示已验证。上述安装测试使用模拟服务，未停止或替换本机运行中的服务，也不替代故障机验证。
+
+本次已重建自包含 Setup 和便携包，验证 22 个便携包文件白名单、17 个安装组件哈希、脚本 UTF-8 BOM 编码及打包内容与源码一致；此前已有的 Gateway 产物仅参与哈希与格式校验。首次安装准备、原配置数组序列化和 6 项网卡选择回归仍通过。本次产物仅供本地排查，尚未发布。
+
+对应检查（最后一项需要 Inno Setup；脚本不管理本机真实服务）：
+
+```powershell
+./windows/installer/tests/test-install-diagnostics.ps1
+./windows/installer/tests/test-install-recovery.ps1
+./windows/installer/tests/test-setup-flow.ps1
+```
 
 2026-09-30 Windows 内存只读检查：已安装桌面端隐藏窗口时，三分钟私有工作集约 99.25–99.83 MiB，服务约 22.58–26.45 MiB。确认仍有托盘生命周期、页面按需创建和重复分配方面的优化空间；本轮未修改应用或运行配置，未量化优化收益。版本边界、运行时计数器与建议见 [Windows 客户端内存检查](../docs/windows-memory-review.md)。
 

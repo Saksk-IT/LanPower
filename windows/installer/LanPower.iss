@@ -18,6 +18,7 @@ WizardStyle=modern
 SetupIconFile=..\LanPower.Desktop\Assets\LanPower.ico
 UninstallDisplayIcon={app}\Desktop\LanPower.Desktop.exe
 CloseApplications=yes
+SetupLogging=yes
 
 [Languages]
 Name: "zh"; MessagesFile: "ChineseSimplified.isl"
@@ -27,32 +28,24 @@ Source: "..\out\service\*"; DestDir: "{app}\Service"; Excludes: "*.pdb"; Flags: 
 Source: "..\out\desktop\*"; DestDir: "{app}\Desktop"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\setup\install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\out\setup\uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\install-diagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: InstallLanPowerService
 
 [Icons]
-Name: "{group}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"
-Name: "{autodesktop}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Tasks: desktopicon
+Name: "{group}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Check: ServiceIsReady
+Name: "{autodesktop}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Tasks: desktopicon; Check: ServiceIsReady
 
 [Tasks]
 Name: desktopicon; Description: "创建桌面快捷方式"
 
 [Run]
-Filename: "{app}\Desktop\LanPower.Desktop.exe"; Description: "打开 LanPower"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\Desktop\LanPower.Desktop.exe"; Description: "打开 LanPower"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: ServiceIsReady
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-service.ps1"""; RunOnceId: "LanPowerServiceCleanup"; Flags: runhidden waituntilterminated
 
 [Code]
-var
-  ServiceInstallFailed: Boolean;
-
-function GetCustomSetupExitCode: Integer;
-begin
-  if ServiceInstallFailed then
-    Result := 10
-  else
-    Result := 0;
-end;
+#include "service-setup.iss"
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
@@ -67,22 +60,4 @@ begin
     Exit;
   end;
   Result := '';
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  ResultCode: Integer;
-  Script: String;
-begin
-  if CurStep = ssPostInstall then
-  begin
-    Script := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\install-service.ps1') +
-      '" -AppDir "' + ExpandConstant('{app}') + '"';
-    if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Script,
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
-    begin
-      ServiceInstallFailed := True;
-      RaiseException('LanPower Service 安装失败，请检查服务日志。');
-    end;
-  end;
 end;

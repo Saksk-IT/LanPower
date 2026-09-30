@@ -34,7 +34,7 @@ foreach ($entry in $components.GetEnumerator()) {
     New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
     Copy-Item -LiteralPath $source -Destination $destination
 }
-foreach ($name in @('install-service.ps1', 'network-selection.ps1', 'uninstall-service.ps1')) {
+foreach ($name in @('install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'uninstall-service.ps1')) {
     [IO.File]::WriteAllText((Join-Path $stage $name), [IO.File]::ReadAllText((Join-Path $PSScriptRoot $name), [Text.Encoding]::UTF8), [Text.UTF8Encoding]::new($true))
 }
 foreach ($name in @('Install.cmd', 'Open.cmd', 'Install-Portable.ps1', 'README.txt')) {
@@ -45,7 +45,7 @@ foreach ($name in @('Install.cmd', 'Open.cmd', 'Install-Portable.ps1', 'README.t
         [IO.File]::WriteAllText((Join-Path $stage $name), [IO.File]::ReadAllText($source).Replace("`r`n", "`n").Replace("`n", "`r`n"), [Text.Encoding]::ASCII)
     } else { Copy-Item -LiteralPath $source -Destination (Join-Path $stage $name) }
 }
-$manifest = foreach ($relative in @($components.Keys) + @('install-service.ps1', 'network-selection.ps1', 'uninstall-service.ps1')) {
+$manifest = foreach ($relative in @($components.Keys) + @('install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'uninstall-service.ps1')) {
     (Get-FileHash -LiteralPath (Join-Path $stage $relative) -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $relative
 }
 [IO.File]::WriteAllLines((Join-Path $stage 'FILES.sha256'), $manifest, [Text.UTF8Encoding]::new($false))

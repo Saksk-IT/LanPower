@@ -40,12 +40,21 @@ jobs:
       - name: Installer configuration serialization test
         shell: powershell
         run: ./windows/installer/tests/test-install-config.ps1
+      - name: Installer health and diagnostic tests
+        shell: powershell
+        run: ./windows/installer/tests/test-install-diagnostics.ps1
+      - name: Installer service recovery tests
+        shell: powershell
+        run: ./windows/installer/tests/test-install-recovery.ps1
       - name: Install Inno Setup
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
             choco install innosetup -y --no-progress
           }
+      - name: Installer success and failure flow tests
+        shell: pwsh
+        run: ./windows/installer/tests/test-setup-flow.ps1
       - name: Build Windows installer
         shell: pwsh
         run: ./windows/installer/build-installer.ps1
