@@ -32,6 +32,12 @@ jobs:
       - name: Installer network selection tests
         shell: pwsh
         run: ./windows/installer/tests/test-network-selection.ps1
+      - name: Installer first installation preparation test
+        shell: pwsh
+        run: ./windows/installer/tests/test-prepare-install.ps1
+      - name: Installer configuration serialization test
+        shell: powershell
+        run: ./windows/installer/tests/test-install-config.ps1
       - name: Install Inno Setup
         shell: pwsh
         run: |

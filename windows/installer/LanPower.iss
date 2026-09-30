@@ -42,13 +42,24 @@ Filename: "{app}\Desktop\LanPower.Desktop.exe"; Description: "打开 LanPower"; 
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-service.ps1"""; RunOnceId: "LanPowerServiceCleanup"; Flags: runhidden waituntilterminated
 
 [Code]
+var
+  ServiceInstallFailed: Boolean;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  if ServiceInstallFailed then
+    Result := 10
+  else
+    Result := 0;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop LanPowerService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -NonInteractive -Command "try { $s = Get-Service LanPowerService -ErrorAction SilentlyContinue; if ($s) { $s.WaitForStatus(''Stopped'', [TimeSpan]::FromSeconds(30)) } } catch { exit 1 }"',
+    '-NoProfile -NonInteractive -Command "try { $s = Get-Service LanPowerService -ErrorAction SilentlyContinue; if ($s) { $s.WaitForStatus(''Stopped'', [TimeSpan]::FromSeconds(30)) }; exit 0 } catch { exit 1 }"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
   begin
     Result := '无法停止现有 LanPower Service，请稍后重试。';
@@ -68,6 +79,9 @@ begin
       '" -AppDir "' + ExpandConstant('{app}') + '"';
     if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Script,
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+    begin
+      ServiceInstallFailed := True;
       RaiseException('LanPower Service 安装失败，请检查服务日志。');
+    end;
   end;
 end;

@@ -16,7 +16,7 @@ dotnet run --project windows/LanPower.Tests -c Release --no-build
 
 安装包输出为 `windows/out/LanPowerSetup-x64.exe`。构建脚本将服务和桌面端发布为自包含的 win-x64 程序，终端用户无需安装 .NET SDK 或运行命令。安装包需要管理员授权配置 LocalSystem 服务、防火墙和受保护的配对密钥。安装完成后自动打开桌面端。
 
-运行根目录 `scripts/build-release.ps1` 可同时生成安装器、`LanPower-portable-x64.zip`、Linux ARM64 网关和校验清单，随后用 `scripts/verify-release.ps1` 检查。便携分发包同样需要管理员安装服务，并将程序复制到受保护的 Program Files 目录；运行时配置和凭据不包含在发布包中。解压后的自包含服务已通过 LAN/命名管道演练；实际安装与升级仍待管理员环境验收。详见 [构建与发布](../docs/releasing.md)。
+运行根目录 `scripts/build-release.ps1` 可同时生成安装器、`LanPower-portable-x64.zip`、Linux ARM64 网关和校验清单，随后用 `scripts/verify-release.ps1` 检查。便携分发包同样需要管理员安装服务，并将程序复制到受保护的 Program Files 目录；运行时配置和凭据不包含在发布包中。解压后的自包含服务已通过 LAN/命名管道演练；Setup 首次管理员安装已通过，便携包实际安装与升级仍待验收。详见 [构建与发布](../docs/releasing.md)。
 
 安装向导使用 Inno Setup 简体中文翻译，来源为 [Inno Setup 官方源码中的用户贡献译文](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl)。
 
@@ -41,4 +41,13 @@ dotnet run --project windows/LanPower.Tests -c Release --no-build
 
 自动验证使用 `--dry-run` 启动新服务，检查旧版 LAN 状态与电源接口、配对页二维码、动作白名单、15 秒间隔限制和命名管道状态。Cloud 单元测试使用模拟服务验证配对批准、拒绝、过期、替换、保存失败重试、心跳、取命令、回执与重复命令记录。真实睡眠、休眠、重启、关机、WOL、安装迁移和公网连接需要在可恢复的 Windows 实机上逐项确认；自动测试不会改变电脑电源状态。
 
-2026-09-30 产品功能补齐后：Release 构建、48 项单元测试、服务/命名管道演练及 6 项安装网络选择检查通过；Cloud 在最终审计补齐后最新 74 项测试通过。已在当前电脑只读检测物理网卡、核对现有防火墙规则查询接口，并从实际 WPF 页面生成布局检查图。公开版本查询使用直连成功，系统代理路径在当前环境失败；界面提供代理选择和失败提示。当前会话未提升管理员权限，因此实际防火墙创建/修改、安装升级及卸载仍待目标管理员环境验收；未安装到当前工作电脑。
+2026-09-30 产品功能补齐后：Release 构建、48 项单元测试、服务/命名管道演练及 6 项安装网络选择检查通过；Cloud 最新 83 项测试通过。实际 WPF 布局和物理网卡只读检查通过。公开版本查询使用直连成功，系统代理路径在当前环境失败；界面提供代理选择和失败提示。
+
+同日已按用户授权替换旧环境，在目标 Windows 完成 Setup 管理员首次安装：服务以 LocalSystem 从受保护的 Program Files 路径运行，LAN 页面返回 200，桌面命名管道可读，防火墙只允许所选局域网地址和网段。已安装服务与桌面程序的 SHA-256 与构建产物一致。安装过程中修复了两个实际问题：不存在旧服务时必须显式返回成功，单个 `allowed_networks` 必须序列化为 JSON 数组；安装后服务脚本失败时，Setup 返回非零退出码。Windows PowerShell 5.1 回归检查已加入 CI：
+
+```powershell
+./windows/installer/tests/test-prepare-install.ps1
+./windows/installer/tests/test-install-config.ps1
+```
+
+本次全新安装由用户明确授权删除旧数据，不代表保留配置的升级、卸载重装、便携包安装或真实网卡变化已验收。真实电源动作由用户另行手动测试。
