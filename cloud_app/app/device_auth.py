@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from cloud_app.app.audit import credential_failure
 from cloud_app.app.auth import digest
 from cloud_app.app.models import AuditLog, Device, DeviceSession, UsedRefreshToken, User
 
@@ -43,13 +44,20 @@ class DeviceTokens:
     def authorize(self, token: str | None, *, expected_type: str) -> tuple[str, str]:
         if not token or len(token) > 128:
             raise PermissionError("device unauthorized")
-        with self.sessions() as db:
+        now, result = int(time.time()), None
+        with self.sessions.begin() as db:
             session = db.scalar(select(DeviceSession).where(
-                DeviceSession.access_hash == digest(token),
-                DeviceSession.access_expires_at > int(time.time()), DeviceSession.revoked_at.is_(None)))
-            if session is None or not self.active(db, session, expected_type):
-                raise PermissionError("device unauthorized")
-            return session.owner_id, session.device_id
+                DeviceSession.access_hash == digest(token)))
+            if session is not None:
+                if (session.access_expires_at > now and session.revoked_at is None
+                        and self.active(db, session, expected_type)):
+                    result = session.owner_id, session.device_id
+                else:
+                    credential_failure(db, session.owner_id, "device_credential_failed", now, session.device_id)
+        # Commit the audit event before returning the rejected request.
+        if result is None:
+            raise PermissionError("device unauthorized")
+        return result
 
     def _revoke_reused(self, db: Session, submitted_hash: str, device_id: str) -> None:
         used = db.get(UsedRefreshToken, submitted_hash)
@@ -75,11 +83,13 @@ class DeviceTokens:
         result = None
         with self.sessions.begin() as db:
             session = db.scalar(select(DeviceSession).where(
-                DeviceSession.device_id == payload["device_id"], DeviceSession.refresh_hash == submitted_hash,
-                DeviceSession.revoked_at.is_(None), DeviceSession.refresh_expires_at > now))
+                DeviceSession.device_id == payload["device_id"], DeviceSession.refresh_hash == submitted_hash))
             if session is None:
                 self._revoke_reused(db, submitted_hash, payload["device_id"])
-            elif self.active(db, session, expected_type):
+            elif (session.revoked_at is not None or session.refresh_expires_at <= now
+                    or not self.active(db, session, expected_type)):
+                credential_failure(db, session.owner_id, "device_credential_failed", now, session.device_id)
+            else:
                 access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
                 changed = db.execute(update(DeviceSession).where(
                     DeviceSession.id == session.id, DeviceSession.refresh_hash == submitted_hash,

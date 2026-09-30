@@ -42,6 +42,7 @@ EVENT_LABELS.update({"client_enrollment_created": "创建客户端二维码", "c
                      "client_revoked": "客户端已移除", "client_refresh_rotated": "客户端凭据已更新",
                      "client_refresh_reuse": "客户端凭据异常"})
 EVENT_LABELS.update({"gateway_linked": "关联唤醒网关", "gateway_unlinked": "移除网关关联"})
+EVENT_LABELS.update({"device_credential_failed": "设备授权失败", "client_credential_failed": "客户端授权失败"})
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)

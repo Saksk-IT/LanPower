@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from cloud_app.app.audit import credential_failure
 from cloud_app.app.auth import digest
 from cloud_app.app.device_auth import ACCESS_SECONDS, REFRESH_SECONDS
 from cloud_app.app.models import AuditLog, ClientEnrollment, ClientSession, UsedClientRefreshToken, User
@@ -64,16 +65,21 @@ class Clients:
     def authorize(self, token: str) -> tuple[str, str]:
         if not token or len(token) > 128:
             raise PermissionError("client unauthorized")
-        now = int(time.time())
+        now, result = int(time.time()), None
         with self.sessions.begin() as db:
             client = db.scalar(select(ClientSession).where(
-                ClientSession.access_hash == digest(token), ClientSession.access_expires_at > now,
-                ClientSession.revoked_at.is_(None)))
-            if client is None or not self.active(db, client.owner_id):
-                raise PermissionError("client unauthorized")
-            if client.last_seen_at is None or client.last_seen_at < now - 60:
-                client.last_seen_at = now
-            return client.owner_id, client.id
+                ClientSession.access_hash == digest(token)))
+            if client is not None:
+                if (client.access_expires_at > now and client.revoked_at is None
+                        and self.active(db, client.owner_id)):
+                    if client.last_seen_at is None or client.last_seen_at < now - 60:
+                        client.last_seen_at = now
+                    result = client.owner_id, client.id
+                else:
+                    credential_failure(db, client.owner_id, "client_credential_failed", now)
+        if result is None:
+            raise PermissionError("client unauthorized")
+        return result
 
     def revoke_reuse(self, db: Session, token_hash: str, client_id: str) -> None:
         used = db.get(UsedClientRefreshToken, token_hash)
@@ -94,11 +100,13 @@ class Clients:
         submitted = digest(payload["refresh_token"])
         with self.sessions.begin() as db:
             client = db.scalar(select(ClientSession).where(
-                ClientSession.id == payload["client_id"], ClientSession.refresh_hash == submitted,
-                ClientSession.refresh_expires_at > now, ClientSession.revoked_at.is_(None)))
+                ClientSession.id == payload["client_id"], ClientSession.refresh_hash == submitted))
             if client is None:
                 self.revoke_reuse(db, submitted, payload["client_id"])
-            elif self.active(db, client.owner_id):
+            elif (client.refresh_expires_at <= now or client.revoked_at is not None
+                    or not self.active(db, client.owner_id)):
+                credential_failure(db, client.owner_id, "client_credential_failed", now)
+            else:
                 access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
                 changed = db.execute(update(ClientSession).where(
                     ClientSession.id == client.id, ClientSession.refresh_hash == submitted,
