@@ -51,6 +51,8 @@ Windows 直连在线时优先 `windows_direct`。`wake` 只能显式选择，走
 - **关闭 Router Gateway，在公网 Web 对在线 Windows 逐项执行 status、sleep、hibernate、restart、shutdown。** 这是原架构的最终硬性验收，当前自动测试仅模拟电源动作。
 - 远程 CI 与正式 Release 产物发布尚未执行；本轮仅本地提交。
 
+四个要求的发布文件已本地生成；便携包白名单、组件与完整文件哈希、自包含服务运行及工作流静态检查通过。发布流程已配置为全部构建检查成功后再上传，详见 [构建与发布](releasing.md)。
+
 Router Plugin、LAN 自动发现、其他操作系统设备、公开多用户和一次性本地 LAN 授权为原方案的后续扩展，不替代现有 LAN 兼容能力。
 
 ## 文档入口

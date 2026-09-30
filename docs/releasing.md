@@ -1,0 +1,54 @@
+# 构建与发布
+
+新架构仍处于源码验证阶段。构建发布产物不代表正式发布，也不替代公网、Windows 管理员安装、微信和网关实机验收。
+
+## 本地生成产物
+
+Windows 构建环境需要 .NET 10 SDK、Go 1.27.1 和 Inno Setup 6。在仓库根目录运行：
+
+```powershell
+./scripts/build-release.ps1
+./scripts/verify-release.ps1
+```
+
+工具未加入 PATH 时，可传入 `-DotnetPath`、`-GoPath` 和 `-IsccPath`。产物位于 `windows/out/`：
+
+| 文件 | 用途 |
+|---|---|
+| `LanPowerSetup-x64.exe` | 自包含 Windows 安装器，安装服务和桌面端 |
+| `LanPower-portable-x64.zip` | 不使用 Setup.exe 的分发包，仍需管理员安装 Windows 服务 |
+| `lanpower-gateway-linux-arm64` | 同时支持旧协议和二代协议的 Linux ARM64 网关 |
+| `SHA256SUMS.txt` | 三个发布文件的 SHA-256 校验值 |
+
+Windows 应用与 Cloud 的当前产品版本为 `1.4.0`；网关自身版本为 `2.0.0`，同时支持协议 1 和 2。产品标签不是所有组件的协议版本。
+
+便携包使用固定文件白名单：服务和桌面组件、安装脚本、打开入口及说明。包内 `FILES.sha256` 校验 16 个安装组件；外部 `SHA256SUMS.txt` 校验整个 ZIP。包内不含运行时配置、设备凭据、配对码、数据库、日志或调试符号。安装脚本使用 UTF-8 BOM，支持 Windows PowerShell 5.1。
+
+安装便携包时，先解压再运行 `Install.cmd`，安装完成后用 `Open.cmd` 打开桌面端。安装会将程序复制到受保护的 `Program Files\LanPower`，服务不会从普通用户可修改的解压目录运行。已有 Setup 安装建议继续用同类安装器升级；配置保留在 `ProgramData\LanPower`。包内哈希不能证明下载来源，应同时核对正式发布页提供的整个文件校验值。
+
+## 本地检查
+
+发布校验检查三个文件的哈希、网关 ELF 架构、ZIP 完整白名单以及所有安装组件的哈希。解压后的服务也可复用 LAN 与命名管道演练：
+
+```powershell
+Expand-Archive windows/out/LanPower-portable-x64.zip -DestinationPath "$env:TEMP/LanPower-portable-test" -Force
+dotnet run --project windows/LanPower.Tests -c Release -- "$env:TEMP/LanPower-portable-test/Service/LanPower.Service.exe"
+```
+
+该演练使用独立临时配置和 `--dry-run`，不会安装服务、修改防火墙或执行真实电源动作。正式发布仍需完成 [架构验收清单](architecture-v2.md#阶段证据与剩余项)，尤其是关闭网关后的公网 Windows 控制。
+
+## GitHub Actions
+
+`.github/workflows/release.yml` 复用 CI 的 Windows、Cloud、小程序和 Gateway 检查，随后生成并校验四个发布文件、演练解压后的服务，以及构建 Cloud 镜像。
+
+- 手动运行默认只构建和保存工作流产物，不上传 Release 或 GHCR。
+- 发布仅在版本标签触发，或手动选择版本标签并明确开启 `publish` 时执行。
+- 发布标签必须与 `windows/Directory.Build.props` 一致，当前为 `v1.4.0`；分支和错误版本会被拒绝。
+- Windows 文件和 Cloud 镜像均构建、验证成功后，才进入上传步骤。Cloud 镜像保存为 `ghcr.io/<仓库所有者小写>/lanpower-cloud:<产品版本>` 和 `sha-<源码提交>`，不覆盖 `latest`。
+- Release 只上传四个明确列出的文件；说明来自 `docs/release-notes.md`。已有相同版本 Release 时更新对应附件。
+
+发布前应按实际验收结果更新说明草稿，确认标签内容和公开文件。打标签和推送会触发外部发布，只在用户明确要求同步远程时执行。
+
+## 当前验证记录
+
+2026-09-30：三个二进制产物与校验清单本地生成成功；ZIP 白名单、组件哈希、编码与 Windows 程序版本检查通过；解压后自包含服务的 LAN/命名管道演练通过；Go Linux 静态检查和 `-version` 实际运行通过；工作流静态检查与发布标签正向/拒绝检查通过。远程 CI 和发布工作流尚未触发，没有远程运行编号。

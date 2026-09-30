@@ -24,9 +24,9 @@ Name: "zh"; MessagesFile: "ChineseSimplified.isl"
 [Files]
 Source: "..\out\service\*"; DestDir: "{app}\Service"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\desktop\*"; DestDir: "{app}\Desktop"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"

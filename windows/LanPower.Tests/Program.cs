@@ -34,7 +34,9 @@ try
 catch (InvalidDataException) { }
 
 var repo = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-var serviceExe = Path.Combine(repo, "windows", "LanPower.Service", "bin", "Release", "net10.0-windows", "LanPower.Service.exe");
+if (args.Length > 1) throw new ArgumentException("Expected an optional service executable path.");
+var serviceExe = args.Length == 1 ? Path.GetFullPath(args[0])
+    : Path.Combine(repo, "windows", "LanPower.Service", "bin", "Release", "net10.0-windows", "LanPower.Service.exe");
 Check(File.Exists(serviceExe), "service build exists");
 using var listener = new TcpListener(IPAddress.Loopback, 0);
 listener.Start();
@@ -48,6 +50,7 @@ using var service = Process.Start(new ProcessStartInfo(serviceExe)
 {
     ArgumentList = { "--config", configPath, "--dry-run" },
     UseShellExecute = false,
+    WorkingDirectory = Path.GetDirectoryName(serviceExe)!,
     CreateNoWindow = true
 }) ?? throw new Exception("service did not start");
 try

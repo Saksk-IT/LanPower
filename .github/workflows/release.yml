@@ -1,0 +1,140 @@
+name: Release artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the selected version tag to Release and GHCR
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  package:
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: router_gateway/go.mod
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build release files
+        shell: pwsh
+        run: ./scripts/build-release.ps1
+      - name: Validate artifact contents and checksums
+        shell: pwsh
+        run: ./scripts/verify-release.ps1
+      - name: Test the extracted portable service without power actions
+        shell: pwsh
+        run: |
+          $portableTestDir = Join-Path $env:RUNNER_TEMP 'lanpower-portable-test'
+          Expand-Archive -LiteralPath windows/out/LanPower-portable-x64.zip -DestinationPath $portableTestDir -Force
+          dotnet run --project windows/LanPower.Tests -c Release -- (Join-Path $portableTestDir 'Service/LanPower.Service.exe')
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-files
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            windows/out/LanPowerSetup-x64.exe
+            windows/out/LanPower-portable-x64.zip
+            windows/out/lanpower-gateway-linux-arm64
+            windows/out/SHA256SUMS.txt
+
+  cloud:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and validate Cloud image
+        run: |
+          docker build -f cloud_app/Dockerfile -t lanpower-cloud:release .
+          docker run --rm lanpower-cloud:release lanpower-cloud migrate-v1 --help
+          test "$(docker image inspect lanpower-cloud:release --format '{{.Config.User}}')" = '10001:10001'
+      - name: Validate publication tag
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: python scripts/validate-release-tag.py "$RELEASE_REF"
+      - name: Save verified Cloud image
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
+        run: docker save lanpower-cloud:release -o "$RUNNER_TEMP/cloud-image.tar"
+      - uses: actions/upload-artifact@v7
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
+        with:
+          name: cloud-image
+          if-no-files-found: error
+          compression-level: 0
+          path: ${{ runner.temp }}/cloud-image.tar
+
+  publish:
+    needs: [package, cloud]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-files
+          path: release-files
+      - uses: actions/download-artifact@v8
+        with:
+          name: cloud-image
+          path: cloud-image
+      - name: Validate publication tag and checksums
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          python scripts/validate-release-tag.py "$RELEASE_REF"
+          cd release-files
+          sha256sum --check SHA256SUMS.txt
+      - name: Publish verified Cloud image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker load -i cloud-image/cloud-image.tar
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/lanpower-cloud"
+          version="${GITHUB_REF_NAME#v}"
+          docker tag lanpower-cloud:release "$image:$version"
+          docker tag lanpower-cloud:release "$image:sha-$GITHUB_SHA"
+          docker push "$image:$version"
+          docker push "$image:sha-$GITHUB_SHA"
+      - name: Create or update Release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-files/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release-files/* --verify-tag --title "LanPower $RELEASE_TAG" --notes-file docs/release-notes.md
+          fi

@@ -16,6 +16,8 @@ dotnet run --project windows/LanPower.Tests -c Release --no-build
 
 安装包输出为 `windows/out/LanPowerSetup-x64.exe`。构建脚本将服务和桌面端发布为自包含的 win-x64 程序，终端用户无需安装 .NET SDK 或运行命令。安装包需要管理员授权配置 LocalSystem 服务、防火墙和受保护的配对密钥。安装完成后自动打开桌面端。
 
+运行根目录 `scripts/build-release.ps1` 可同时生成安装器、`LanPower-portable-x64.zip`、Linux ARM64 网关和校验清单，随后用 `scripts/verify-release.ps1` 检查。便携分发包同样需要管理员安装服务，并将程序复制到受保护的 Program Files 目录；运行时配置和凭据不包含在发布包中。解压后的自包含服务已通过 LAN/命名管道演练；实际安装与升级仍待管理员环境验收。详见 [构建与发布](../docs/releasing.md)。
+
 安装向导使用 Inno Setup 简体中文翻译，来源为 [Inno Setup 官方源码中的用户贡献译文](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl)。
 
 ## 安装与旧版兼容

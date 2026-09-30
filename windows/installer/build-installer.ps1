@@ -24,6 +24,14 @@ foreach ($name in @('service', 'desktop')) {
 if ($LASTEXITCODE -ne 0) { throw 'Service 发布失败。' }
 & $DotnetPath publish (Join-Path $windowsDir 'LanPower.Desktop\LanPower.Desktop.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o (Join-Path $outputDir 'desktop')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop 发布失败。' }
+# Windows PowerShell 5.1 reads non-BOM files using the system ANSI code page.
+# Package UTF-8 BOM scripts so Chinese error messages survive installation.
+$setupDir = Join-Path $outputDir 'setup'
+New-Item -ItemType Directory -Path $setupDir -Force | Out-Null
+foreach ($name in @('install-service.ps1', 'network-selection.ps1', 'uninstall-service.ps1')) {
+    [IO.File]::WriteAllText((Join-Path $setupDir $name),
+        [IO.File]::ReadAllText((Join-Path $PSScriptRoot $name), [Text.Encoding]::UTF8), [Text.UTF8Encoding]::new($true))
+}
 & $IsccPath (Join-Path $PSScriptRoot 'LanPower.iss')
 if ($LASTEXITCODE -ne 0) { throw '安装包构建失败。' }
 Write-Host (Join-Path $outputDir 'LanPowerSetup-x64.exe')

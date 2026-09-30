@@ -17,6 +17,8 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 完整文档入口：[架构与实现状态](docs/architecture-v2.md)、[Windows 应用](docs/windows-app.md)、[Docker 一键 HTTPS](deploy/docker/README.md)、[认证](docs/authentication-v2.md)、[数据迁移](docs/migration-v1.md)、[安全边界](docs/security-model.md)、[故障排查](docs/troubleshooting.md)。
 
+新版安装器、便携分发包、ARM64 网关及校验清单已在本地生成并校验，解压后的服务演练通过。开发者可按 [构建与发布](docs/releasing.md) 重现；正式发布和公网实机验收仍未执行。
+
 ## 新架构快速开始（源码版本）
 
 1. 按 [Windows 构建说明](windows/README.md) 生成并安装 Windows 应用，或等待新版安装包发布。安装后，局域网控制无需 Cloud。

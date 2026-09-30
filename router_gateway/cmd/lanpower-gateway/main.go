@@ -143,7 +143,12 @@ func main() {
 	}
 	flag.StringVar(&cfgPath, "config", "/data/lanpower/gateway.json", "gateway config path")
 	check := flag.Bool("check-config", false, "validate configuration and exit")
+	version := flag.Bool("version", false, "show binary version and exit")
 	flag.Parse()
+	if *version {
+		fmt.Println("LanPower Gateway 2.0.0 (protocols 1 and 2)")
+		return
+	}
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
