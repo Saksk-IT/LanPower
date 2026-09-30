@@ -1,6 +1,6 @@
 # Cloud Direct 开发与验收清单
 
-对应 `architecture-v2-cloud-direct.md` 的开发范围。2026-09-30：六个里程碑的核心源码和本地发布准备已实现；指定公网 Cloud、本机 Windows 与路由器 v2 已部署，真实身份初始化和状态链路通过。电源与微信等最终硬件验收尚未完成，整个架构目标仍在进行。
+对应 `architecture-v2-cloud-direct.md` 的开发范围。2026-09-30：六个里程碑的核心源码和本地发布准备已实现；指定公网 Cloud、本机 Windows 与路由器 v2 已部署，真实身份初始化和状态链路通过。用户反馈基本流程正常，但仍有问题，并要求到此收尾。开发目标已暂停；剩余问题与未逐项确认的硬件验收留待后续，不据此宣称完整架构验收通过。
 
 ## 六个里程碑
 
@@ -26,10 +26,10 @@
 | LAN 独立、Cloud 不保存 LAN 凭据、Cloud/Gateway 出站、不开放电脑公网端口 | Windows LAN/网络配置、Gateway 本地配置、Cloud 请求白名单；`docs/security-model.md` | 源码边界与模拟通过；真实 Windows 入站仅所选 LAN，Cloud 8765 仅回环；路由器 v2 唤醒配置无需 LAN Token |
 | 升级与旧实现共存 | `source/`、`LanPower/`、`cloud_remote/`、`/api/v1/*`、小程序旧入口；`docs/migration-v1.md` | 兼容源码保留，Cloud 迁移只读旧数据；Windows 旧 Python 到 Setup 迁移、新版升级和卸载重装保留配对已通过 |
 | 发布文件与校验清单、Cloud 镜像 | `scripts/build-release.ps1`、`verify-release.ps1`、`windows/installer/`；`docs/releasing.md` | 四个文件已生成并校验，解压服务演练通过；镜像本地构建通过 |
-| CI、验证后发布、版本标签限制 | `.github/workflows/ci.yml`、`release.yml`、`scripts/validate-release-tag.py` | 本地工作流检查和标签拒绝检查通过；远程尚未运行，无 Run ID |
+| CI、验证后发布、版本标签限制 | `.github/workflows/ci.yml`、`release.yml`、`scripts/validate-release-tag.py`、`scripts/validate-public-files.py` | 本地工作流检查、标签拒绝检查与公开文件检查通过；主分支同步触发 CI，结果以对应提交的 Actions 为准 |
 | 架构、部署、认证、迁移、故障文档与用户术语 | README、`docs/architecture-v2.md` 及文档入口 | 已更新；保留源码与实机验收的区别 |
 
-## 本地提交记录
+## 开发提交记录
 
 近期实现与收尾提交：
 
@@ -45,8 +45,15 @@
 - `bc45266`：小程序版本展示与客户端版本迁移。
 - `a2f2b0d`：首次安装、网段数组序列化与 Windows 实机服务。
 - `2ad93e8`：公网部署、路由器迁移与服务连接诊断。
+- `8282883`：Windows 安装迁移、便携安装、卸载重装与 Cloud 证书联合恢复的实机记录。
 
-早期 Windows 与 Cloud Direct 提交由仓库历史保留。本轮只在 `main` 本地提交，未推送、未正式发布。
+早期 Windows 与 Cloud Direct 提交由仓库历史保留。本次收尾按用户要求仅同步 `main` 源码，不创建版本标签、不发布 Release、安装包或镜像。公开网关示例、文档、测试数据和旧小程序 WOL 默认值已改为演示地址与 MAC；CI 增加公开文件检查，运行凭据、恢复码和本地原稿保持在仓库之外。
+
+## 阶段收尾
+
+用户反馈“基本是正常的，但是还有问题”，要求停止当前工作，后续再修复。该反馈作为整体试用结果记录，不替代各动作、各网络路径的逐项实机证据。当前已完成的源码、部署与验证记录保留；未完成问题及验收安排留待下一阶段。
+
+源码同步前验证：公开文件与配置示例检查、旧小程序 LAN/远程/WOL 回退测试、Windows LAN API 的 5 项模拟测试、Go 配置测试及暂存差异格式检查通过。当前提交内容已检查实际环境信息，公开示例和测试使用演示参数；历史已公开信息未做历史重写。本次没有执行真实电源动作。
 
 ## 实机验收安排
 

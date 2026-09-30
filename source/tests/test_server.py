@@ -93,7 +93,7 @@ class PowerServerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_config(config_path)
             config_path.write_text(json.dumps({
-                "token": TOKEN, "host_ip": "192.168.32.87",
+                "token": TOKEN, "host_ip": "192.168.2.100",
                 "allowed_networks": ["192.168.1.0/24"], "port": 48211,
             }), encoding="utf-8")
             with self.assertRaises(ValueError):

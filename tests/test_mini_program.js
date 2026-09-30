@@ -40,7 +40,7 @@ async function main() {
   }
 
   const packet = new Uint8Array(makeMagicPacket('02-11-22-33-44-55'));
-  const mac = [0x30, 0x56, 0x0f, 0xa1, 0xdf, 0x96];
+  const mac = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
   assert.equal(packet.length, 102);
   assert.ok(packet.slice(0, 6).every((byte) => byte === 0xff));
   for (let repeat = 0; repeat < 16; repeat += 1) {

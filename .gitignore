@@ -12,7 +12,10 @@
 *.zip
 **/gateway.json
 **/device-credentials.json
+**/credentials.dat
 **/command-receipts.json
+**/cloud-replay.jsonl
+**/*recovery-codes*.txt
 **/gateway.lock
 **/seen.json
 **/cloud.json
@@ -28,3 +31,5 @@ private/
 /deploy/docker/backups/
 /AGENTS.md
 /router-gateway-implementation.md
+/docs/architecture-v2-cloud-direct.md
+/docs/router-gateway-implementation.md
