@@ -7,3 +7,33 @@ page {
 }
 
 button::after { border: none; }
+
+/* style: v2 的 button:not([size=mini]) 默认固定为 184px。
+   使用元素 + 类选择器覆盖其宽度和水平外边距，保留页面各自的视觉样式。 */
+button.text-button,
+button.topic-tab,
+button.tab-item {
+  width: auto;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+button.primary-button,
+button.outline-button,
+button.power-button,
+button.list-button,
+button.row-button,
+button.faq-row,
+button.centered-button,
+button.danger-link {
+  box-sizing: border-box;
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+button.feedback-close {
+  width: 68rpx;
+  margin-left: 0;
+  margin-right: 0;
+}
