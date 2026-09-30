@@ -3,10 +3,16 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\LanPower.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Resource Include="Assets\LanPower.ico" />
+    <Resource Include="Assets\LanPower.png" />
     <ProjectReference Include="..\LanPower.Shared\LanPower.Shared.csproj" />
   </ItemGroup>
 </Project>

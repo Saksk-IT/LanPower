@@ -15,6 +15,7 @@ OutputBaseFilename=LanPowerSetup-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\LanPower.Desktop\Assets\LanPower.ico
 UninstallDisplayIcon={app}\Desktop\LanPower.Desktop.exe
 CloseApplications=yes
 

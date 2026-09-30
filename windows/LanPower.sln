@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LanPower.Tests", "LanPower.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LanPower.UnitTests", "LanPower.UnitTests\LanPower.UnitTests.csproj", "{AE6B003F-7AAB-4FE2-B9F8-032A4CEC60DF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LanPower.Desktop.Tests", "LanPower.Desktop.Tests\LanPower.Desktop.Tests.csproj", "{552A477A-8FD6-4ADF-B7DA-843A4510C04F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,18 @@ Global
 		{AE6B003F-7AAB-4FE2-B9F8-032A4CEC60DF}.Release|x64.Build.0 = Release|Any CPU
 		{AE6B003F-7AAB-4FE2-B9F8-032A4CEC60DF}.Release|x86.ActiveCfg = Release|Any CPU
 		{AE6B003F-7AAB-4FE2-B9F8-032A4CEC60DF}.Release|x86.Build.0 = Release|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Debug|x64.Build.0 = Debug|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Debug|x86.Build.0 = Debug|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Release|x64.ActiveCfg = Release|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Release|x64.Build.0 = Release|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Release|x86.ActiveCfg = Release|Any CPU
+		{552A477A-8FD6-4ADF-B7DA-843A4510C04F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

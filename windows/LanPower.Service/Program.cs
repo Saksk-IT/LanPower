@@ -120,6 +120,16 @@ app.MapGet("/setup/qr.svg", (HttpContext context) =>
     return Results.Content(svg.GetGraphic(6), "image/svg+xml; charset=utf-8");
 });
 
+app.MapGet("/setup/qr.png", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.Json(new { error = "open setup on the PC" }, statusCode: 403);
+    var current = network.Config;
+    var url = $"http://{current.HostIp}:{current.Port}/#access={current.Token}";
+    using var qrData = QRCodeGenerator.GenerateQrCode(url, QRCodeGenerator.ECCLevel.Q);
+    using var png = new PngByteQRCode(qrData);
+    return Results.Bytes(png.GetGraphic(8), "image/png");
+});
+
 var assets = new Dictionary<string, (string File, string Type)>
 {
     ["/"] = ("index.html", "text/html; charset=utf-8"),

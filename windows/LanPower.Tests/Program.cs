@@ -76,6 +76,11 @@ try
     Check(setup.IsSuccessStatusCode && (await setup.Content.ReadAsStringAsync()).Contains(token), "loopback pairing page");
     using var qr = await client.GetAsync("/setup/qr.svg");
     Check(qr.IsSuccessStatusCode && (await qr.Content.ReadAsStringAsync()).Contains("<svg"), "pairing QR code");
+    using var png = await client.GetAsync("/setup/qr.png");
+    var image = await png.Content.ReadAsByteArrayAsync();
+    Check(png.IsSuccessStatusCode && png.Content.Headers.ContentType?.MediaType == "image/png" &&
+        image.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }), "desktop pairing PNG");
+    Check(png.Headers.CacheControl?.NoStore == true, "pairing PNG is not cached");
     using var invalidAction = await client.PostAsync("/api/power", new StringContent("{\"action\":\"wake\"}", Encoding.UTF8, "application/json"));
     Check((int)invalidAction.StatusCode == 400, "wake is not a local power action");
     using var accepted = await client.PostAsync("/api/power", new StringContent("{\"action\":\"shutdown\"}", Encoding.UTF8, "application/json"));

@@ -27,6 +27,8 @@ jobs:
         run: dotnet build windows/LanPower.sln -c Release
       - name: Windows unit tests
         run: dotnet test windows/LanPower.sln -c Release --no-build
+      - name: Windows desktop layout and state checks
+        run: dotnet run --project windows/LanPower.Desktop.Tests -c Release --no-build
       - name: Windows service and IPC tests
         run: dotnet run --project windows/LanPower.Tests -c Release --no-build
       - name: Installer network selection tests

@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(20) };
     private bool _loadingStatus;
     private bool _cloudConfigured;
-    private string _version = "1.4.0";
+    private readonly string _version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.4.0";
     private string? _releasePage;
     private bool _loadingSettings;
     private readonly string _preferencesPath = Path.Combine(
@@ -25,22 +25,40 @@ public partial class MainWindow : Window
 
     private sealed record AdapterChoice(string Id, string Label);
 
-    public MainWindow() => InitializeComponent();
+    public MainWindow() : this(PipeClient.RequestAsync) { }
+
+    internal MainWindow(Func<string, CancellationToken, Task<JsonDocument>> request)
+    {
+        _request = request;
+        InitializeComponent();
+        OverviewNav.IsChecked = true;
+        IsVisibleChanged += (_, _) => { if (!IsVisible) ClearPairingQr(); };
+    }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (_loaded) return;
         try
         {
             if (File.Exists(_preferencesPath))
             {
                 using var saved = JsonDocument.Parse(File.ReadAllText(_preferencesPath));
-                UpdateProxyBox.IsChecked = saved.RootElement.GetProperty("use_system_proxy_for_updates").GetBoolean();
+                if (saved.RootElement.TryGetProperty("use_system_proxy_for_updates", out var proxy))
+                    UpdateProxyBox.IsChecked = proxy.GetBoolean();
+                if (saved.RootElement.TryGetProperty("close_to_tray", out var tray))
+                    CloseToTrayBox.IsChecked = tray.GetBoolean();
             }
         }
         catch { }
+        _loaded = true;
+        SidebarVersion.Text = $"Windows {_version}";
+        VersionNotice.Text = $"当前桌面版本 {_version}";
+        DeviceName.Text = Environment.MachineName;
         FirstRunPanel.Visibility = File.Exists(_welcomeMarker) ? Visibility.Collapsed : Visibility.Visible;
         _statusTimer.Tick += RefreshStatus;
         _statusTimer.Start();
+        _qrTimer.Tick += (_, _) => UpdateQrExpiry();
+        _qrTimer.Start();
         await LoadStatusAsync();
     }
 
@@ -48,48 +66,53 @@ public partial class MainWindow : Window
     {
         if (_loadingStatus) return;
         _loadingStatus = true;
+        RefreshStatusButton.IsEnabled = false;
         try
         {
-            using var response = await PipeClient.RequestAsync("status");
+            using var response = await RequestAsync("status");
             if (!response.RootElement.GetProperty("ok").GetBoolean()) throw new IOException("服务返回错误");
             var status = response.RootElement.GetProperty("status").Deserialize<ServiceStatus>()!;
             DeviceName.Text = status.Device;
-            DeviceState.Text = "● 在线";
+            DeviceState.Text = "服务运行中";
             LanState.Text = status.LanState;
             CloudState.Text = status.CloudState;
             GatewayState.Text = status.GatewayState;
             LanIp.Text = status.LanIp;
             Mac.Text = string.IsNullOrEmpty(status.Mac) ? "未检测到" : status.Mac;
             WolState.Text = status.WolState;
-            _version = status.Version;
+            ApplyStatusDisplay(status);
             _cloudConfigured = !string.IsNullOrEmpty(status.CloudUrl) || status.CloudState != "未配置";
-            if (_cloudWait is null) CloudDisconnectButton.IsEnabled = _cloudConfigured;
+            _serviceAvailable = true;
+            UpdateCloudButtons();
             if (_cloudWait is null && !CloudUrlBox.IsKeyboardFocused && CloudUrlBox.Text == "https://" && !string.IsNullOrWhiteSpace(status.CloudUrl))
                 CloudUrlBox.Text = status.CloudUrl;
         }
         catch
         {
-            DeviceState.Text = "● 服务未连接";
-            LanState.Text = "请检查 LanPower Service";
+            DeviceState.Text = "服务未连接";
+            LanState.Text = "状态未知";
             CloudState.Text = "状态未知";
             GatewayState.Text = "状态未知";
             WolState.Text = "无法确认";
+            LanIp.Text = Mac.Text = "—";
+            ApplyUnavailableDisplay();
         }
-        finally { _loadingStatus = false; }
+        finally { _loadingStatus = false; RefreshStatusButton.IsEnabled = true; }
     }
 
     private async void RefreshStatus(object? sender, EventArgs e) => await LoadStatusAsync();
 
     private async void ConnectCloud(object sender, RoutedEventArgs e)
     {
-        CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudUrlBox.IsEnabled = false;
-        CloudDisconnectButton.IsEnabled = false;
+        if (_cloudBusy) return;
+        _cloudBusy = true;
+        UpdateCloudButtons();
         CloudNotice.Text = "正在请求配对…";
         using var wait = new CancellationTokenSource();
         _cloudWait = wait;
         try
         {
-            using var response = await PipeClient.RequestAsync(JsonSerializer.Serialize(new
+            using var response = await RequestAsync(JsonSerializer.Serialize(new
             { op = "enroll_start", cloud_url = CloudUrlBox.Text.Trim() }));
             if (!response.RootElement.GetProperty("ok").GetBoolean())
             {
@@ -107,7 +130,7 @@ public partial class MainWindow : Window
                 wait.Token.ThrowIfCancellationRequested();
                 try
                 {
-                    using var progress = await PipeClient.RequestAsync(JsonSerializer.Serialize(new
+                    using var progress = await RequestAsync(JsonSerializer.Serialize(new
                     { op = "enroll_poll", enrollment_id = pairing.Id }));
                     if (progress.RootElement.GetProperty("ok").GetBoolean())
                     {
@@ -142,8 +165,9 @@ public partial class MainWindow : Window
             _cloudWait = null;
             _cloudPairing = null;
             CloudPairingPanel.Visibility = Visibility.Collapsed;
-            CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudUrlBox.IsEnabled = true;
-            CloudDisconnectButton.IsEnabled = _cloudConfigured;
+            CloudUserCode.Clear();
+            _cloudBusy = false;
+            UpdateCloudButtons();
         }
     }
 
@@ -154,7 +178,7 @@ public partial class MainWindow : Window
         if (id is null) return;
         try
         {
-            using var result = await PipeClient.RequestAsync(JsonSerializer.Serialize(new { op = "enroll_cancel", enrollment_id = id }));
+            using var result = await RequestAsync(JsonSerializer.Serialize(new { op = "enroll_cancel", enrollment_id = id }));
             if (!result.RootElement.GetProperty("ok").GetBoolean()) CloudNotice.Text = "无法停止配对，请检查连接状态。";
         }
         catch { CloudNotice.Text = "无法联系服务，请检查连接状态。"; }
@@ -164,10 +188,12 @@ public partial class MainWindow : Window
     {
         if (MessageBox.Show(this, "断开后将停止这台电脑的云端控制。局域网功能继续可用。是否断开？",
             "断开 Cloud", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = CloudDisconnectButton.IsEnabled = false;
+        if (_cloudBusy) return;
+        _cloudBusy = true;
+        UpdateCloudButtons();
         try
         {
-            using var response = await PipeClient.RequestAsync("{\"op\":\"cloud_disconnect\"}");
+            using var response = await RequestAsync("{\"op\":\"cloud_disconnect\"}");
             if (!response.RootElement.GetProperty("ok").GetBoolean())
             {
                 CloudNotice.Text = response.RootElement.GetProperty("error").GetString() ?? "无法断开连接";
@@ -182,8 +208,8 @@ public partial class MainWindow : Window
         catch { CloudNotice.Text = "无法完成操作，请检查服务状态后重试。"; }
         finally
         {
-            CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = true;
-            CloudDisconnectButton.IsEnabled = _cloudConfigured;
+            _cloudBusy = false;
+            UpdateCloudButtons();
         }
     }
 
@@ -191,7 +217,10 @@ public partial class MainWindow : Window
     {
         var address = _cloudPairing?.VerificationUri ?? CloudUrlBox.Text.Trim().TrimEnd('/') + "/dashboard";
         if (Uri.TryCreate(address, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.UserInfo.Length == 0)
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        {
+            try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+            catch { CloudNotice.Text = "无法打开网页，请检查默认浏览器设置。"; }
+        }
         else CloudNotice.Text = "请先输入有效的 HTTPS Cloud 地址。";
     }
 
@@ -199,12 +228,19 @@ public partial class MainWindow : Window
     {
         _cloudWait?.Cancel();
         _statusTimer.Stop();
+        _qrTimer.Stop();
+        ClearPairingQr();
+        _lifetime.Cancel();
+        _pairingHttp.Dispose();
         base.OnClosed(e);
+        if (Application.Current is App app && !app.IsExiting) Application.Current.Shutdown();
     }
 
     private async void ConnectLegacyCloud(object sender, RoutedEventArgs e)
     {
-        CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = false;
+        if (_cloudBusy) return;
+        _cloudBusy = true;
+        UpdateCloudButtons();
         CloudNotice.Text = "正在连接…";
         try
         {
@@ -214,7 +250,7 @@ public partial class MainWindow : Window
                 cloud_url = CloudUrlBox.Text.Trim(),
                 code = CloudCodeBox.Password.Trim()
             });
-            using var response = await PipeClient.RequestAsync(command);
+            using var response = await RequestAsync(command);
             if (!response.RootElement.GetProperty("ok").GetBoolean())
             {
                 CloudNotice.Text = response.RootElement.GetProperty("error").GetString() ?? "配对失败";
@@ -228,34 +264,56 @@ public partial class MainWindow : Window
         {
             CloudNotice.Text = "无法连接服务或 Cloud，请稍后重试。";
         }
-        finally { CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = true; }
+        finally { _cloudBusy = false; UpdateCloudButtons(); }
     }
 
     private async void ShowLogs(object sender, RoutedEventArgs e)
     {
-        LogPanel.Visibility = Visibility.Visible;
+        await LoadLogsAsync();
+    }
+
+    private async Task LoadLogsAsync()
+    {
+        if (_loadingLogs) return;
+        _loadingLogs = true;
+        RefreshLogsButton.IsEnabled = false;
         try
         {
-            using var response = await PipeClient.RequestAsync("logs");
+            using var response = await RequestAsync("logs");
+            if (!response.RootElement.GetProperty("ok").GetBoolean()) throw new IOException();
             LogText.Text = response.RootElement.GetProperty("logs").GetString() ?? "暂无日志";
+            LogText.ScrollToEnd();
+            LogNotice.Text = $"日志已更新 · {DateTime.Now:HH:mm:ss}";
         }
         catch
         {
             LogText.Text = "无法连接服务，请检查服务是否正在运行。";
+            LogNotice.Text = "打开 Windows 服务管理，检查 LanPower Service 是否已启动。";
         }
+        finally { _loadingLogs = false; RefreshLogsButton.IsEnabled = true; }
     }
 
-    private void OpenPairing(object sender, RoutedEventArgs e) =>
-        Process.Start(new ProcessStartInfo("http://127.0.0.1:48211/setup") { UseShellExecute = true });
+    private async void OpenPairing(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var port = await ReadPairingPortAsync();
+            Process.Start(new ProcessStartInfo($"http://127.0.0.1:{port}/setup") { UseShellExecute = true });
+        }
+        catch { PairingNotice.Text = "无法打开配对页，请检查后台服务和默认浏览器。"; }
+    }
 
     private void FinishWelcome(object sender, RoutedEventArgs e)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_welcomeMarker)!);
-        File.WriteAllText(_welcomeMarker, "1");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_welcomeMarker)!);
+            File.WriteAllText(_welcomeMarker, "1");
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         FirstRunPanel.Visibility = Visibility.Collapsed;
+        NavigateTo("pairing");
     }
-
-    private async void LoadSettings(object sender, RoutedEventArgs e) => await LoadNetworkAsync("network_settings");
 
     private async Task LoadNetworkAsync(string request)
     {
@@ -264,7 +322,7 @@ public partial class MainWindow : Window
         SaveNetworkButton.IsEnabled = RefreshNetworkButton.IsEnabled = false;
         try
         {
-            using var response = await PipeClient.RequestAsync(request);
+            using var response = await RequestAsync(request);
             if (!response.RootElement.GetProperty("ok").GetBoolean()) throw new IOException();
             var settings = response.RootElement.GetProperty("settings").Deserialize<NetworkSettings>() ?? throw new InvalidDataException();
             AdapterBox.ItemsSource = settings.Adapters.Select(adapter => new AdapterChoice(adapter.Id,
@@ -273,12 +331,16 @@ public partial class MainWindow : Window
             AutomaticNetworkBox.IsChecked = settings.Automatic;
             NetworkNotice.Text = settings.Adapters.Length == 0 ? "未找到物理网卡。网络连接后点击重新检测。" :
                 $"当前配对地址 {settings.Address}:{settings.Port}；局域网范围 {settings.Subnet}";
-            VersionNotice.Text = $"当前版本 {_version}";
         }
-        catch { NetworkNotice.Text = "无法读取网络设置，请检查服务后重试。"; }
+        catch
+        {
+            AdapterBox.ItemsSource = null;
+            NetworkNotice.Text = "无法读取网络设置，请检查服务后重试。";
+        }
         finally
         {
-            SaveNetworkButton.IsEnabled = RefreshNetworkButton.IsEnabled = true;
+            RefreshNetworkButton.IsEnabled = true;
+            SaveNetworkButton.IsEnabled = AdapterBox.Items.Count > 0;
             _loadingSettings = false;
         }
     }
@@ -286,6 +348,7 @@ public partial class MainWindow : Window
     private async void RefreshNetwork(object sender, RoutedEventArgs e)
     {
         await LoadNetworkAsync("{\"op\":\"network_refresh\"}");
+        ClearPairingQr();
         await LoadStatusAsync();
     }
 
@@ -297,6 +360,7 @@ public partial class MainWindow : Window
             return;
         }
         await LoadNetworkAsync(JsonSerializer.Serialize(new { op = "network_save", adapter_id = id, automatic = AutomaticNetworkBox.IsChecked == true }));
+        ClearPairingQr();
         await LoadStatusAsync();
     }
 
@@ -314,13 +378,6 @@ public partial class MainWindow : Window
         try
         {
             var useProxy = UpdateProxyBox.IsChecked == true;
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
-                File.WriteAllText(_preferencesPath + ".new", JsonSerializer.Serialize(new { use_system_proxy_for_updates = useProxy }));
-                File.Move(_preferencesPath + ".new", _preferencesPath, true);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
             using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = useProxy }) { Timeout = TimeSpan.FromSeconds(10) };
             var latest = await ReleaseChecker.CheckAsync(http, _version, CancellationToken.None);
             if (latest is null) VersionNotice.Text = "暂未找到正式发布版本。";

@@ -8,14 +8,15 @@ namespace LanPower.Desktop;
 
 internal static class PipeClient
 {
-    public static async Task<JsonDocument> RequestAsync(string command)
+    public static async Task<JsonDocument> RequestAsync(string command, CancellationToken cancellationToken = default)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
         await using var pipe = new NamedPipeClientStream(".", LanProtocol.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipe.ConnectAsync(timeout.Token);
+        await pipe.ConnectAsync(3000, timeout.Token);
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
         await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
-        await writer.WriteLineAsync(command);
+        await writer.WriteLineAsync(command.AsMemory(), timeout.Token);
         var response = await reader.ReadLineAsync(timeout.Token) ?? throw new IOException("服务没有响应");
         return JsonDocument.Parse(response);
     }
