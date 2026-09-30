@@ -7,7 +7,7 @@ using LanPower.Shared;
 
 namespace LanPower.Service;
 
-public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog log) : BackgroundService
+public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManager network) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -68,6 +68,7 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
                 {
                     "status" => JsonSerializer.Serialize(new { ok = true, status = GetStatus() }),
                     "logs" => JsonSerializer.Serialize(new { ok = true, logs = log.ReadTail() }),
+                    "network_settings" => JsonSerializer.Serialize(new { ok = true, settings = network.Settings() }),
                     _ => await EnrollAsync(line, timeout.Token)
                 };
                 await writer.WriteLineAsync(response.AsMemory(), timeout.Token);
@@ -88,6 +89,17 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
             if (request.ValueKind != JsonValueKind.Object)
                 return JsonSerializer.Serialize(new { ok = false, error = "unknown request" });
             var operation = request.GetProperty("op").GetString();
+            if (operation == "network_save" && request.EnumerateObject().Count() == 3)
+            {
+                await network.ConfigureAsync(request.GetProperty("adapter_id").GetString() ?? "",
+                    request.GetProperty("automatic").GetBoolean(), token);
+                return JsonSerializer.Serialize(new { ok = true, settings = network.Settings() });
+            }
+            if (operation == "network_refresh" && request.EnumerateObject().Count() == 1)
+            {
+                await network.RefreshAsync(token);
+                return JsonSerializer.Serialize(new { ok = true, settings = network.Settings() });
+            }
             if (operation == "enroll_start" && request.EnumerateObject().Count() == 2)
             {
                 var pairing = await cloud.BeginEnrollmentAsync(request.GetProperty("cloud_url").GetString() ?? "", token);
@@ -116,7 +128,8 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or
                                      ArgumentException or HttpRequestException or IOException or FormatException or
-                                     System.Security.Cryptography.CryptographicException or UnauthorizedAccessException)
+                                     System.Security.Cryptography.CryptographicException or UnauthorizedAccessException or
+                                     System.Runtime.InteropServices.COMException or System.ComponentModel.Win32Exception)
         {
             return JsonSerializer.Serialize(new { ok = false, error = "无法完成操作，请检查服务、Cloud 地址和连接状态" });
         }
@@ -137,8 +150,8 @@ public sealed class PipeWorker(LanConfig config, CloudAgent cloud, ServiceLog lo
 
     private ServiceStatus GetStatus()
     {
-        var network = LocalNetworkStatus.Read(config);
-        return new ServiceStatus(Environment.MachineName, network.LanIp, network.Mac,
-            network.WolState, network.LanState, cloud.State, cloud.GatewayState, "1.4.0", cloud.CloudUrl);
+        var status = network.ReadStatus();
+        return new ServiceStatus(Environment.MachineName, status.LanIp, status.Mac,
+            status.WolState, status.LanState, cloud.State, cloud.GatewayState, "1.4.0", cloud.CloudUrl);
     }
 }

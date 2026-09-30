@@ -13,6 +13,8 @@ public static class LocalNetworkStatus
     {
         var adapter = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(nic =>
             nic.OperationalStatus == OperationalStatus.Up &&
+            (string.IsNullOrEmpty(config.AdapterId) || Guid.TryParse(nic.Id, out var nicId) &&
+             Guid.TryParse(config.AdapterId, out var configuredId) && nicId == configuredId) &&
             nic.GetIPProperties().UnicastAddresses.Any(address => address.Address.Equals(IPAddress.Parse(config.HostIp))));
         var mac = adapter?.GetPhysicalAddress().ToString() ?? "";
         if (mac.Length == 12) mac = string.Join(":", Enumerable.Range(0, 6).Select(i => mac.Substring(i * 2, 2)));

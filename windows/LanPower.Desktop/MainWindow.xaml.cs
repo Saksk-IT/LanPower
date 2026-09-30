@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
@@ -16,11 +17,27 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(20) };
     private bool _loadingStatus;
     private bool _cloudConfigured;
+    private string _version = "1.4.0";
+    private string? _releasePage;
+    private bool _loadingSettings;
+    private readonly string _preferencesPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanPower", "desktop-settings.json");
+
+    private sealed record AdapterChoice(string Id, string Label);
 
     public MainWindow() => InitializeComponent();
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        try
+        {
+            if (File.Exists(_preferencesPath))
+            {
+                using var saved = JsonDocument.Parse(File.ReadAllText(_preferencesPath));
+                UpdateProxyBox.IsChecked = saved.RootElement.GetProperty("use_system_proxy_for_updates").GetBoolean();
+            }
+        }
+        catch { }
         FirstRunPanel.Visibility = File.Exists(_welcomeMarker) ? Visibility.Collapsed : Visibility.Visible;
         _statusTimer.Tick += RefreshStatus;
         _statusTimer.Start();
@@ -44,6 +61,7 @@ public partial class MainWindow : Window
             LanIp.Text = status.LanIp;
             Mac.Text = string.IsNullOrEmpty(status.Mac) ? "未检测到" : status.Mac;
             WolState.Text = status.WolState;
+            _version = status.Version;
             _cloudConfigured = !string.IsNullOrEmpty(status.CloudUrl) || status.CloudState != "未配置";
             if (_cloudWait is null) CloudDisconnectButton.IsEnabled = _cloudConfigured;
             if (_cloudWait is null && !CloudUrlBox.IsKeyboardFocused && CloudUrlBox.Text == "https://" && !string.IsNullOrWhiteSpace(status.CloudUrl))
@@ -235,5 +253,93 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(Path.GetDirectoryName(_welcomeMarker)!);
         File.WriteAllText(_welcomeMarker, "1");
         FirstRunPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private async void LoadSettings(object sender, RoutedEventArgs e) => await LoadNetworkAsync("network_settings");
+
+    private async Task LoadNetworkAsync(string request)
+    {
+        if (_loadingSettings) return;
+        _loadingSettings = true;
+        SaveNetworkButton.IsEnabled = RefreshNetworkButton.IsEnabled = false;
+        try
+        {
+            using var response = await PipeClient.RequestAsync(request);
+            if (!response.RootElement.GetProperty("ok").GetBoolean()) throw new IOException();
+            var settings = response.RootElement.GetProperty("settings").Deserialize<NetworkSettings>() ?? throw new InvalidDataException();
+            AdapterBox.ItemsSource = settings.Adapters.Select(adapter => new AdapterChoice(adapter.Id,
+                $"{adapter.Name} · {(adapter.Wireless ? "Wi-Fi" : "有线")} · {(adapter.Connected ? adapter.Address : "未连接")}")).ToArray();
+            AdapterBox.SelectedValue = settings.AdapterId;
+            AutomaticNetworkBox.IsChecked = settings.Automatic;
+            NetworkNotice.Text = settings.Adapters.Length == 0 ? "未找到物理网卡。网络连接后点击重新检测。" :
+                $"当前配对地址 {settings.Address}:{settings.Port}；局域网范围 {settings.Subnet}";
+            VersionNotice.Text = $"当前版本 {_version}";
+        }
+        catch { NetworkNotice.Text = "无法读取网络设置，请检查服务后重试。"; }
+        finally
+        {
+            SaveNetworkButton.IsEnabled = RefreshNetworkButton.IsEnabled = true;
+            _loadingSettings = false;
+        }
+    }
+
+    private async void RefreshNetwork(object sender, RoutedEventArgs e)
+    {
+        await LoadNetworkAsync("{\"op\":\"network_refresh\"}");
+        await LoadStatusAsync();
+    }
+
+    private async void SaveNetwork(object sender, RoutedEventArgs e)
+    {
+        if (AdapterBox.SelectedValue is not string id)
+        {
+            NetworkNotice.Text = "请先选择物理网卡。";
+            return;
+        }
+        await LoadNetworkAsync(JsonSerializer.Serialize(new { op = "network_save", adapter_id = id, automatic = AutomaticNetworkBox.IsChecked == true }));
+        await LoadStatusAsync();
+    }
+
+    private void OpenNetworkSettings(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:network-status") { UseShellExecute = true }); }
+        catch { NetworkNotice.Text = "无法打开 Windows 设置，请从系统设置中检查网络。"; }
+    }
+
+    private async void CheckUpdates(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = OpenReleaseButton.IsEnabled = false;
+        _releasePage = null;
+        VersionNotice.Text = "正在检查更新…";
+        try
+        {
+            var useProxy = UpdateProxyBox.IsChecked == true;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
+                File.WriteAllText(_preferencesPath + ".new", JsonSerializer.Serialize(new { use_system_proxy_for_updates = useProxy }));
+                File.Move(_preferencesPath + ".new", _preferencesPath, true);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = useProxy }) { Timeout = TimeSpan.FromSeconds(10) };
+            var latest = await ReleaseChecker.CheckAsync(http, _version, CancellationToken.None);
+            if (latest is null) VersionNotice.Text = "暂未找到正式发布版本。";
+            else
+            {
+                _releasePage = latest.PageUrl;
+                OpenReleaseButton.IsEnabled = true;
+                VersionNotice.Text = latest.UpdateAvailable ? $"有可用更新：{latest.Version}（当前 {_version}）" :
+                    $"当前 {_version}；最新已发布 {latest.Version}，无需更新。";
+            }
+        }
+        catch { VersionNotice.Text = "暂时无法检查更新。请检查网络与系统代理设置后重试。"; }
+        finally { CheckUpdateButton.IsEnabled = true; }
+    }
+
+    private void OpenRelease(object sender, RoutedEventArgs e)
+    {
+        if (_releasePage is null) return;
+        try { Process.Start(new ProcessStartInfo(_releasePage) { UseShellExecute = true }); }
+        catch { VersionNotice.Text = "无法打开下载页面，请检查默认浏览器设置。"; }
     }
 }

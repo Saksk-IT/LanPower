@@ -3,6 +3,7 @@
 ## 网络
 
 - Windows LAN API 固定为局域网入口，默认端口 `48211`；服务校验来源网段及配对凭据，配对页仅允许本机访问。
+- LAN 自动更新只跟随选定物理网卡并限定私有 IPv4 网段；防火墙限制本机地址、来源网段、服务程序和端口。配置或规则更新失败时，应用拒绝远端 LAN 请求。本机配对页仍可使用。
 - Windows Cloud Agent 和 Gateway 只发起出站 HTTPS，不开放公网控制端口，不跟随携带凭据的 HTTP 重定向。
 - Cloud 公网入口为 HTTPS；Docker 应用端口 `8765` 仅发布至回环。路由器 SSH 只用于可信 LAN 管理，不发布到 WAN。
 - Cloud 故障不影响 LAN；网关故障不影响在线 Windows Cloud Direct；没有小程序时浏览器仍可控制。

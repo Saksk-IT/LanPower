@@ -20,6 +20,15 @@ public sealed class LanConfig
     [JsonPropertyName("port")]
     public int Port { get; set; } = 48211;
 
+    [JsonPropertyName("adapter_id")]
+    public string AdapterId { get; set; } = "";
+
+    [JsonPropertyName("automatic_network")]
+    public bool AutomaticNetwork { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalSettings { get; set; }
+
     public static LanConfig Load(string path)
     {
         var config = JsonSerializer.Deserialize<LanConfig>(File.ReadAllText(path))
@@ -40,6 +49,8 @@ public sealed class LanConfig
             throw new InvalidDataException("至少需要一个有效的 IPv4 网段");
         if (!Ipv4Subnet.TryParse(AllowedNetworks[0], out var first) || !first.Contains(host))
             throw new InvalidDataException("LAN 地址必须属于第一个允许的网段");
+        if (AdapterId is null || AdapterId.Length != 0 && !Guid.TryParse(AdapterId, out _))
+            throw new InvalidDataException("网卡标识无效");
     }
 
     public bool IsAllowed(IPAddress? address)
@@ -87,6 +98,8 @@ public readonly record struct Ipv4Subnet(uint Network, int Prefix)
         var mask = Prefix == 0 ? 0U : uint.MaxValue << (32 - Prefix);
         return (ReadAddress(address) & mask) == Network;
     }
+
+    public override string ToString() => $"{new IPAddress(new byte[] { (byte)(Network >> 24), (byte)(Network >> 16), (byte)(Network >> 8), (byte)Network })}/{Prefix}";
 
     private static uint ReadAddress(IPAddress address)
     {

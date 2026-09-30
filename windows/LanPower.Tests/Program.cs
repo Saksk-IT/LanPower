@@ -92,6 +92,11 @@ try
     using var extraTarget = await RequestPipeAsync("{\"op\":\"cloud_disconnect\",\"device_id\":\"other\"}");
     Check(!extraTarget.RootElement.GetProperty("ok").GetBoolean(), "IPC disconnect rejects extra targets");
     Check((await client.GetAsync("/api/status")).IsSuccessStatusCode, "LAN remains paired after Cloud disconnect");
+    using var networkSettings = await RequestPipeAsync("network_settings");
+    Check(networkSettings.RootElement.GetProperty("ok").GetBoolean() && !networkSettings.RootElement.GetRawText().Contains(token),
+        "network settings contain no pairing credential");
+    using var invalidAdapter = await RequestPipeAsync("{\"op\":\"network_save\",\"adapter_id\":\"not-an-adapter\",\"automatic\":true}");
+    Check(!invalidAdapter.RootElement.GetProperty("ok").GetBoolean(), "network settings reject arbitrary adapter identifiers");
     Console.WriteLine("LanPower Windows tests passed");
 }
 finally

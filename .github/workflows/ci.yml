@@ -28,6 +28,9 @@ jobs:
         run: dotnet test windows/LanPower.sln -c Release --no-build
       - name: Windows service and IPC tests
         run: dotnet run --project windows/LanPower.Tests -c Release --no-build
+      - name: Installer network selection tests
+        shell: pwsh
+        run: ./windows/installer/tests/test-network-selection.ps1
       - name: Install Inno Setup
         shell: pwsh
         run: |

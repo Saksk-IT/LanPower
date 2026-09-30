@@ -25,6 +25,7 @@ Name: "zh"; MessagesFile: "ChineseSimplified.isl"
 Source: "..\out\service\*"; DestDir: "{app}\Service"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\desktop\*"; DestDir: "{app}\Desktop"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -46,6 +47,13 @@ var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop LanPowerService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -Command "try { $s = Get-Service LanPowerService -ErrorAction SilentlyContinue; if ($s) { $s.WaitForStatus(''Stopped'', [TimeSpan]::FromSeconds(30)) } } catch { exit 1 }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+  begin
+    Result := '无法停止现有 LanPower Service，请稍后重试。';
+    Exit;
+  end;
   Result := '';
 end;
 

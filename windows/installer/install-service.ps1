@@ -7,21 +7,17 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $serviceExe = Join-Path $AppDir 'Service\LanPower.Service.exe'
 if (-not (Test-Path -LiteralPath $serviceExe)) { throw '服务程序不存在。' }
-$nic = Get-NetAdapter -Physical | Where-Object {
-    $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Wi-Fi|Wireless|WLAN|802\.11'
-} | Select-Object -First 1
-if (-not $nic) { throw '未找到已连接的有线网卡。' }
-$ip = Get-NetIPAddress -InterfaceIndex $nic.InterfaceIndex -AddressFamily IPv4 |
-    Where-Object { $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1
-if (-not $ip) { throw '未找到有线网卡的 IPv4 地址。' }
-
-$bytes = [System.Net.IPAddress]::Parse($ip.IPAddress).GetAddressBytes()
-for ($index = 0; $index -lt 4; $index++) {
-    $bits = [Math]::Max(0, [Math]::Min(8, [int]$ip.PrefixLength - 8 * $index))
-    $mask = if ($bits -eq 0) { 0 } else { 256 - [int][Math]::Pow(2, 8 - $bits) }
-    $bytes[$index] = [byte]($bytes[$index] -band $mask)
+$serviceName = 'LanPowerService'
+$service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+if ($service) {
+    $serviceAccount = (Get-CimInstance Win32_Service -Filter "Name = 'LanPowerService'").StartName
+    if ($serviceAccount -notin @('LocalSystem', 'NT AUTHORITY\SYSTEM')) { throw '服务必须以 LocalSystem 运行。' }
+    if ($service.Status -ne 'Stopped') {
+        Stop-Service -Name $serviceName -Force
+        $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    }
 }
-$network = ([System.Net.IPAddress]::new($bytes)).ToString() + '/' + $ip.PrefixLength
+. (Join-Path $PSScriptRoot 'network-selection.ps1')
 $dataDir = Join-Path $env:ProgramData 'LanPower'
 $configPath = Join-Path $dataDir 'config.json'
 New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
@@ -39,11 +35,13 @@ foreach ($protectedName in @('credentials.dat', 'cloud-replay.jsonl')) {
 }
 
 $token = $null
+$old = $null
 if (Test-Path -LiteralPath $configPath) {
     try {
         $old = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($old.token -match '^[0-9a-fA-F]{64}$') { $token = $old.token }
-    } catch { }
+    } catch { throw '现有局域网配置损坏，已保留原文件；请先备份并修复配置。' }
+    if (-not $token) { throw '现有局域网配对密钥无效，已保留原文件；请先备份并修复配置。' }
 }
 if (-not $token) {
     $randomBytes = New-Object byte[] 32
@@ -51,11 +49,23 @@ if (-not $token) {
     try { $rng.GetBytes($randomBytes) } finally { $rng.Dispose() }
     $token = -join ($randomBytes | ForEach-Object { $_.ToString('x2') })
 }
+$preferred = if ($old -and $old.adapter_id) { [string]$old.adapter_id } else { '' }
+$selected = Get-LanPowerNetwork -PreferredAdapterId $preferred
+$address = if ($selected) { $selected.Address } elseif ($old -and $old.host_ip) { [string]$old.host_ip } else { '127.0.0.1' }
+$networks = if ($selected) { @($selected.Subnet) } elseif ($old -and $old.allowed_networks) { @($old.allowed_networks) } else { @('127.0.0.0/8') }
+$automatic = if ($old -and $null -ne $old.automatic_network) { [bool]$old.automatic_network } else { $true }
 $config = [ordered]@{
     token = $token
-    host_ip = $ip.IPAddress
-    allowed_networks = @($network)
+    host_ip = $address
+    allowed_networks = $networks
     port = 48211
+    adapter_id = if ($selected) { $selected.AdapterId } else { $preferred }
+    automatic_network = $automatic
+}
+if ($old) {
+    foreach ($property in $old.PSObject.Properties) {
+        if (-not $config.Contains($property.Name)) { $config[$property.Name] = $property.Value }
+    }
 }
 [System.IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 4), [System.Text.UTF8Encoding]::new($false))
 & icacls.exe $configPath '/inheritance:r' '/grant:r' '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
@@ -70,17 +80,28 @@ if ($legacyTask) {
 $firewallName = 'LanPower LAN Only'
 Get-NetFirewallRule -DisplayName $firewallName -ErrorAction SilentlyContinue |
     Remove-NetFirewallRule -ErrorAction SilentlyContinue
-New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Action Allow `
-    -Protocol TCP -LocalPort 48211 -LocalAddress $ip.IPAddress -RemoteAddress $network -Profile Any | Out-Null
+if ($selected) {
+    New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Action Allow `
+        -Protocol TCP -LocalPort 48211 -LocalAddress $selected.Address -RemoteAddress $selected.Subnet `
+        -Program $serviceExe -Profile Any | Out-Null
+}
 
-$serviceName = 'LanPowerService'
-$service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if (-not $service) {
     $binaryPath = '"' + $serviceExe + '" --config "' + $configPath + '"'
     New-Service -Name $serviceName -DisplayName 'LanPower Service' -BinaryPathName $binaryPath `
         -StartupType Automatic -Description 'LanPower 局域网电源服务' | Out-Null
 } else {
-    Set-Service -Name $serviceName -StartupType Automatic
+    if ($service.Status -ne 'Stopped') {
+        Stop-Service -Name $serviceName -Force
+        $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    }
+    $installed = Get-CimInstance Win32_Service -Filter "Name = 'LanPowerService'"
+    $binaryPath = '"' + $serviceExe + '" --config "' + $configPath + '"'
+    $changed = Invoke-CimMethod -InputObject $installed -MethodName Change -Arguments @{
+        PathName = $binaryPath
+        StartMode = 'Automatic'
+    }
+    if ($changed.ReturnValue -ne 0) { throw '无法更新服务安装路径。' }
 }
 $serviceAccount = (Get-CimInstance Win32_Service -Filter "Name = 'LanPowerService'").StartName
 if ($serviceAccount -notin @('LocalSystem', 'NT AUTHORITY\SYSTEM')) { throw '服务必须以 LocalSystem 运行。' }
@@ -97,6 +118,7 @@ try {
     if (-not $healthy) { throw 'LAN 服务未通过启动检查。' }
     if ($legacyTask) { Unregister-ScheduledTask -TaskName 'LanPower LAN Control' -Confirm:$false }
 } catch {
+    Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
     if ($legacyTask) { Start-ScheduledTask -TaskName 'LanPower LAN Control' -ErrorAction SilentlyContinue }
     throw
 }

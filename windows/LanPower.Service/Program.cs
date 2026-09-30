@@ -18,12 +18,17 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     Args = args,
     ContentRootPath = AppContext.BaseDirectory
 });
-builder.Host.UseWindowsService(options => options.ServiceName = "LanPower Service");
+builder.Host.UseWindowsService(options => options.ServiceName = "LanPowerService");
 builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(config.Port));
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(serviceLog);
 builder.Services.AddSingleton(new PowerExecutor(dryRun, serviceLog));
 builder.Services.AddSingleton<PowerGate>();
+var network = new LanNetworkManager(config, new LanConfigStore(configPath),
+    dryRun ? new DryRunLanFirewall() : new LanFirewall(), serviceLog);
+builder.Services.AddSingleton(network);
+builder.Services.AddSingleton<Func<LocalNetworkSnapshot>>(network.ReadStatus);
+builder.Services.AddHostedService(provider => provider.GetRequiredService<LanNetworkManager>());
 builder.Services.AddSingleton(new CloudCredentialStore(dataDirectory));
 builder.Services.AddSingleton(new ReplayStore(dataDirectory));
 builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
@@ -41,7 +46,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
     context.Response.Headers.ContentSecurityPolicy =
         "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'";
-    if (!config.IsAllowed(context.Connection.RemoteIpAddress))
+    if (!network.IsAllowed(context.Connection.RemoteIpAddress, context.Connection.LocalIpAddress))
     {
         await JsonError(context, 403, "local network only");
         return;
@@ -88,7 +93,8 @@ app.MapPost("/api/power", async (HttpContext context, PowerGate gate, PowerExecu
 app.MapGet("/setup", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.Json(new { error = "open setup on the PC" }, statusCode: 403);
-    var url = $"http://{config.HostIp}:{config.Port}/#access={config.Token}";
+    var current = network.Config;
+    var url = $"http://{current.HostIp}:{current.Port}/#access={current.Token}";
     var safeUrl = HtmlEncoder.Default.Encode(url);
     var html = """
         <!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -106,7 +112,8 @@ app.MapGet("/setup", (HttpContext context) =>
 app.MapGet("/setup/qr.svg", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.Json(new { error = "open setup on the PC" }, statusCode: 403);
-    var url = $"http://{config.HostIp}:{config.Port}/#access={config.Token}";
+    var current = network.Config;
+    var url = $"http://{current.HostIp}:{current.Port}/#access={current.Token}";
     using var qrData = QRCodeGenerator.GenerateQrCode(url, QRCodeGenerator.ECCLevel.Q);
     using var svg = new SvgQRCode(qrData);
     return Results.Content(svg.GetGraphic(6), "image/svg+xml; charset=utf-8");
