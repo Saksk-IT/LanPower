@@ -17,6 +17,7 @@ import (
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/config"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/gateway"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/protocol"
+	"github.com/Saksk-IT/LanPower/router_gateway/internal/wakesetup"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/windows"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/wol"
 )
@@ -146,7 +147,7 @@ func main() {
 	version := flag.Bool("version", false, "show binary version and exit")
 	flag.Parse()
 	if *version {
-		fmt.Println("LanPower Gateway 2.0.0 (protocols 1 and 2)")
+		fmt.Println("LanPower Gateway 2.1.0 (protocols 1 and 2)")
 		return
 	}
 	cfg, err := config.Load(cfgPath)
@@ -215,5 +216,10 @@ func runV2(cfg config.Config, enroll bool) error {
 		return err
 	}
 	log.SetOutput(io.Writer(rotatingLog{path: filepath.Join(directory, "gateway.log")}))
-	return gateway.New(cfg, remote, store).Run(ctx)
+	agent := gateway.New(cfg, remote, store)
+	agent.Setup, err = wakesetup.New(cfg, remote.DeviceID(), filepath.Join(directory, "auto-targets.json"))
+	if err != nil {
+		log.Print("automatic wake configuration could not be loaded; waiting to resync")
+	}
+	return agent.Run(ctx)
 }

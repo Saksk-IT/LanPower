@@ -121,7 +121,7 @@
     <view wx:if="{{helpTopic == 'wake'}}" class="help-card">
       <view class="help-card-title">电脑离线，也能尝试唤醒</view>
       <view class="help-step"><view class="help-number">1</view><view><view class="step-title">先准备好电脑</view><view class="step-copy">启用电脑和网卡的网络唤醒功能，保持供电与网线连接。能否从睡眠、休眠或关机唤醒取决于电脑配置。</view></view></view>
-      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">在家用 Wi-Fi，在外用网关</view><view class="step-copy">在家：关联局域网并保存 MAC 和广播地址。在外：需要在 Cloud 为电脑关联在线的唤醒网关，并配置该电脑的唤醒信息。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">在家用 Wi-Fi，在外用网关</view><view class="step-copy">在家直连：关联局域网并保存 MAC 和广播地址。在外唤醒：在新版 Windows 应用中点击“配置远程唤醒”，网页选择网关后自动配置。首次配置时请让电脑和网关在同一局域网保持在线。</view></view></view>
       <view class="help-step"><view class="help-number">3</view><view><view class="step-title">发送后等待电脑上线</view><view class="step-copy">回到“我的电脑”点击“开机 / 唤醒”。页面会定期更新状态；唤醒包发出或指令送达，都不代表电脑已经开机。</view></view></view>
       <button class="primary-button" bindtap="switchTab" data-tab="connect">去查看连接设置</button>
     </view>

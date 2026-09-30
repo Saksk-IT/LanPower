@@ -1,4 +1,4 @@
-# Cloud Direct（源码版本 1.4.0）
+# Cloud Direct（源码版本 1.5.0）
 
 LanPower Windows Service 在保留局域网接口的同时，主动通过 HTTPS 连接 Cloud。Cloud Web 面向浏览器提供设备列表和电源控制。没有 Wake Gateway 时，在线电脑仍可远程查看状态、睡眠、休眠、重启和关机；远程唤醒不可用。
 

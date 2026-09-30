@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import secrets
 import threading
 import time
@@ -73,7 +74,7 @@ class WindowsProtocol:
 
     def heartbeat(self, device_id: str, payload: dict) -> None:
         fields = {"device_id", "version", "state", "uptime", "lan_ip", "wol_capable"}
-        if (set(payload) not in (fields, fields | {"heartbeat_interval"})
+        if (not fields <= set(payload) or set(payload) - fields - {"heartbeat_interval", "wake_profile"}
                 or payload["device_id"] != device_id or payload["state"] not in ("online", "offline", "transitioning")
                 or not isinstance(payload["version"], str) or len(payload["version"]) > 32
                 or type(payload["uptime"]) is not int or payload["uptime"] < 0
@@ -87,6 +88,15 @@ class WindowsProtocol:
         except ValueError as error:
             raise ValueError("invalid LAN address") from error
         now = int(time.time())
+        profile = payload.get("wake_profile")
+        if profile is not None:
+            if (not isinstance(profile, dict) or set(profile) != {"token", "port", "expires_at"}
+                    or not isinstance(profile["token"], str) or not re.fullmatch(r"[0-9A-Fa-f]{64}", profile["token"])
+                    or type(profile["port"]) is not int or not 1 <= profile["port"] <= 65535
+                    or type(profile["expires_at"]) is not int or not now - 120 <= profile["expires_at"] <= now + 180
+                    or not any(ipaddress.ip_address(payload["lan_ip"]) in ipaddress.ip_network(cidr)
+                               for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))):
+                raise ValueError("invalid wake profile ticket")
         with self.sessions.begin() as db:
             device = db.get(Device, device_id)
             if device is None or device.revoked_at is not None:
@@ -94,7 +104,9 @@ class WindowsProtocol:
             device.last_seen_at = now
             device.version = payload["version"]
             device.meta = {**device.meta, "lan_ip": payload["lan_ip"], "wol_capable": payload["wol_capable"],
-                           "presence_state": payload["state"], "heartbeat_interval": payload.get("heartbeat_interval", 25)}
+                           "presence_state": payload["state"], "heartbeat_interval": payload.get("heartbeat_interval", 25),
+                           "wake_setup_supported": "wake_profile" in payload,
+                           "wake_profile": profile if payload["state"] == "online" else None}
             db.add(DeviceHeartbeat(id=str(uuid.uuid4()), device_id=device_id, seen_at=now,
                                    state=payload["state"], uptime=payload["uptime"], lan_ip=payload["lan_ip"],
                                    wol_capable=payload["wol_capable"]))

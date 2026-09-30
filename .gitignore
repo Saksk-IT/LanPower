@@ -14,6 +14,7 @@
 **/device-credentials.json
 **/credentials.dat
 **/command-receipts.json
+**/auto-targets.json
 **/cloud-replay.jsonl
 **/*recovery-codes*.txt
 **/gateway.lock

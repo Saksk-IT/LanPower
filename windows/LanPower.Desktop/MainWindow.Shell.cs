@@ -28,6 +28,7 @@ public partial class MainWindow
     private bool _serviceAvailable;
     private bool _cloudBusy;
     private bool _loadingLogs;
+    private Uri? _gatewaySetupUri;
     public bool CloseToTray => CloseToTrayBox.IsChecked == true;
 
     private Task<JsonDocument> RequestAsync(string command) => _request(command, _lifetime.Token);
@@ -92,7 +93,13 @@ public partial class MainWindow
         CloudRoute.Text = cloud ? "在线控制可用" : status.CloudState == "未配置" ? "尚未配置" : "等待连接";
         WakeRoute.Text = wake ? "远程唤醒可用" : status.GatewayState.Contains("待配置") ? "待配置电脑" :
             status.GatewayState == "未配置" ? "需要唤醒网关" : "等待连接";
-        GatewayDetail.Text = $"当前网关：{status.GatewayState}。";
+        GatewayDetail.Text = string.IsNullOrWhiteSpace(status.GatewayHint) ?
+            $"当前网关：{status.GatewayState}。选择网关后将自动配置；已有旧版网关请先升级程序。" : status.GatewayHint;
+        _gatewaySetupUri = GatewaySetupUri(status.CloudUrl, status.CloudDeviceId);
+        GatewaySetupButton.Content = cloud ? wake ? "管理唤醒网关" : "选择唤醒网关" : "先连接 Cloud";
+        GatewaySetupLink.Content = wake ? "管理唤醒网关  →" : "配置远程唤醒  →";
+        GatewaySetupButton.IsEnabled = true;
+        GatewaySetupLink.IsEnabled = true;
         FooterNotice.Text = $"后台服务 {status.Version} · 服务已连接";
         _lastSuccess = DateTime.Now;
         LastRefresh.Text = $"已刷新 {_lastSuccess:HH:mm:ss} · 每 {_statusTimer.Interval.TotalSeconds:0} 秒更新";
@@ -104,6 +111,8 @@ public partial class MainWindow
     private void ApplyUnavailableDisplay()
     {
         _serviceAvailable = false;
+        _gatewaySetupUri = null;
+        GatewaySetupButton.IsEnabled = GatewaySetupLink.IsEnabled = false;
         var unavailable = StateBrush("未连接", false);
         LanDot.Fill = CloudDot.Fill = GatewayDot.Fill = DeviceDot.Fill = SidebarDot.Fill = unavailable;
         LanState.Foreground = CloudState.Foreground = GatewayState.Foreground = unavailable;
@@ -125,6 +134,25 @@ public partial class MainWindow
         CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = _serviceAvailable && !_cloudBusy;
         CloudUrlBox.IsEnabled = !_cloudBusy;
         CloudDisconnectButton.IsEnabled = _serviceAvailable && !_cloudBusy && _cloudConfigured;
+    }
+
+    internal static Uri? GatewaySetupUri(string origin, string deviceId)
+    {
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
+            uri.UserInfo.Length != 0 || uri.AbsolutePath != "/" || uri.Query.Length != 0 || uri.Fragment.Length != 0) return null;
+        return new Uri(uri, "/gateways" + (Guid.TryParse(deviceId, out var id) ? "?computer=" + id.ToString("D") : ""));
+    }
+
+    private void OpenGatewaySetup(object sender, RoutedEventArgs e)
+    {
+        NavigateTo("cloud");
+        if (_gatewaySetupUri is null)
+        {
+            GatewayDetail.Text = "请先连接 Cloud，再选择家中已连接的唤醒网关。";
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo(_gatewaySetupUri.AbsoluteUri) { UseShellExecute = true }); }
+        catch { GatewayDetail.Text = "无法打开网关设置，请检查默认浏览器后重试。"; }
     }
 
     private async Task<int> ReadPairingPortAsync(CancellationToken? cancellationToken = null)

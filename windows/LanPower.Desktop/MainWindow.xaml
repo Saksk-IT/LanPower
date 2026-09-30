@@ -48,7 +48,7 @@
               <TextBlock Text="后台服务持续守护连接" Foreground="#97B3BE" FontSize="11" Margin="0,7,0,0"/>
             </StackPanel>
           </Border>
-          <TextBlock x:Name="SidebarVersion" Text="Windows 1.4.0" Foreground="#86A8B5" FontSize="11" Margin="14,16,0,0"/>
+          <TextBlock x:Name="SidebarVersion" Text="Windows 1.5.0" Foreground="#86A8B5" FontSize="11" Margin="14,16,0,0"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -138,7 +138,7 @@
                   <TextBlock Text="唤醒网关" FontWeight="SemiBold" FontSize="14"/>
                   <TextBlock x:Name="GatewayState" Text="检测中" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,8" TextWrapping="Wrap"/>
                   <TextBlock Text="通过家中网关，远程唤醒电脑" Style="{StaticResource Caption}"/>
-                  <Button Content="了解唤醒条件  →" Tag="cloud" Click="NavigateFromButton" Style="{StaticResource QuietButton}" Margin="0,8,0,0"/>
+                  <Button x:Name="GatewaySetupLink" Content="配置远程唤醒  →" Click="OpenGatewaySetup" Style="{StaticResource QuietButton}" Margin="0,8,0,0"/>
                 </StackPanel>
               </Border>
             </UniformGrid>
@@ -249,12 +249,14 @@
             </Border>
             <Border Style="{StaticResource Section}">
               <StackPanel>
-                <TextBlock Text="远程唤醒，需要家中网关" Style="{StaticResource SectionTitle}"/>
-                <TextBlock Text="电脑离线后，由持续在线的 Wake Gateway 在家中发送唤醒信号。只有 Cloud 和 Windows 时，可控制在线电脑。" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+                <TextBlock Text="选择网关，自动配置远程唤醒" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="让这台电脑与家中网关连接同一路由器，在网页选择网关即可。程序会自动识别并保存唤醒信息，通常约 30 秒完成。" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
                 <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="16" Margin="0,16,0,12">
                   <TextBlock Text="手机 / 浏览器  →  Cloud  →  家中网关  →  电脑" TextAlignment="Center" FontWeight="SemiBold"/>
                 </Border>
                 <TextBlock x:Name="GatewayDetail" Text="正在检测唤醒网关状态。" Style="{StaticResource Caption}"/>
+                <Button x:Name="GatewaySetupButton" Content="选择唤醒网关" Click="OpenGatewaySetup" HorizontalAlignment="Left" Margin="0,16,0,12"/>
+                <TextBlock Text="首次使用请将 Windows、Cloud 和网关升级到支持自动配置的版本。电脑的 BIOS / 网卡仍需开启网络唤醒；建议使用有线连接。" Style="{StaticResource Caption}"/>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -311,7 +313,7 @@
             <Border Style="{StaticResource Section}" Margin="0,0,0,20">
               <StackPanel>
                 <TextBlock Text="版本与更新" Style="{StaticResource SectionTitle}"/>
-                <TextBlock x:Name="VersionNotice" Text="当前桌面版本 1.4.0" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,18"/>
+                <TextBlock x:Name="VersionNotice" Text="当前桌面版本 1.5.0" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,18"/>
                 <WrapPanel><Button x:Name="CheckUpdateButton" Content="检查更新" Click="CheckUpdates" Margin="0,0,10,8"/><Button x:Name="OpenReleaseButton" Content="打开下载页面" Click="OpenRelease" Style="{StaticResource SecondaryButton}" IsEnabled="False" Margin="0,0,0,8"/></WrapPanel>
                 <CheckBox x:Name="UpdateProxyBox" Content="更新检查使用系统代理" IsChecked="True" Checked="SavePreferences" Unchecked="SavePreferences" Margin="0,10,0,0"/>
                 <TextBlock Text="检查本项目的正式发布版本，由你下载并安装。" Style="{StaticResource Caption}" Margin="0,10,0,0"/>

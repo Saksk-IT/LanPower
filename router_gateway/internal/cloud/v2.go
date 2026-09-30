@@ -18,6 +18,7 @@ import (
 
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/config"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/protocol"
+	"github.com/Saksk-IT/LanPower/router_gateway/internal/wakesetup"
 )
 
 type Credentials struct {
@@ -184,7 +185,7 @@ func (c *V2Client) Enroll(ctx context.Context, show func(code, uri string)) erro
 		Interval        int    `json:"interval"`
 	}
 	_, err := c.raw(ctx, "POST", "/api/v2/enroll/start", "", map[string]any{
-		"device_type": "gateway", "name": c.config.Name, "version": "2.0.0", "protocol_version": "2"}, &start)
+		"device_type": "gateway", "name": c.config.Name, "version": "2.1.0", "protocol_version": "2"}, &start)
 	if err != nil {
 		return err
 	}
@@ -302,7 +303,7 @@ type TargetStatus struct {
 func (c *V2Client) DeviceID() string { c.mu.Lock(); defer c.mu.Unlock(); return c.credentials.DeviceID }
 func (c *V2Client) Heartbeat(ctx context.Context, targets []TargetStatus, uptime int64) error {
 	return c.request(ctx, "POST", "/api/v2/gateway/heartbeat", map[string]any{
-		"device_id": c.DeviceID(), "version": "2.0.0", "uptime": uptime, "targets": targets}, nil)
+		"device_id": c.DeviceID(), "version": "2.1.0", "uptime": uptime, "targets": targets}, nil)
 }
 func (c *V2Client) Poll(ctx context.Context) (*protocol.Command, error) {
 	var response struct {
@@ -314,4 +315,18 @@ func (c *V2Client) Poll(ctx context.Context) (*protocol.Command, error) {
 func (c *V2Client) Result(ctx context.Context, result protocol.Result) error {
 	return c.request(ctx, "POST", "/api/v2/gateway/results", map[string]any{
 		"command_id": result.CommandID, "ok": result.OK, "state": result.State, "error": result.Error}, nil)
+}
+
+func (c *V2Client) WakeSetup(ctx context.Context, results []wakesetup.Result) ([]wakesetup.Target, error) {
+	if results == nil {
+		results = []wakesetup.Result{}
+	}
+	var response struct {
+		Targets []wakesetup.Target `json:"targets"`
+	}
+	err := c.request(ctx, "POST", "/api/v2/gateway/wake-setup", map[string]any{"results": results}, &response)
+	if err == nil && response.Targets == nil {
+		err = errors.New("missing wake setup targets")
+	}
+	return response.Targets, err
 }

@@ -153,6 +153,6 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
     {
         var status = network.ReadStatus();
         return new ServiceStatus(Environment.MachineName, status.LanIp, status.Mac,
-            status.WolState, status.LanState, cloud.State, cloud.GatewayState, "1.4.0", cloud.CloudUrl);
+            status.WolState, status.LanState, cloud.State, cloud.GatewayState, "1.5.0", cloud.CloudUrl, cloud.DeviceId, cloud.GatewayHint);
     }
 }

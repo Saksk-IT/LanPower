@@ -34,7 +34,7 @@ public sealed class CloudEnrollment(HttpClient client,
         try
         {
             using var response = await client.PostAsJsonAsync(origin + "/api/v2/enroll/start",
-                new { device_type = "windows", name = Environment.MachineName, version = "1.4.0", protocol_version = "2" }, token);
+                new { device_type = "windows", name = Environment.MachineName, version = "1.5.0", protocol_version = "2" }, token);
             response.EnsureSuccessStatusCode();
             using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
                 ?? throw new InvalidDataException("Cloud 配对响应无效");

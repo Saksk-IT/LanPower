@@ -10,7 +10,7 @@ PRIVATE_NAMES = {
     "agents.md", "project.private.config.json", "config.json", "gateway.json",
     "cloud.json", "device-credentials.json", "credentials.dat",
     "command-receipts.json", "cloud-replay.jsonl", "gateway.lock", "seen.json",
-    "setup-code",
+    "setup-code", "auto-targets.json",
 }
 LOCAL_DOCUMENTS = {
     "docs/architecture-v2-cloud-direct.md",

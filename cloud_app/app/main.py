@@ -30,7 +30,7 @@ from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -549,7 +549,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session, redirect = browser_guard(request)
         if redirect: return redirect
         devices = platform.devices(session.owner_id)
+        selected = next((device for device in devices if device.device_type == "windows"
+                         and device.id == request.query_params.get("computer")), None)
         return page(request, "gateways", session, devices=devices, links=platform.links(session.owner_id),
+                    selected_computer=selected,
                     statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices})
 
     @app.post("/gateways/{gateway_id}/links")
@@ -564,7 +567,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                   backup=form.get("backup") == "on", remove=form.get("operation") == "remove")
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
-        return RedirectResponse("/gateways", status_code=303)
+        return RedirectResponse("/gateways?computer=" + form.get("windows_id", ""), status_code=303)
 
     @app.get("/clients")
     def clients_page(request: Request):
@@ -742,7 +745,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, str(error)) from error
         status = platform.device_status(owner_id, device_id)
         return {"ok": True, "wake_available": status["wake_available"], "wake_gateway": status["wake_gateway"],
-                "presence_protocol": 1}
+                "presence_protocol": 1, "wake_setup_protocol": 1, "wake_setup_message": status["wake_setup_message"]}
 
     @app.get("/api/v2/windows/commands")
     def windows_commands(request: Request):
@@ -779,6 +782,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def gateway_commands(request: Request):
         _, device_id = device_identity(request, "gateway")
         return {"command": platform.gateway.poll(device_id)}
+
+    @app.post("/api/v2/gateway/wake-setup")
+    async def gateway_wake_setup(request: Request):
+        owner_id, device_id = device_identity(request, "gateway")
+        try:
+            targets = platform.gateway.sync_wake_setup(owner_id, device_id, await json_body(request, limit=8192))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+        return {"targets": targets}
 
     @app.post("/api/v2/gateway/results")
     async def gateway_results(request: Request):

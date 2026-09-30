@@ -32,6 +32,11 @@
     setText(card, 'wake-hint', known ? `${status.wake_unavailable_reason || '远程唤醒不可用'}，远程开机不可用。` : '等待同步唤醒网关状态。');
     card.querySelectorAll('[data-status-wake-hint]').forEach(element => { element.hidden = known && !!status.wake_available; });
     setText(card, 'cloud', !known ? '状态未知' : status.cloud_agent === 'online' ? '已连接' : '未连接');
+    setText(card, 'setup', known ? status.wake_setup_message || '等待配置状态更新。' : '配置状态暂时未知，连接恢复后自动更新。');
+    card.querySelectorAll('[data-gateway-target]').forEach(element => {
+      const target = status.wake_targets?.find(item => item.device_id === element.dataset.gatewayTarget);
+      element.textContent = known ? target?.message || '等待配置状态更新。' : '配置状态暂时未知，连接恢复后自动更新。';
+    });
     if (known) {
       setText(card, 'version', status.version || '尚未上报');
       setText(card, 'lan', status.lan_ip || '尚未上报');

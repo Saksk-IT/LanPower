@@ -1,5 +1,7 @@
 # LanPower
 
+当前源码版本：Windows / Cloud `1.5.0`，Wake Gateway `2.1.0`，微信小程序 `2.0.1`。新增选择网关后自动配置电脑的远程唤醒功能，见 [更新说明](docs/release-notes.md)。
+
 LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新 Windows 应用、Cloud Web 与 Cloud Direct 已在指定公网服务器和本机 Windows 部署，真实 Passkey 初始化和无网关只读状态链路已通过；新版尚未正式发布，物理电源动作仍待手动验收。
 
 阶段收尾（2026-09-30）：用户反馈基本流程正常，但仍有问题。按用户要求暂停本阶段开发，后续再处理问题；本次仅同步主分支源码，安装包和其他发布资源暂缓。详细验证记录与剩余项见 [开发与验收清单](docs/implementation-checklist.md)。
@@ -27,11 +29,11 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
 3. 在 Windows 应用中输入 Cloud 地址，点击“连接 Cloud”查看设备配对码。登录 Cloud 网页的“连接 Windows 电脑”，输入短码并核对名称后允许连接。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
 4. 手机需要远程控制时，在 Cloud“已授权客户端”页面生成二维码，用新版小程序扫码。选中电脑后，可单独扫描该电脑的局域网码以启用局域网优先；详见 [小程序 v2](docs/mini-program-v2.md)。
-5. 需要远程开机时，按 [Wake Gateway v2](docs/wake-gateway.md) 在路由器上注册网关、配置电脑并在 Cloud 关联。一个网关支持多台电脑，Windows 在线时仍优先直连。
+5. 需要远程开机时，按 [Wake Gateway v2](docs/wake-gateway.md) 在路由器上注册网关。在 Windows 点击“配置远程唤醒”，网页选择网关后自动保存电脑的唤醒信息，无需手填 MAC、广播地址或重启网关。首次配置时电脑和网关需在线并处于同一局域网；一个网关支持多台电脑。
 
 ## 最新版本
 
-当前版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息。一套实际部署已在 iPhone 5G 下完成远程状态、睡眠和唤醒实测。
+已发布版本：**v1.1.2 Remote Gateway Preview**。从 [v1.1.2 发布页下载完整包](https://github.com/Saksk-IT/LanPower/releases/tag/v1.1.2)。发布包包含 Windows 程序、微信小程序、Gateway 的 Linux ARM64 二进制及源码、Cloud 源码和安装说明。远程功能需要用户自己的 HTTPS 域名、云服务器和私有凭据；仓库不包含这些信息。一套实际部署已在 iPhone 5G 下完成远程状态、睡眠和唤醒实测。
 
 ## 已发布 v1.1.2 的安装
 

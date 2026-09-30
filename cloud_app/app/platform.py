@@ -108,8 +108,14 @@ class Platform:
                 Device.owner_id == owner_id, Device.revoked_at.is_(None)).order_by(Device.id))) if device.device_type == "windows" else []
             if device.device_type == "gateway":
                 state = self.presence()["gateway"] if device.id == self.gateway_id else "online" if self.gateway.online(device) else "offline"
+                computers = list(db.scalars(select(Device).join(DeviceLink, Device.id == DeviceLink.windows_id).where(
+                    DeviceLink.gateway_id == device.id, DeviceLink.relationship == "wake_gateway",
+                    Device.owner_id == owner_id, Device.revoked_at.is_(None))))
                 return {**details, "device_id": device.id, "name": device.name, "device_type": device.device_type,
                         "state": state, "cloud_agent": "offline", "wake_available": False,
+                        "wake_setup_supported": bool(device.meta.get("wake_setup_supported")),
+                        "wake_targets": [{"device_id": computer.id, "message": self.gateway.setup_message(device, computer)}
+                                         for computer in computers],
                         "wake_gateway": None, "remote_control_available": False}
             direct = device.protocol_version == "2" and self.windows.online(device)
             def current_observation(gateway):
@@ -151,6 +157,7 @@ class Platform:
                     "state": state, "cloud_agent": "online" if direct else "offline",
                     "lan_ip": device.meta.get("lan_ip"), "wol_capable": device.meta.get("wol_capable"),
                     "windows_lan_state": lan_state, "wake_unavailable_reason": wake_reason,
+                    "wake_setup_message": self.gateway.setup_message(linked, device) if linked else "选择家中的网关后，将自动配置这台电脑。",
                     "wake_available": wake is not None,
                     "wake_gateway": {"device_id": linked.id, "name": linked.name, "state": "online" if linked_online else "offline"} if linked else None,
                     "backup_gateway": {"device_id": backup.id, "name": backup.name, "state": "online"} if backup else None,

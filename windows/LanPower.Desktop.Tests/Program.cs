@@ -24,12 +24,13 @@ internal static class Program
     {
         try
         {
-            var app = new App();
+            // Dispatcher pumping must not launch or activate the installed app.
+            var app = new App { LaunchShell = false };
             app.InitializeComponent();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
             var available = true;
             var status = new ServiceStatus("我的电脑", "192.168.1.100", "02:11:22:33:44:55", "系统允许唤醒",
-                "已连接", "未配置", "未配置", "1.4.0");
+                "已连接", "未配置", "未配置", "1.5.0");
             var settings = new NetworkSettings("ethernet", true, "192.168.1.100", "192.168.1.0/24", 48211,
                 [new("ethernet", "以太网", "192.168.1.100", 24, false, true)]);
             var window = new MainWindow((command, _) =>
@@ -52,12 +53,21 @@ internal static class Program
             InvokeTask(window, "LoadStatusAsync");
             Check(Text(window, "CloudRoute") == "在线控制可用" && Text(window, "WakeRoute") == "远程唤醒可用", "Cloud and gateway states displayed independently");
             Check(Control<Button>(window, "CloudDisconnectButton").IsEnabled, "connected Cloud can be disconnected");
+            Check(MainWindow.GatewaySetupUri("https://power.example.com", "00000000-0000-0000-0000-000000000002")?.AbsoluteUri ==
+                "https://power.example.com/gateways?computer=00000000-0000-0000-0000-000000000002", "gateway setup selects the current computer");
+            Check(MainWindow.GatewaySetupUri("https://user@power.example.com", "") is null &&
+                MainWindow.GatewaySetupUri("http://power.example.com", "") is null, "invalid setup origins rejected");
+            status = status with { GatewayState = "已连接，待配置电脑", GatewayHint = "正在自动配置，请保持电脑和网关在线。" };
+            InvokeTask(window, "LoadStatusAsync");
+            Check(Text(window, "GatewayDetail").StartsWith("正在自动配置") &&
+                Control<Button>(window, "GatewaySetupLink").Content.ToString() == "配置远程唤醒  →", "setup progress and action visible");
 
             available = false;
             InvokeTask(window, "LoadStatusAsync");
             Check(Text(window, "CloudState") == "状态未知" && Text(window, "WakeRoute") == "状态未知", "service loss clears stale online states");
             Check(Control<TextBox>(window, "LanIp").Text == "—" && Control<TextBox>(window, "Mac").Text == "—", "service loss clears stale network addresses");
             Check(!Control<Button>(window, "CloudConnectButton").IsEnabled && !Control<Button>(window, "CloudDisconnectButton").IsEnabled, "service actions disabled while disconnected");
+            Check(!Control<Button>(window, "GatewaySetupLink").IsEnabled, "stale gateway link disabled on service loss");
             available = true;
             InvokeTask(window, "LoadStatusAsync");
             Check(Control<Button>(window, "CloudConnectButton").IsEnabled, "service recovery restores actions");

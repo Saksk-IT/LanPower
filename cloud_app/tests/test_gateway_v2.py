@@ -211,7 +211,8 @@ def test_windows_presence_exposes_details_and_own_gateway_only(cloud):
     beat = {"device_id": pc, "version": "2.0.0", "state": "online", "uptime": 1,
             "lan_ip": "192.168.1.20", "wol_capable": True}
     before = client.post("/api/v2/windows/heartbeat", headers=windows_headers, json=beat).json()
-    assert before == {"ok": True, "wake_available": False, "wake_gateway": None, "presence_protocol": 1}
+    assert before == {"ok": True, "wake_available": False, "wake_gateway": None, "presence_protocol": 1,
+                      "wake_setup_protocol": 1, "wake_setup_message": "选择家中的网关后，将自动配置这台电脑。"}
     assert "未配置唤醒网关" in client.get("/dashboard").text
     heartbeat(client, gateway, gateway_headers, [target(pc)])
     link(client, csrf, gateway, pc)

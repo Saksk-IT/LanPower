@@ -9,6 +9,7 @@ import (
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/cloud"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/config"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/protocol"
+	"github.com/Saksk-IT/LanPower/router_gateway/internal/wakesetup"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/windows"
 	"github.com/Saksk-IT/LanPower/router_gateway/internal/wol"
 )
@@ -27,6 +28,14 @@ type Agent struct {
 	Execute func(protocol.Command, config.Target) protocol.Result
 	Status  func(config.Target) string
 	Now     func() time.Time
+	Setup   *wakesetup.Manager
+}
+
+func (a *Agent) targets() []config.Target {
+	if a.Setup != nil {
+		return a.Setup.Targets()
+	}
+	return a.Config.Devices
 }
 
 func New(cfg config.Config, remote Remote, store *protocol.CommandStore) *Agent {
@@ -79,7 +88,7 @@ func (a *Agent) Handle(command protocol.Command) protocol.Result {
 	rejected := protocol.Result{CommandID: command.CommandID, OK: false, State: "failed", Error: "invalid, expired or unauthorized command"}
 	allowed := make(map[string]bool)
 	var target config.Target
-	for _, candidate := range a.Config.Devices {
+	for _, candidate := range a.targets() {
 		allowed[candidate.DeviceID] = true
 		if candidate.DeviceID == command.TargetDeviceID {
 			target = candidate
@@ -107,10 +116,11 @@ func (a *Agent) Handle(command protocol.Command) protocol.Result {
 }
 
 func (a *Agent) heartbeat(ctx context.Context, started time.Time) error {
-	targets := make([]cloud.TargetStatus, len(a.Config.Devices))
+	devices := a.targets()
+	targets := make([]cloud.TargetStatus, len(devices))
 	var wg sync.WaitGroup
 	limit := make(chan struct{}, 8)
-	for index, target := range a.Config.Devices {
+	for index, target := range devices {
 		wg.Add(1)
 		go func(index int, target config.Target) {
 			defer wg.Done()
@@ -132,6 +142,31 @@ func (a *Agent) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	defer func() { cancel(); wg.Wait() }()
+	if remote, ok := a.Remote.(interface {
+		WakeSetup(context.Context, []wakesetup.Result) ([]wakesetup.Target, error)
+	}); ok && a.Setup != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var results []wakesetup.Result
+			for ctx.Err() == nil {
+				deadline, stop := context.WithTimeout(ctx, 15*time.Second)
+				requested, err := remote.WakeSetup(deadline, results)
+				if err == nil {
+					results = a.Setup.Sync(deadline, requested)
+					// Report only after saving; normal heartbeats remain independent.
+					_, _ = remote.WakeSetup(deadline, results)
+					_ = a.heartbeat(deadline, started)
+				}
+				stop()
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(25 * time.Second):
+				}
+			}
+		}()
+	}
 	go func() {
 		defer wg.Done()
 		ticker := time.NewTicker(25 * time.Second)

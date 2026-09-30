@@ -28,6 +28,8 @@ var network = new LanNetworkManager(config, new LanConfigStore(configPath),
     dryRun ? new DryRunLanFirewall() : new LanFirewall(), serviceLog);
 builder.Services.AddSingleton(network);
 builder.Services.AddSingleton<Func<LocalNetworkSnapshot>>(network.ReadStatus);
+builder.Services.AddSingleton<Func<LanConfig>>(() => network.Config);
+builder.Services.AddSingleton<WakeProfileService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<LanNetworkManager>());
 builder.Services.AddSingleton(new CloudCredentialStore(dataDirectory));
 builder.Services.AddSingleton(new ReplayStore(dataDirectory));
@@ -59,6 +61,11 @@ app.MapGet("/api/status", (HttpContext context) =>
     config.IsAuthorized(context.Request.Headers.Authorization) ?
         Results.Json(new { ok = true, device = Environment.MachineName, state = "online" }) :
         Results.Json(new { error = "not paired" }, statusCode: 401));
+
+app.MapGet("/api/wake-profile", (HttpContext context, CloudAgent cloud) =>
+    cloud.ReadWakeProfile(context.Request.Headers.Authorization) is { } profile
+        ? Results.Json(profile)
+        : Results.Json(new { error = "wake profile unavailable" }, statusCode: 401));
 
 app.MapPost("/api/power", async (HttpContext context, PowerGate gate, CloudAgent cloud) =>
 {

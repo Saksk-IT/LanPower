@@ -7,6 +7,7 @@ namespace LanPower.Desktop;
 
 public partial class App : Application
 {
+    internal bool LaunchShell { get; init; } = true;
     private Mutex? _instance;
     private EventWaitHandle? _activation;
     private RegisteredWaitHandle? _activationWait;
@@ -20,6 +21,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (!LaunchShell) return;
         base.OnStartup(e);
         var identity = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
         var name = @"Local\LanPower.Desktop." + identity;

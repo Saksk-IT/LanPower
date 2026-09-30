@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}唤醒网关{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">连接</p><h1>唤醒网关</h1><p class="muted">电脑离线时，网关可以在家中发送网络唤醒包。</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">远程开机</p><h1>选择网关，自动配置</h1><p class="muted">保持电脑和网关在线，并连接同一路由器。选择后自动识别、保存唤醒信息，通常约 30 秒完成。</p></div></div>
+{% if selected_computer %}
+<section class="card" data-status-id="{{ selected_computer.id }}">
+  <p class="eyebrow">正在配置这台电脑</p><h2 data-status-name>{{ selected_computer.name }}</h2>
+  <p data-status-setup role="status">{{ statuses[selected_computer.id].wake_setup_message }}</p>
+</section>
+{% endif %}
 <p class="hint" data-status-sync role="status">每 5 秒自动同步状态。</p>
 {% for device in devices if device.device_type == 'gateway' %}
 <section class="card" data-status-id="{{ device.id }}"><div class="card-heading"><div><span class="device-type">{{ 'Wake Gateway' if device.protocol_version == '2' else 'Legacy Gateway' }}</span><h2 data-status-name>{{ device.name }}</h2></div><span data-status-badge class="badge {{ 'good' if statuses[device.id].state == 'online' else '' }}">{{ '在线' if statuses[device.id].state == 'online' else '离线' }}</span></div>
@@ -13,17 +19,19 @@
       <button class="secondary" name="operation" value="remove">解除关联</button>
     </form>{% endif %}
   </div>
+  <p class="hint" data-gateway-target="{{ link.device_id }}" role="status">{% for target in statuses[device.id].wake_targets if target.device_id == link.device_id %}{{ target.message }}{% endfor %}</p>
   {% else %}<p class="muted">尚未关联电脑。</p>{% endfor %}
   {% if device.protocol_version == '2' %}
   <form method="post" action="/gateways/{{ device.id }}/links" class="gateway-link-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>关联电脑<select name="windows_id" required>{% for windows in devices if windows.device_type == 'windows' %}<option value="{{ windows.id }}">{{ windows.name }}</option>{% endfor %}</select></label>
-    <label><input type="checkbox" name="backup"> 允许备用控制</label>
-    <button class="primary">保存关联</button>
+    <label>要唤醒的电脑<select name="windows_id" required>{% for windows in devices if windows.device_type == 'windows' %}<option value="{{ windows.id }}" {{ 'selected' if selected_computer and windows.id == selected_computer.id else '' }}>{{ windows.name }}</option>{% endfor %}</select></label>
+    <details><summary>高级选项</summary><label><input type="checkbox" name="backup"> 允许备用控制</label><p class="hint">备用电源控制需在网关本地单独配对，自动配置只开启唤醒功能。</p></details>
+    <button class="primary" {{ 'disabled' if not (devices | selectattr('device_type', 'equalto', 'windows') | list) else '' }}>使用这个网关</button>
   </form>
-  <p class="hint">网关还需在本地配置对应电脑，才能唤醒。备用控制仅在电脑云端连接中断、局域网仍可访问时使用。</p>
+  <p class="hint">已关联的电脑会自动继续配置。首次使用请将 Windows、Cloud 和网关升级到支持自动配置的版本。</p>
   {% endif %}
 </section>
 {% endfor %}
-{% if not (devices | selectattr('device_type', 'equalto', 'gateway') | list) %}<section class="card"><p>尚未配置唤醒网关。在线的 Windows 电脑仍可通过 Cloud 直接控制。</p></section>{% endif %}
+{% if not (devices | selectattr('device_type', 'equalto', 'gateway') | list) %}<section class="card"><h2>先连接家中的网关</h2><p>在常在线的路由器或设备上安装 LanPower 网关，使用它显示的短码完成连接，然后回到这里选择电脑。</p><a class="button-link" href="/enroll">输入网关配对码</a></section>{% endif %}
+<p class="hint">电脑仍需在 BIOS 和网卡设置中开启网络唤醒。配置完成表示网关已具备发送唤醒包的条件，实际开机效果请在方便时测试。</p>
 {% endblock %}

@@ -2,12 +2,5 @@
   "protocol_version": "2",
   "name": "Home Wake Gateway",
   "cloud_url": "https://power.example.com",
-  "devices": [
-    {
-      "device_id": "00000000-0000-0000-0000-000000000010",
-      "mac": "02-11-22-33-44-55",
-      "broadcast": "192.168.1.255",
-      "backup_relay": false
-    }
-  ]
+  "devices": []
 }
