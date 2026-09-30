@@ -166,7 +166,7 @@ public sealed class CloudAgent(
             {
                 if (token.IsCancellationRequested) continue;
                 Volatile.Write(ref _state, "连接中断");
-                log.Write("Cloud 连接失败：" + error.GetType().Name);
+                log.WriteFailure("Cloud 连接失败", error);
                 await Task.Delay(5000, stoppingToken);
             }
         }

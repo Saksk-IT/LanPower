@@ -131,6 +131,7 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
                                      System.Security.Cryptography.CryptographicException or UnauthorizedAccessException or
                                      System.Runtime.InteropServices.COMException or System.ComponentModel.Win32Exception)
         {
+            log.WriteFailure("Cloud 配对或本机设置失败", error);
             return JsonSerializer.Serialize(new { ok = false, error = "无法完成操作，请检查服务、Cloud 地址和连接状态" });
         }
     }

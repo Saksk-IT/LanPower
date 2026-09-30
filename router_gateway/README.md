@@ -6,6 +6,8 @@
 
 新版支持设备短码注册、独立凭据轮换、一个网关关联多台 Windows、远程唤醒和可选备用局域网控制。Windows 在线时，Cloud 优先直接控制 Windows。使用 `config.v2.example.json` 创建新版配置；完整注册、安装和迁移步骤见 [Wake Gateway v2](../docs/wake-gateway.md)。下文的共享密钥配置与 `seen.json` 为保留的 v1 兼容方式。
 
+2026-09-30 已在指定真实路由器完成 v1 到 v2 迁移、网页短码批准、在线与单电脑唤醒关联，并验证子进程退出后自动恢复、凭据保留与自动启动配置。公网只读状态保持 Windows 直连优先；物理 WOL、多电脑、备用控制和整机重启仍待验收，详见 [实机验证记录](../docs/wake-gateway.md#指定路由器验证2026-09-30)。
+
 v2 凭据保存在配置同目录的 `device-credentials.json`，命令执行记录保存在 `command-receipts.json`，二者均为 `0600`。注册和常驻进程共用独占锁；重复命令返回原结果，执行中断后结果未知的命令不会重新执行。网关仅上传设备编号和能力/连通状态，不上传 Windows LAN Token、MAC 或广播地址。
 
 ## 构建

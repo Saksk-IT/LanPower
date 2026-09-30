@@ -1,15 +1,15 @@
 # LanPower
 
-LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新 Windows 应用、Cloud Web 与 Cloud Direct 已在源码中实现，尚未发布或进行公网实机验收。
+LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新 Windows 应用、Cloud Web 与 Cloud Direct 已在指定公网服务器和本机 Windows 部署，真实 Passkey 初始化和无网关只读状态链路已通过；新版尚未正式发布，物理电源动作仍待手动验收。
 
 ## 使用方式
 
 | 模式 | 所需组件 | 当前状态 |
 |---|---|---|
 | LAN Direct | Windows + 微信小程序 | 已可用，不依赖 Cloud 或路由器程序 |
-| Cloud Direct | 新 Windows 应用 + Cloud + 浏览器 | 源码已实现；在线电脑不需要 Wake Gateway |
-| 小程序 v2 | 新 Windows 应用 + Cloud + 微信小程序 | 扫码授权、设备列表、局域网优先与云端回退已实现，待微信真机验收 |
-| Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新版已实现多电脑唤醒及可选备用控制，待实机验收 |
+| Cloud Direct | 新 Windows 应用 + Cloud + 浏览器 | 公网只读状态已通过；在线电脑不需要 Wake Gateway |
+| 小程序 v2 | 新 Windows 应用 + Cloud + 微信小程序 | 原生编译已由用户确认通过；扫码授权、设备列表及网络切换待微信真机验收 |
+| Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新版路由器注册与单电脑关联已通过，物理唤醒和多电脑仍待验收 |
 
 普通用户可先使用下方已发布版本。开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建新服务、桌面端和安装包；新安装包尚未发布。
 
@@ -17,7 +17,7 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 完整文档入口：[架构与实现状态](docs/architecture-v2.md)、[Windows 应用](docs/windows-app.md)、[Docker 一键 HTTPS](deploy/docker/README.md)、[认证](docs/authentication-v2.md)、[数据迁移](docs/migration-v1.md)、[安全边界](docs/security-model.md)、[故障排查](docs/troubleshooting.md)。
 
-新版安装器、便携分发包、ARM64 网关及校验清单已在本地生成并校验，解压后的服务演练通过。开发者可按 [构建与发布](docs/releasing.md) 重现；正式发布和公网实机验收仍未执行。
+新版安装器、便携分发包、ARM64 网关及校验清单已在本地生成并校验，解压后的服务演练通过。Setup 的管理员首次安装、保留 LAN 配对的就地升级与服务重启后恢复 Cloud 已通过。开发者可按 [构建与发布](docs/releasing.md) 重现；剩余验收见 [开发与验收清单](docs/implementation-checklist.md)，本轮未正式发布。
 
 ## 新架构快速开始（源码版本）
 

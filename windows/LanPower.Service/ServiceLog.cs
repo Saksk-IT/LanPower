@@ -29,4 +29,20 @@ public sealed class ServiceLog
             return string.Join(Environment.NewLine, File.ReadLines(_path).TakeLast(80));
         }
     }
+
+    public void WriteFailure(string operation, Exception error)
+    {
+        var causes = new List<string>();
+        for (Exception? cause = error; cause is not null && causes.Count < 6; cause = cause.InnerException)
+        {
+            var detail = cause.GetType().Name + $"[0x{cause.HResult:X8}]";
+            if (cause is HttpRequestException http)
+                detail += ":" + http.HttpRequestError + (http.StatusCode is { } status ? $" HTTP {(int)status}" : "");
+            if (cause is System.ComponentModel.Win32Exception native)
+                detail += $":Win32 {native.NativeErrorCode}";
+            causes.Add(detail);
+        }
+        // Exception messages and response bodies may contain URLs or credentials.
+        Write(operation + "：" + string.Join(" -> ", causes));
+    }
 }
