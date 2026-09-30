@@ -71,9 +71,9 @@ def test_failed_access_is_persisted_throttled_private_and_owner_scoped(cloud, ki
     assert credentials["access_token"] not in activity.text and credentials["refresh_token"] not in activity.text
 
 
-@pytest.mark.parametrize("kind", ["device", "client"])
+@pytest.mark.parametrize("kind, renewal", [("device", False), ("client", False), ("client", True)])
 @pytest.mark.parametrize("failure", ["expired", "revoked", "owner_revoked"])
-def test_known_refresh_failure_commits_before_returning_unauthorized(cloud, kind, failure):
+def test_known_refresh_failure_commits_before_returning_unauthorized(cloud, kind, renewal, failure):
     client, app = cloud
     credentials = enroll(app, kind)
     with app.state.platform.sessions.begin() as db:
@@ -85,6 +85,8 @@ def test_known_refresh_failure_commits_before_returning_unauthorized(cloud, kind
         else:
             db.get(User, ADMIN_ID).revoked_at = int(time.time())
     field, endpoint = ("device_id", "/api/v2/devices/token") if kind == "device" else ("client_id", "/api/v2/clients/token")
+    if renewal:
+        endpoint = "/api/v2/clients/renew"
     payload = {field: credentials[field], "refresh_token": credentials["refresh_token"]}
     for _ in range(2):
         assert client.post(endpoint, json=payload).status_code == 401

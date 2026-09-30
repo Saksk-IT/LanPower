@@ -60,7 +60,11 @@ Page({
     this.route = ''; this.wakeRoute = '';
     this.setData({canControl: false, canWake: false});
   },
-  onUnload() { this.onHide(); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); },
+  onUnload() {
+    this.onHide();
+    if (this.client) this.client.close();
+    if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged);
+  },
   async onPullDownRefresh() {
     try { await this.reloadDevices(); }
     finally { if (wx.stopPullDownRefresh) wx.stopPullDownRefresh(); }

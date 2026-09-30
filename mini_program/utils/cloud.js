@@ -72,31 +72,40 @@ class CloudClient {
   }
 
   refresh() {
-    if (this.closed || this.session.refresh_pending) return Promise.reject(authorizationError('请重新扫描 Cloud 授权二维码'));
+    if (this.closed) return Promise.reject(new Error('连接已关闭'));
+    if (this.authorizationInvalid) return Promise.reject(authorizationError());
     if (this.refreshInFlight) return this.refreshInFlight;
     const original = this.session;
-    // Persist the in-flight marker before rotating. A terminated app or lost
-    // response must not send the same refresh token again on its next launch.
+    // This endpoint retains the phone credential, so a lost response, failed
+    // storage write or legacy refresh_pending marker can be retried safely.
+    // Never fall back to the old single-use /token endpoint on an older Cloud.
     this.refreshInFlight = Promise.resolve().then(async () => {
-      this.wx.setStorageSync(CLIENT_KEY, {...original, refresh_pending: true});
-      const response = await request(this.wx, original.url + '/api/v2/clients/token', 'POST',
+      const response = await request(this.wx, original.url + '/api/v2/clients/renew', 'POST',
         {client_id: original.client_id, refresh_token: original.refresh_token});
+      if (this.closed) throw new Error('连接已关闭');
+      if (response.statusCode === 401) {
+        this.authorizationInvalid = true;
+        throw authorizationError();
+      }
+      if (response.statusCode === 404 || response.statusCode === 405) {
+        throw new Error('请先更新 Cloud 平台以支持手机长期授权，已有授权已保留');
+      }
+      if (response.statusCode === 429) throw new Error('操作过于频繁，请稍后重试');
       if (response.statusCode !== 200 || !validTokens(response.data) || response.data.client_id !== original.client_id) {
-        throw new Error('Cloud 授权已失效，请重新扫码');
+        throw new Error('Cloud 暂时无法续期，恢复连接后将自动重试');
       }
       const next = savedSession(original.url, response.data);
-      if (this.closed) throw new Error('连接已关闭');
-      this.wx.setStorageSync(CLIENT_KEY, next);
+      try { this.wx.setStorageSync(CLIENT_KEY, next); }
+      catch (_) { throw new Error('无法保存 Cloud 授权，请检查手机存储后重试'); }
       this.session = next;
-      this.refreshInFlight = null;
-    }).catch(() => { throw authorizationError('Cloud 连接需要重新授权，请重新扫码'); });
+    }).finally(() => { this.refreshInFlight = null; });
     return this.refreshInFlight;
   }
 
   async call(path, method = 'GET', data) {
     if (this.closed) throw new Error('连接已关闭');
     if (!/^\/api\/v2\//.test(path)) throw new Error('请求地址无效');
-    if (this.session.access_expires_at <= Date.now() / 1000 + 30) await this.refresh();
+    if (this.session.refresh_pending || this.session.access_expires_at <= Date.now() / 1000 + 30) await this.refresh();
     const sent = this.session.access_token;
     let response = await request(this.wx, this.session.url + path, method, data, sent);
     if (response.statusCode === 401) {

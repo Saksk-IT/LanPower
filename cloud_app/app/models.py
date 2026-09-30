@@ -111,7 +111,7 @@ class ClientSession(Base):
     access_hash: Mapped[str] = mapped_column(String(64), unique=True)
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
     access_expires_at: Mapped[int] = mapped_column(Integer)
-    refresh_expires_at: Mapped[int] = mapped_column(Integer)
+    refresh_expires_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[int] = mapped_column(Integer)
     last_seen_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
     revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)

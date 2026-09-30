@@ -1,6 +1,6 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-Cloud“已授权客户端”现在支持为每部手机生成一次性二维码，并逐个撤销。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。使用与验证边界见 [小程序 v2](../docs/mini-program-v2.md)。
+Cloud“已授权客户端”支持为每部手机生成一次性二维码，并逐个撤销。Cloud `1.5.1` 配合小程序 `2.0.2` 支持一次扫码长期授权：访问凭据每 15 分钟续期，手机长期凭据不因断网、响应丢失、重启或长期闲置过期。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。升级顺序和旧凭据恢复边界见 [小程序 v2](../docs/mini-program-v2.md#长期授权升级)。
 
 Cloud Web 是浏览器控制端，默认使用 Passkey 登录。Windows 应用可通过一次性配对码连接 Cloud，之后定期上报状态、领取命令并回传结果。在线 Windows 可直接接收状态、睡眠、休眠、重启和关机命令，无需 Wake Gateway。Cloud 保留旧 Gateway 与小程序使用的 `/api/v1/*` 协议；启用旧网关配置后继续兼容。Cloud 从不接收 Windows LAN 配对密钥。
 
@@ -29,7 +29,7 @@ python -m venv cloud_app/.venv
 docker compose -f compose.yml -f compose.legacy.yml up -d --build
 ```
 
-Cloud 启动时会对 `platform.db` 执行 Alembic 迁移，目前为 `0007_client_versions`。客户端授权时保存应用版本和协议版本，旧客户端凭据保持有效，未上报版本的记录显示“尚未上报”。启用旧网关配置后，还会登记现有 Gateway 与一台关联的旧版 Windows 设备。旧 `relay.db` 由原中继逻辑继续使用，不会被迁移脚本修改。
+Cloud 启动时会对 `platform.db` 执行 Alembic 迁移，目前为 `0008_persistent_clients`。未撤销手机的刷新期限改为长期，保留手机编号、凭据哈希、历史和撤销状态；未上报应用版本的记录显示“尚未上报”。已撤销或已消费后丢失的旧凭据不会恢复，必要时需最后扫码一次。启用旧网关配置后，还会登记现有 Gateway 与一台关联的旧版 Windows 设备。旧 `relay.db` 由原中继逻辑继续使用，不会被迁移脚本修改。
 
 需要在正式切换前单独核对迁移结果时，可先运行 `docker compose -f compose.yml -f compose.legacy.yml run --rm cloud python -m cloud_app.cli migrate-v1`。命令只读取旧 `relay.db` 和 `cloud.json`，将旧 Gateway、Windows 与客户端登记到新的 `platform.db`，不会改写旧数据。
 
@@ -51,7 +51,7 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 “我的设备”中的“移除设备”会撤销该设备及其所有会话。批准、拒绝、连接和撤销均记录审计。旧版网关使用共享配置，需由部署者在服务器上移除其配置。
 
-已知设备或客户端凭据过期、撤销或身份校验失败时，活动页记录授权失败；五分钟内重复失败会合并，未知凭据不会被归到请求者指定的账户。刷新重用仍会撤销会话并记录异常。记录中不保存 Token、授权头或其哈希，详见 [认证与授权](../docs/authentication-v2.md)。
+已知设备或客户端凭据过期、撤销或身份校验失败时，活动页记录授权失败；五分钟内重复失败会合并，未知凭据不会被归到请求者指定的账户。设备与旧手机轮换接口的旧凭据重用仍会撤销会话并记录异常；新版手机的 `/api/v2/clients/renew` 保留长期凭据，允许重试，不触发重用撤销。记录中不保存 Token、授权头或其哈希，详见 [认证与授权](../docs/authentication-v2.md)。
 
 ## 当前限制
 
@@ -67,7 +67,7 @@ Windows 心跳响应以 `wake_setup_protocol: 1` 协商自动配置；后续心�
 
 网关使用 `/api/v2/gateway/heartbeat`、`commands`、`results`，不能调用 Windows 协议。命令同时绑定网关和 Windows，45 秒有效；轮询原子领取，重试结果保持幂等。移除设备或修改关联会取消未完成队列；已经送达的电源动作无法撤回。被移除的 Windows 不再计入网关状态，其余电脑仍可用。
 
-安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。自动配置更新后 Cloud 共 108 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离、授权失败审计、客户端版本迁移、状态同步、票据隔离及自动配置流程；网页关联和设备详情已在桌面和手机宽度验证。`/healthz` 同时返回产品版本 `1.5.0` 与协议版本 `2`。
+安装、配置、协议和验证边界见 [Wake Gateway](../docs/wake-gateway.md)。此前自动配置更新后 Cloud 共 108 项测试通过，包含旧版兼容、无路由器直连、多电脑网关与撤销隔离、授权失败审计、客户端版本迁移、状态同步、票据隔离及自动配置流程；网页关联和设备详情已在桌面和手机宽度验证。当前 `/healthz` 返回 Cloud 版本 `1.5.1` 与协议版本 `2`，长期授权修复的本地验证见 [小程序 v2](../docs/mini-program-v2.md#本地验证2026-09-30)。
 
 Windows 状态上报的响应额外提供该电脑的 `wake_gateway` 和 `wake_available`，用于桌面端显示实际连接情况；不会暴露其他电脑或设备凭据。设备列表提供版本、最近连接、局域网地址和系统唤醒能力，网页在开机不可用时区分未配置网关、网关离线和网关尚未配置电脑。
 

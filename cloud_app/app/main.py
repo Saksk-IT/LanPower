@@ -30,7 +30,7 @@ from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -617,6 +617,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def mobile_token(request: Request):
         try:
             return platform.mobile.refresh(await json_body(request))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+
+    @app.post("/api/v2/clients/renew")
+    async def mobile_renew(request: Request):
+        try:
+            return platform.mobile.renew(await json_body(request))
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         except PermissionError as error:

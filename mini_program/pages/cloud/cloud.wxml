@@ -129,7 +129,7 @@
     <view class="faq-card">
       <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="offline"><text>电脑离线时可以做什么？</text><text class="chevron">{{faqOpen == 'offline' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'offline'}}" class="faq-answer">有可用唤醒方式时，可以尝试开机。睡眠、休眠、重启和关机需要电脑在线且控制通道可用。离线也可能是服务停止或网络中断，请结合电脑实际情况判断。</view></view>
       <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="sleep"><text>睡眠和休眠有什么区别？</text><text class="chevron">{{faqOpen == 'sleep' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'sleep'}}" class="faq-answer">睡眠把当前状态保留在内存，耗电较低、恢复较快；休眠先把状态写入磁盘，再进入低功耗或断电状态，恢复通常更慢。操作前仍建议保存文件；休眠需要 Windows 已启用此功能。</view></view>
-      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="auth"><text>授权失效后怎么办？</text><text class="chevron">{{faqOpen == 'auth' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'auth'}}" class="faq-answer">在 Cloud 网页重新生成手机授权码，再到“连接”扫描。已使用的二维码不能再次兑换。重新授权同一 Cloud 后，原有电脑的局域网关联会保留；旧手机授权记录可在网页移除。</view></view>
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="auth"><text>授权失效后怎么办？</text><text class="chevron">{{faqOpen == 'auth' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'auth'}}" class="faq-answer">新版 Cloud 与小程序支持一次扫码长期授权，断网或退出微信后会自动恢复。主动撤销授权、清除小程序数据，或旧版已丢失有效凭据时，需在 Cloud 生成新码再扫描。重新授权同一 Cloud 后，已保存的局域网关联会保留。</view></view>
     </view>
     <view class="about-copy">LanPower · 小程序 v{{version}}<view>电脑电源，随手管理</view></view>
   </view>

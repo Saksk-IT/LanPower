@@ -6,12 +6,12 @@ import re
 import time
 import uuid
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from cloud_app.app.audit import credential_failure
 from cloud_app.app.auth import digest
-from cloud_app.app.device_auth import ACCESS_SECONDS, REFRESH_SECONDS
+from cloud_app.app.device_auth import ACCESS_SECONDS
 from cloud_app.app.models import AuditLog, ClientEnrollment, ClientSession, UsedClientRefreshToken, User
 
 
@@ -63,7 +63,7 @@ class Clients:
             db.add(ClientSession(id=client_id, owner_id=enrollment.owner_id, name=enrollment.name,
                                  version=version, protocol_version=protocol,
                                  access_hash=digest(access), refresh_hash=digest(refresh),
-                                 access_expires_at=now + ACCESS_SECONDS, refresh_expires_at=now + REFRESH_SECONDS,
+                                 access_expires_at=now + ACCESS_SECONDS, refresh_expires_at=None,
                                  created_at=now, last_seen_at=now))
             self.audit(db, enrollment.owner_id, "client_enrolled")
         return {"client_id": client_id, "access_token": access, "refresh_token": refresh,
@@ -99,6 +99,7 @@ class Clients:
             self.audit(db, client.owner_id, "client_refresh_reuse")
 
     def refresh(self, payload: dict) -> dict:
+        """Legacy rotation endpoint; new phones use retryable renew instead."""
         if (set(payload) != {"client_id", "refresh_token"} or
                 not all(isinstance(value, str) for value in payload.values()) or
                 len(payload["client_id"]) > 64 or not 1 <= len(payload["refresh_token"]) <= 128):
@@ -110,16 +111,17 @@ class Clients:
                 ClientSession.id == payload["client_id"], ClientSession.refresh_hash == submitted))
             if client is None:
                 self.revoke_reuse(db, submitted, payload["client_id"])
-            elif (client.refresh_expires_at <= now or client.revoked_at is not None
+            elif ((client.refresh_expires_at is not None and client.refresh_expires_at <= now) or client.revoked_at is not None
                     or not self.active(db, client.owner_id)):
                 credential_failure(db, client.owner_id, "client_credential_failed", now)
             else:
                 access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
                 changed = db.execute(update(ClientSession).where(
                     ClientSession.id == client.id, ClientSession.refresh_hash == submitted,
-                    ClientSession.refresh_expires_at > now, ClientSession.revoked_at.is_(None)
+                    or_(ClientSession.refresh_expires_at.is_(None), ClientSession.refresh_expires_at > now),
+                    ClientSession.revoked_at.is_(None)
                 ).values(access_hash=digest(access), refresh_hash=digest(refresh),
-                         access_expires_at=now + ACCESS_SECONDS, refresh_expires_at=now + REFRESH_SECONDS))
+                         access_expires_at=now + ACCESS_SECONDS, refresh_expires_at=None))
                 if changed.rowcount:
                     db.add(UsedClientRefreshToken(token_hash=submitted, session_id=client.id, used_at=now))
                     self.audit(db, client.owner_id, "client_refresh_rotated")
@@ -129,6 +131,41 @@ class Clients:
                     self.revoke_reuse(db, submitted, payload["client_id"])
         if result is None:
             raise PermissionError("client refresh unavailable")
+        return result
+
+    def renew(self, payload: dict) -> dict:
+        """Renew short-lived access without consuming the phone's authorization.
+
+        A separate endpoint lets phones retry after a lost response or restart,
+        even when upgrading from a pending legacy refresh. An older Cloud will
+        reject this route without consuming its single-use refresh token.
+        """
+        if (set(payload) != {"client_id", "refresh_token"} or
+                not all(isinstance(value, str) for value in payload.values()) or
+                len(payload["client_id"]) > 64 or not 1 <= len(payload["refresh_token"]) <= 128):
+            raise ValueError("invalid renewal request")
+        now, result = int(time.time()), None
+        submitted = digest(payload["refresh_token"])
+        with self.sessions.begin() as db:
+            client = db.scalar(select(ClientSession).where(
+                ClientSession.id == payload["client_id"], ClientSession.refresh_hash == submitted))
+            if client is not None:
+                if ((client.refresh_expires_at is not None and client.refresh_expires_at <= now)
+                        or client.revoked_at is not None or not self.active(db, client.owner_id)):
+                    credential_failure(db, client.owner_id, "client_credential_failed", now)
+                else:
+                    access = secrets.token_urlsafe(32)
+                    changed = db.execute(update(ClientSession).where(
+                        ClientSession.id == client.id, ClientSession.refresh_hash == submitted,
+                        ClientSession.revoked_at.is_(None),
+                        or_(ClientSession.refresh_expires_at.is_(None), ClientSession.refresh_expires_at > now)
+                    ).values(access_hash=digest(access), access_expires_at=now + ACCESS_SECONDS,
+                             last_seen_at=now))
+                    if changed.rowcount:
+                        result = {"client_id": client.id, "access_token": access,
+                                  "refresh_token": payload["refresh_token"], "access_expires_at": now + ACCESS_SECONDS}
+        if result is None:
+            raise PermissionError("client renewal unavailable")
         return result
 
     def list(self, owner_id: str) -> list[ClientSession]:

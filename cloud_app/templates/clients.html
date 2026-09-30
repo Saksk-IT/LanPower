@@ -4,7 +4,7 @@
 <div class="page-heading"><div><p class="eyebrow">访问</p><h1>已授权客户端</h1></div></div>
 <section class="card">
   <h2>连接微信小程序</h2>
-  <p class="muted">为这部手机生成一次性二维码。授权后，小程序可以查看并控制你的电脑。</p>
+  <p class="muted">为这部手机生成一次性二维码。扫码一次即可长期查看并控制你的电脑，直到你主动撤销授权。请使用最新版小程序。</p>
   <form method="post" action="/clients/enroll" class="rename-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>手机名称<input name="name" maxlength="100" placeholder="我的手机" required></label>

@@ -63,24 +63,79 @@ async function main() {
   let finish;
   const wxApi = runtime(saved, opts => {
     calls.push(opts);
-    if (opts.url.endsWith('/token')) finish = () => opts.success({statusCode: 200, data: {...session, access_token: 'n'.repeat(43), refresh_token: 's'.repeat(43)}});
+    if (opts.url.endsWith('/renew')) finish = () => opts.success({statusCode: 200, data: {...session, access_token: 'n'.repeat(43)}});
     else opts.success({statusCode: 200, data: []});
   });
   const client = CloudClient.load(wxApi);
   const first = client.call('/api/v2/devices'), second = client.call('/api/v2/devices');
-  await tick(); assert.equal(calls.length, 1); assert.equal(saved[CLIENT_KEY].refresh_pending, true);
+  await tick(); assert.equal(calls.length, 1); assert.equal(saved[CLIENT_KEY].refresh_pending, undefined);
   finish(); await Promise.all([first, second]);
-  assert.equal(calls.filter(c => c.url.endsWith('/token')).length, 1);
+  assert.equal(calls.filter(c => c.url.endsWith('/renew')).length, 1);
   assert.ok(calls.slice(1).every(c => c.header.Authorization === `Bearer ${'n'.repeat(43)}`));
-  // Lost refresh response is never automatically retried, including after reload.
-  let attempts = 0;
-  const brokenStorage = {[CLIENT_KEY]: {...session, access_expires_at: 1}};
-  const brokenApi = runtime(brokenStorage, opts => { attempts++; opts.fail({}); });
-  const broken = CloudClient.load(brokenApi);
-  await assert.rejects(broken.call('/api/v2/devices'), {code: 'REAUTHORIZE'});
-  await assert.rejects(broken.call('/api/v2/devices'), {code: 'REAUTHORIZE'});
-  await assert.rejects(CloudClient.load(brokenApi).call('/api/v2/devices'), {code: 'REAUTHORIZE'});
-  assert.equal(attempts, 1);
+  // A transient failure must keep the phone authorization and allow recovery,
+  // including after a reload and from an old refresh_pending marker.
+  for (const failure of ['network', 500, 502, 429, 'malformed', 'wrong-client']) {
+    for (const restart of [false, true]) {
+      let attempts = 0, failed = true;
+      const brokenStorage = {[CLIENT_KEY]: {...session, access_expires_at: 1, refresh_pending: true}};
+      const brokenApi = runtime(brokenStorage, opts => {
+        if (!opts.url.endsWith('/renew')) return opts.success({statusCode: 200, data: []});
+        attempts++;
+        assert.equal(opts.data.refresh_token, session.refresh_token);
+        if (!failed) return opts.success({statusCode: 200, data: session});
+        if (failure === 'network') opts.fail({});
+        else opts.success({statusCode: typeof failure === 'number' ? failure : 200,
+          data: failure === 'wrong-client' ? {...session, client_id: '00000000-0000-0000-0000-000000000099'} : {}});
+      });
+      let broken = CloudClient.load(brokenApi);
+      await assert.rejects(broken.call('/api/v2/devices'), error => error.code !== 'REAUTHORIZE');
+      assert.equal(brokenStorage[CLIENT_KEY].refresh_token, session.refresh_token);
+      failed = false;
+      if (restart) broken = CloudClient.load(brokenApi);
+      assert.deepEqual(await broken.call('/api/v2/devices'), []);
+      assert.equal(attempts, 2);
+      assert.equal(brokenStorage[CLIENT_KEY].refresh_pending, undefined);
+    }
+  }
+  // An old Cloud must never receive a fallback single-use refresh request.
+  for (const statusCode of [404, 405]) {
+    const oldCalls = [];
+    const storage = {[CLIENT_KEY]: {...session, access_expires_at: 1}};
+    const oldCloud = CloudClient.load(runtime(storage, opts => {
+      oldCalls.push(opts.url); opts.success({statusCode});
+    }));
+    await assert.rejects(oldCloud.call('/api/v2/devices'), /请先更新 Cloud/);
+    assert.deepEqual(oldCalls, [session.url + '/api/v2/clients/renew']);
+    assert.equal(storage[CLIENT_KEY].refresh_token, session.refresh_token);
+  }
+  // Failed local persistence must also allow renewal on the next launch.
+  const diskStorage = {[CLIENT_KEY]: {...session, access_expires_at: 1}};
+  const diskApi = runtime(diskStorage, opts => opts.success({statusCode: 200,
+    data: opts.url.endsWith('/renew') ? session : []}));
+  const write = diskApi.setStorageSync;
+  diskApi.setStorageSync = () => {throw new Error('storage full');};
+  await assert.rejects(CloudClient.load(diskApi).call('/api/v2/devices'), /检查手机存储/);
+  diskApi.setStorageSync = write;
+  assert.deepEqual(await CloudClient.load(diskApi).call('/api/v2/devices'), []);
+  // A renewal completed for a closed page cannot overwrite a new enrollment.
+  let delayedRenewal;
+  const replacedStorage = {[CLIENT_KEY]: {...session, access_expires_at: 1}};
+  const replaced = CloudClient.load(runtime(replacedStorage, opts => {delayedRenewal = opts;}));
+  const pendingRenewal = replaced.call('/api/v2/devices');
+  await tick(); replaced.close();
+  const replacement = {...session, refresh_token: 'z'.repeat(43)};
+  replacedStorage[CLIENT_KEY] = replacement;
+  delayedRenewal.success({statusCode: 200, data: session});
+  await assert.rejects(pendingRenewal, /连接已关闭/);
+  assert.deepEqual(replacedStorage[CLIENT_KEY], replacement);
+  // A server-side revocation is terminal for this instance, unlike a timeout.
+  let rejectedCalls = 0;
+  const revoked = CloudClient.load(runtime({[CLIENT_KEY]: {...session, access_expires_at: 1}}, opts => {
+    rejectedCalls++; opts.success({statusCode: 401});
+  }));
+  await assert.rejects(revoked.call('/api/v2/devices'), {code: 'REAUTHORIZE'});
+  await assert.rejects(revoked.call('/api/v2/devices'), {code: 'REAUTHORIZE'});
+  assert.equal(rejectedCalls, 1);
 
   global.Page = definition => {global.definition = definition;};
   require('../mini_program/pages/cloud/cloud');
@@ -284,6 +339,19 @@ async function main() {
   assert.equal(noGateway.data.wakeHint, '唤醒网关未连接');
 
   const expired = stored(); expired[CLIENT_KEY].access_expires_at = 1;
+  const interrupted = page(expired, opts => opts.fail({}));
+  interrupted.networkType = '5g';
+  await interrupted.refresh();
+  assert.equal(interrupted.data.needsReauthorize, false, 'Offline renewal must not display the rescan banner');
+  assert.equal(interrupted.data.cloudState, 'unavailable');
+  global.wx.request = opts => opts.success({statusCode: 200,
+    data: opts.url.endsWith('/renew') ? session : [pc('a')]});
+  await interrupted.refresh();
+  assert.equal(interrupted.data.cloudState, 'online');
+  assert.equal(interrupted.data.needsReauthorize, false);
+  assert.equal(interrupted.data.canControl, true);
+
+  expired[CLIENT_KEY].access_expires_at = 1;
   const reauthorize = page(expired, opts => opts.success({statusCode: 401, data: {}}));
   reauthorize.networkType = '5g';
   await reauthorize.refresh();
