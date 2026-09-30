@@ -52,3 +52,5 @@ dotnet run --project windows/LanPower.Tests -c Release -- "$env:TEMP/LanPower-po
 ## 当前验证记录
 
 2026-09-30：三个二进制产物与校验清单本地生成成功；ZIP 白名单、组件哈希、编码与 Windows 程序版本检查通过；解压后自包含服务的 LAN/命名管道演练通过；Go Linux 静态检查和 `-version` 实际运行通过；工作流静态检查与发布标签正向/拒绝检查通过。远程 CI 和发布工作流尚未触发，没有远程运行编号。
+
+同日实际运行解压后的便携安装入口，确认 LocalSystem 服务从受保护的 Program Files 运行，安装组件与构建哈希一致，原 LAN 配对与 Cloud 连接恢复。旧 Python 到 Setup 迁移、Setup 卸载保留数据及重新安装也已通过，当前环境恢复为 Setup 安装版本；真实网络变化和电源动作仍见架构验收清单。

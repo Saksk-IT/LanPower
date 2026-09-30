@@ -6,8 +6,8 @@
 
 | 阶段 | 已实现 | 已通过的验证 | 尚待正式验收 |
 |---|---|---|---|
-| M1 Windows 产品化 | .NET 服务、WPF 桌面、命名管道、安装器、LAN 兼容；网络检测、Wi-Fi/离线安装、设置与更新检查 | Release 构建、49 项单元测试、6 项安装网络选择检查、服务/IPC 演练、实际 WPF 布局；管理员首次安装、新版就地升级保留 LAN 配对、真实服务/LAN/IPC/防火墙与程序哈希核验 | 旧版保留数据迁移、卸载重装、便携包安装、防火墙随地址变化、真实网络变化 |
-| M2 Cloud Web 平台 | FastAPI、设备模型、七个网页入口、旧 Gateway 兼容、Docker/Caddy HTTPS、备份恢复 | 路由/迁移、桌面和手机浏览器、Docker/Compose；真实 Cloudflare 公网入口、正式证书、回环端口；正式平台数据库副本在无网络容器恢复，身份与设备记录保留、初始化保持关闭 | 整机与证书卷灾难恢复 |
+| M1 Windows 产品化 | .NET 服务、WPF 桌面、命名管道、安装器、LAN 兼容；网络检测、Wi-Fi/离线安装、设置与更新检查 | Release 构建、49 项单元测试、6 项网络选择检查、服务/IPC 与 WPF 布局；管理员首次安装、新版升级、旧 Python 到 Setup 迁移、便携包实际安装、卸载重装；原配对/加密凭据/命令记录保留，Cloud 恢复，组件哈希匹配 | 防火墙随地址变化、真实网络变化 |
+| M2 Cloud Web 平台 | FastAPI、设备模型、七个网页入口、旧 Gateway 兼容、Docker/Caddy HTTPS、备份恢复 | 路由/迁移、桌面和手机浏览器、Docker/Compose；真实公网与正式证书；平台数据库、Caddy 证书和配置卷联合恢复，隔离 HTTPS 的信任与域名校验通过，身份记录保留、初始化关闭，生产未重启 | 整机启动与真实网络恢复 |
 | M3 Windows Cloud Direct | Windows 出站连接、状态上报、取命令、结果回传、直连优先、失效隔离、防重放 | 五动作模拟、API 往返、记录与连接管理；真实公网无网关 `status` 回执 `completed`，有网关时也优先 `windows_direct`；服务重启恢复与自然凭据轮换 | **关闭网关，在公网 Web 对在线 Windows 手动核验 sleep、hibernate、restart、shutdown 的物理结果** |
 | M4 统一身份 | Passkey、单管理员、恢复码、设备短码批准、独立会话、轮换与重用撤销、授权失败审计 | 真实签名与虚拟验证器、并发与失效边界；最新 Cloud 全部 83 项测试；真实浏览器 Passkey 初始化、Windows 和路由器短码批准、受限私有恢复码保存 | 真实 Passkey 重新登录、备用凭据及恢复码实际使用；未据此宣称本机 Windows Hello 可用 |
 | M5 小程序 v2 | 独立手机授权、电脑列表、逐电脑 LAN 配对、LAN First/Cloud Fallback、结果轮询、应用/协议版本上报 | 新旧 Node 测试、掉线缓存与不重复跨路径执行检查、版本校验与旧会话迁移；用户反馈微信开发者工具原生编译通过、无报错 | 微信扫码、存储、Wi-Fi/5G 切换 |
@@ -24,7 +24,7 @@
 | 账户归属、设备/客户端身份分离、短码批准、令牌哈希与单独撤销 | Cloud `models.py`、`identity.py`、`enrollment.py`、`device_auth.py`、`clients.py` | 已实现；拒绝、并发、过期、重放、隔离和撤销测试通过 |
 | 登录、授权、撤销、命令路径、刷新轮换和凭据失败审计 | `audit.py` 及身份/路由服务、网页活动记录 | 已实现；已知凭据失败持久记录，重复失败合并，无秘密写入活动记录 |
 | LAN 独立、Cloud 不保存 LAN 凭据、Cloud/Gateway 出站、不开放电脑公网端口 | Windows LAN/网络配置、Gateway 本地配置、Cloud 请求白名单；`docs/security-model.md` | 源码边界与模拟通过；真实 Windows 入站仅所选 LAN，Cloud 8765 仅回环；路由器 v2 唤醒配置无需 LAN Token |
-| 升级与旧实现共存 | `source/`、`LanPower/`、`cloud_remote/`、`/api/v1/*`、小程序旧入口；`docs/migration-v1.md` | 兼容源码保留，迁移只读旧数据；新版 Windows 就地升级保留 LAN 配对通过，旧版保留数据迁移仍待验收 |
+| 升级与旧实现共存 | `source/`、`LanPower/`、`cloud_remote/`、`/api/v1/*`、小程序旧入口；`docs/migration-v1.md` | 兼容源码保留，Cloud 迁移只读旧数据；Windows 旧 Python 到 Setup 迁移、新版升级和卸载重装保留配对已通过 |
 | 发布文件与校验清单、Cloud 镜像 | `scripts/build-release.ps1`、`verify-release.ps1`、`windows/installer/`；`docs/releasing.md` | 四个文件已生成并校验，解压服务演练通过；镜像本地构建通过 |
 | CI、验证后发布、版本标签限制 | `.github/workflows/ci.yml`、`release.yml`、`scripts/validate-release-tag.py` | 本地工作流检查和标签拒绝检查通过；远程尚未运行，无 Run ID |
 | 架构、部署、认证、迁移、故障文档与用户术语 | README、`docs/architecture-v2.md` 及文档入口 | 已更新；保留源码与实机验收的区别 |
@@ -44,6 +44,7 @@
 - `5a238df`：安装/便携发布产物与验证后发布流程。
 - `bc45266`：小程序版本展示与客户端版本迁移。
 - `a2f2b0d`：首次安装、网段数组序列化与 Windows 实机服务。
+- `2ad93e8`：公网部署、路由器迁移与服务连接诊断。
 
 早期 Windows 与 Cloud Direct 提交由仓库历史保留。本轮只在 `main` 本地提交，未推送、未正式发布。
 

@@ -16,7 +16,7 @@ dotnet run --project windows/LanPower.Tests -c Release --no-build
 
 安装包输出为 `windows/out/LanPowerSetup-x64.exe`。构建脚本将服务和桌面端发布为自包含的 win-x64 程序，终端用户无需安装 .NET SDK 或运行命令。安装包需要管理员授权配置 LocalSystem 服务、防火墙和受保护的配对密钥。安装完成后自动打开桌面端。
 
-运行根目录 `scripts/build-release.ps1` 可同时生成安装器、`LanPower-portable-x64.zip`、Linux ARM64 网关和校验清单，随后用 `scripts/verify-release.ps1` 检查。便携分发包同样需要管理员安装服务，并将程序复制到受保护的 Program Files 目录；运行时配置和凭据不包含在发布包中。解压后的自包含服务已通过 LAN/命名管道演练；Setup 首次管理员安装及保留 LAN 配对的就地升级已通过，便携包实际安装仍待验收。详见 [构建与发布](../docs/releasing.md)。
+运行根目录 `scripts/build-release.ps1` 可同时生成安装器、`LanPower-portable-x64.zip`、Linux ARM64 网关和校验清单，随后用 `scripts/verify-release.ps1` 检查。便携分发包同样需要管理员安装服务，并将程序复制到受保护的 Program Files 目录；运行时配置和凭据不包含在发布包中。Setup 首次安装、保留 LAN 配对的就地升级、便携包实际安装和卸载重装已通过。详见 [构建与发布](../docs/releasing.md)。
 
 安装向导使用 Inno Setup 简体中文翻译，来源为 [Inno Setup 官方源码中的用户贡献译文](https://github.com/jrsoftware/issrc/blob/main/Files/Languages/ChineseSimplified.isl)。
 
@@ -52,4 +52,8 @@ dotnet run --project windows/LanPower.Tests -c Release --no-build
 
 随后使用实际安装器完成就地升级，原 LAN 配对密钥保持不变，已安装文件与最新构建哈希一致。真实公网短码批准和凭据兑换通过；没有网关时，网页 `status` 命令经 `windows_direct` 返回 `completed`。LocalSystem 服务重启后使用原 DPAPI 凭据自动恢复在线，真实会话的 Access/Refresh 轮换也已观察到成功。
 
-本次首次安装由用户明确授权删除旧数据且不备份；已验证的就地升级针对新版到新版。旧版数据迁移、卸载重装、便携包安装和真实网卡变化仍需分别验收。真实电源动作由用户另行手动测试。
+继续完成实际安装生命周期检查：使用保留的旧 Python 安装流程启动旧服务，再运行新版 Setup；原 LAN 配对密钥保持不变，旧开机任务在新版服务健康后移除，原 Cloud 授权恢复。解压便携包并实际安装后，服务仍从 Program Files 以 LocalSystem 运行，组件哈希与发布产物一致，已配对的 LAN 状态查询和 Cloud 连接通过。
+
+实际运行 Setup 卸载器，确认服务和安装的服务程序被移除，ProgramData 中的配置、加密凭据和命令记录哈希保持不变，日志目录保留。再次运行 Setup 后，原 LAN 配对继续可用，Cloud 自动恢复连接，安装组件哈希仍匹配。当前环境已恢复为 Setup 安装版本。
+
+本次首次安装由用户明确授权删除旧数据且不备份；后续旧版迁移使用仓库保留的 Python 分发程序重现实机升级。真实网卡变化和防火墙随地址变化仍待验收，真实电源动作由用户另行手动测试。

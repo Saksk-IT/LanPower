@@ -57,7 +57,7 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 - 当前 Web 为单管理员；设备表与 API 已按 `owner_id` 和设备关系设计。旧 `/api/v1/*` 保留单家庭配置。
 - 小程序 v2 使用独立客户端授权，见 [小程序 v2](../docs/mini-program-v2.md)；微信原生扫码与真机网络切换尚待验收。
-- Docker 镜像构建、普通用户容器启动、新数据卷、重启数据保留、Caddy 本地 HTTPS 和隔离备份恢复已通过。指定公网环境的 Cloudflare 入口、正式 HTTPS 证书、真实 Passkey 初始化及无网关 Windows 只读状态链路也已通过；物理电源动作尚待用户手动验收。进展见 [开发与验收清单](../docs/implementation-checklist.md)。
+- Docker 镜像构建、普通用户容器启动、新数据卷、重启数据保留和 Caddy 本地 HTTPS 已通过；正式平台数据库、Caddy 证书与配置卷的隔离联合恢复也已通过。指定公网环境的 Cloudflare 入口、正式 HTTPS 证书、真实 Passkey 初始化及无网关 Windows 只读状态链路已通过；物理电源动作尚待用户手动验收。进展见 [开发与验收清单](../docs/implementation-checklist.md)。
 
 ## Wake Gateway v2
 
