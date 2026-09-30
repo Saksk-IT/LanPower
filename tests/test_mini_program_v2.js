@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {CloudClient, CLIENT_KEY, parseCloudPairing} = require('../mini_program/utils/cloud');
 const {VERSION, PROTOCOL_VERSION} = require('../mini_program/utils/version');
 const session = {url: 'https://power.example.com', client_id: '00000000-0000-0000-0000-000000000010',
@@ -20,6 +22,15 @@ function page(storage, handler) {
   p.onLoad(); return p;
 }
 async function main() {
+  // Every registered page must survive a clean checkout, including page JSON.
+  const root = path.resolve(__dirname, '../mini_program');
+  const app = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
+  for (const route of app.pages) {
+    for (const extension of ['js', 'json', 'wxml', 'wxss']) {
+      assert.ok(fs.existsSync(path.join(root, `${route}.${extension}`)), `Missing page file: ${route}.${extension}`);
+    }
+    assert.doesNotThrow(() => JSON.parse(fs.readFileSync(path.join(root, `${route}.json`), 'utf8')));
+  }
   assert.deepEqual(parseCloudPairing(`https://power.example.com/#lanpower-client=${'c'.repeat(43)}`), {url: session.url, code: 'c'.repeat(43)});
   for (const url of ['http://power.example.com', 'https://bad..example.com', 'https://good.example.com@bad.example.com', 'https://power.example.com:65536', 'https://power.example.com/path']) {
     assert.throws(() => parseCloudPairing(`${url}/#lanpower-client=${'c'.repeat(43)}`));
@@ -66,9 +77,9 @@ async function main() {
   const brokenStorage = {[CLIENT_KEY]: {...session, access_expires_at: 1}};
   const brokenApi = runtime(brokenStorage, opts => { attempts++; opts.fail({}); });
   const broken = CloudClient.load(brokenApi);
-  await assert.rejects(broken.call('/api/v2/devices'));
-  await assert.rejects(broken.call('/api/v2/devices'));
-  await assert.rejects(CloudClient.load(brokenApi).call('/api/v2/devices'));
+  await assert.rejects(broken.call('/api/v2/devices'), {code: 'REAUTHORIZE'});
+  await assert.rejects(broken.call('/api/v2/devices'), {code: 'REAUTHORIZE'});
+  await assert.rejects(CloudClient.load(brokenApi).call('/api/v2/devices'), {code: 'REAUTHORIZE'});
   assert.equal(attempts, 1);
 
   global.Page = definition => {global.definition = definition;};
@@ -185,6 +196,113 @@ async function main() {
   global.wx.offNetworkStatusChange = listener => {removedListener = listener;};
   hidden.onUnload();
   assert.equal(removedListener, hidden.networkChanged);
-  console.log('mini program v2 enrollment, tokens, device selection, LAN/Cloud routing and network status synchronization: PASS');
+
+  // Background status updates and device switching must not overwrite form drafts.
+  const draftStorage = stored();
+  const drafts = page(draftStorage, opts => opts.url.startsWith('http://') ? opts.fail({}) :
+    opts.success({statusCode: 200, data: [pc('a'), pc('b')]}));
+  await drafts.refresh();
+  drafts.editMac({detail: {value: '02-11-22-33-44-66'}});
+  drafts.editBroadcast({detail: {value: '192.168.1.255'}});
+  await drafts.refresh();
+  assert.equal(drafts.data.mac, '02-11-22-33-44-66');
+  assert.equal(drafts.data.wakeDirty, true);
+  assert.equal(draftStorage[LOCAL_KEY][`${session.url}|a`].mac, local.mac);
+  drafts.selectDevice({detail: {value: '1'}}); await tick();
+  assert.equal(drafts.data.mac, '');
+  drafts.selectDevice({detail: {value: '0'}}); await tick();
+  assert.equal(drafts.data.mac, '02-11-22-33-44-66');
+  drafts.saveWake(); await tick();
+  assert.equal(draftStorage[LOCAL_KEY][`${session.url}|a`].mac, '02-11-22-33-44-66');
+  assert.equal(drafts.data.wakeDirty, false);
+  global.wx.scanCode = opts => opts.success({result: `http://192.168.1.5:48211/#access=${'d'.repeat(64)}`});
+  drafts.scanLocal(); await tick();
+  assert.equal(drafts.pairing().host, '192.168.1.5');
+  assert.equal(drafts.pairing().mac, '02-11-22-33-44-66', 'Rescanning the same device keeps its wake settings');
+  global.wx.showModal = opts => opts.success({confirm: false});
+  drafts.clearLocal();
+  assert.equal(drafts.data.paired, true, 'Canceling removal preserves the association');
+  global.wx.showModal = opts => opts.success({confirm: true});
+  drafts.clearLocal(); await tick();
+  assert.equal(drafts.data.paired, false);
+
+  // Manual refresh must discover newly added PCs even while LAN is healthy.
+  const discoveryCalls = [];
+  const discover = page(stored(), opts => {
+    discoveryCalls.push(opts.url);
+    opts.success({statusCode: 200, data: opts.url.startsWith('http://') ? {state: 'online'} : [pc('a'), pc('b'), pc('c')]});
+  });
+  await discover.refresh();
+  assert.equal(discover.data.devices.length, 2);
+  let stopped = 0;
+  global.wx.stopPullDownRefresh = () => {stopped++;};
+  await discover.onPullDownRefresh();
+  assert.equal(discover.data.devices.length, 3);
+  assert.equal(discover.data.selectedId, 'a');
+  assert.equal(discover.data.canControl, true);
+  assert.equal(stopped, 1);
+  assert.ok(discoveryCalls.some(url => url.endsWith('/api/v2/devices')));
+  global.wx.request = opts => opts.url.startsWith('http://') ?
+    opts.success({statusCode: 200, data: {state: 'online'}}) : opts.fail({});
+  await discover.reloadDevices();
+  assert.equal(discover.data.canControl, true, 'A failed list reload must preserve LAN control');
+  assert.equal(discover.data.cloudState, 'unavailable');
+  assert.equal(discover.data.feedbackKind, 'error');
+
+  // Removing the selected PC cannot leave its controls enabled for a newly selected PC.
+  const removalStorage = stored();
+  removalStorage[LOCAL_KEY][`${session.url}|b`] = {...local, host: '192.168.1.5'};
+  let remainingDevices = [pc('a'), pc('b')], nextComputer;
+  const removal = page(removalStorage, opts => {
+    if (opts.url.startsWith('http://192.168.1.5:')) nextComputer = opts;
+    else if (opts.url.startsWith('http://')) opts.fail({});
+    else opts.success({statusCode: 200, data: remainingDevices});
+  });
+  await removal.refresh(); assert.equal(removal.data.canControl, true);
+  remainingDevices = [pc('b')];
+  await removal.refresh(); await tick();
+  assert.equal(removal.data.selectedId, 'b');
+  assert.equal(removal.data.canControl, false);
+  assert.equal(removal.route, '');
+  nextComputer.success({statusCode: 200, data: {state: 'online'}}); await tick();
+  assert.equal(removal.data.canControl, true);
+  assert.equal(removal.route, 'local');
+
+  const empty = page({[CLIENT_KEY]: {...session}}, opts => opts.success({statusCode: 200, data: []}));
+  await empty.refresh();
+  assert.equal(empty.data.devicesLoaded, true);
+  assert.equal(empty.data.selectedId, '');
+  assert.equal(empty.data.canControl, false);
+  assert.equal(empty.data.canWake, false);
+  assert.equal(empty.data.cloudState, 'online');
+
+  const noGateway = page(stored(), opts => opts.success({statusCode: 200, data: [{...pc('a'), state: 'offline',
+    cloud_agent: 'offline', remote_control_available: false, wake_unavailable_reason: '唤醒网关未连接'}]}));
+  noGateway.networkType = '5g';
+  await noGateway.refresh();
+  assert.equal(noGateway.data.canWake, false);
+  assert.equal(noGateway.data.wakeHint, '唤醒网关未连接');
+
+  const expired = stored(); expired[CLIENT_KEY].access_expires_at = 1;
+  const reauthorize = page(expired, opts => opts.success({statusCode: 401, data: {}}));
+  reauthorize.networkType = '5g';
+  await reauthorize.refresh();
+  assert.equal(reauthorize.data.needsReauthorize, true);
+  assert.equal(reauthorize.data.canControl, false);
+  assert.equal(reauthorize.data.cloudState, 'reauthorize');
+  reauthorize.networkType = 'wifi';
+  global.wx.request = opts => opts.success({statusCode: 200, data: {state: 'online'}});
+  await reauthorize.refresh();
+  assert.equal(reauthorize.data.canControl, true, 'Invalid Cloud authorization must not disable local control');
+  assert.equal(reauthorize.data.needsReauthorize, true);
+  let scroll;
+  global.wx.pageScrollTo = opts => {scroll = opts.scrollTop;};
+  reauthorize.switchTab({currentTarget: {dataset: {tab: 'help'}}});
+  assert.equal(reauthorize.data.activeTab, 'help'); assert.equal(scroll, 0);
+  reauthorize.toggleFaq({currentTarget: {dataset: {faq: 'auth'}}});
+  assert.equal(reauthorize.data.faqOpen, 'auth');
+  reauthorize.toggleFaq({currentTarget: {dataset: {faq: 'auth'}}});
+  assert.equal(reauthorize.data.faqOpen, '');
+  console.log('mini program v2 page registration, authorization, LAN/Cloud routing, refresh, wake settings and guidance: PASS');
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});

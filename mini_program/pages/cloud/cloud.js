@@ -6,28 +6,45 @@ const {VERSION} = require('../../utils/version');
 const LOCAL_KEY = 'lanpower_device_lan_v2';
 const CACHE_KEY = 'lanpower_device_cache_v2';
 const ACTIONS = {sleep: '睡眠', hibernate: '休眠', restart: '重启', shutdown: '关机', wake: '开机'};
+const ACTION_HINTS = {
+  sleep: '电脑将进入睡眠，稍后可以快速恢复。',
+  hibernate: '电脑将保存当前状态后进入休眠。',
+  restart: '电脑将关闭当前会话并重新启动 Windows。',
+  shutdown: '电脑将完全关机，未保存的工作可能丢失。',
+  wake: '将尝试唤醒这台电脑。需要事先开启网络唤醒；指令送达后，请以电脑上线状态为准。'
+};
+const NETWORK_LABELS = {wifi: 'Wi-Fi', '5g': '5G', '4g': '蜂窝网络', '3g': '蜂窝网络', '2g': '蜂窝网络', none: '无网络', unknown: '网络未知'};
 
 Page({
-  data: {connected: false, devices: [], selectedId: '', device: '选择一台电脑', stateText: '未连接 Cloud',
-    detail: '在 Cloud 的已授权客户端页面生成二维码', modeText: '未连接', paired: false,
-    canControl: false, canWake: false, busy: false, feedback: '', mac: '', broadcast: '255.255.255.255', version: VERSION},
+  data: {connected: false, devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', stateText: '尚未连接',
+    detail: '先授权这部手机，再选择电脑', modeText: '未连接', routeHint: '等待连接', controlHint: '连接后可查看电脑状态并执行电源操作',
+    paired: false, lanOpen: false, activeTab: 'home', helpTopic: 'remote', faqOpen: '', cloudHost: '',
+    cloudState: 'idle', cloudStatusText: '未授权', needsReauthorize: false, devicesLoaded: false, updatingList: false,
+    networkType: 'unknown', networkText: '检测网络', statusClass: 'idle', wakeHint: '先连接并选择电脑',
+    canControl: false, canWake: false, busy: false, feedback: '', feedbackKind: 'info', wakeDirty: false,
+    mac: '', broadcast: '255.255.255.255', version: VERSION},
 
   onLoad() {
     this.client = CloudClient.load(wx);
     this.local = wx.getStorageSync(LOCAL_KEY) || {};
+    this.wakeDrafts = {};
+    const cloudHost = this.client ? this.client.session.url.replace(/^https:\/\//, '') : '';
     this.networkChanged = info => {
       this.networkType = info.networkType || (info.isConnected === false ? 'none' : 'unknown');
       this.serial = (this.serial || 0) + 1;
       this.route = ''; this.wakeRoute = '';
-      this.setData({canControl: false, canWake: false, stateText: '正在同步状态'});
+      this.setData({canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态', networkType: this.networkType,
+        networkText: NETWORK_LABELS[this.networkType] || '网络未知', wakeHint: '正在检查可用的唤醒方式',
+        controlHint: '正在同步设备状态', routeHint: '正在检查局域网和 Cloud 连接'});
       if (this.visible) this.refresh();
     };
     if (wx.onNetworkStatusChange) wx.onNetworkStatusChange(this.networkChanged);
-    this.setData({connected: !!this.client});
+    this.setData({connected: !!this.client, cloudHost, cloudStatusText: this.client ? '已保存授权' : '未授权'});
     const cache = wx.getStorageSync(CACHE_KEY);
     if (this.client && cache && cache.url === this.client.session.url && cache.client_id === this.client.session.client_id && Array.isArray(cache.devices)) {
       const device = cache.devices.find(d => d.device_id === cache.selectedId);
-      if (device) this.setData({devices: cache.devices, selectedId: device.device_id, device: device.name});
+      if (device) this.setData({devices: cache.devices, selectedId: device.device_id, device: device.name,
+        selectedIndex: cache.devices.indexOf(device)});
       this.syncPairing();
     }
   },
@@ -44,45 +61,89 @@ Page({
     this.setData({canControl: false, canWake: false});
   },
   onUnload() { this.onHide(); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); },
+  async onPullDownRefresh() {
+    try { await this.reloadDevices(); }
+    finally { if (wx.stopPullDownRefresh) wx.stopPullDownRefresh(); }
+  },
+  notify(message, kind = 'info') { this.setData({feedback: message, feedbackKind: kind}); },
+  dismissFeedback() { this.setData({feedback: ''}); },
+  cloudError(error) {
+    const needsReauthorize = error.code === 'REAUTHORIZE' || this.data.needsReauthorize;
+    this.setData({needsReauthorize, cloudState: needsReauthorize ? 'reauthorize' : 'unavailable',
+      cloudStatusText: needsReauthorize ? '需要重新授权' : '暂时无法连接'});
+  },
+  switchTab(event) {
+    const tab = event && event.currentTarget ? event.currentTarget.dataset.tab : event;
+    if (!['home', 'connect', 'help'].includes(tab)) return;
+    this.setData({activeTab: tab});
+    if (wx.pageScrollTo) wx.pageScrollTo({scrollTop: 0, duration: 0});
+    if (tab === 'home' && this.client) this.refresh();
+  },
+  selectHelpTopic(event) {
+    const topic = event.currentTarget.dataset.topic;
+    if (['remote', 'lan', 'wake'].includes(topic)) this.setData({helpTopic: topic});
+  },
+  toggleFaq(event) {
+    const topic = event.currentTarget.dataset.faq;
+    this.setData({faqOpen: this.data.faqOpen === topic ? '' : topic});
+  },
   openLocal() { wx.navigateTo({url: '/pages/index/index'}); },
+  toggleLan() { this.setData({lanOpen: !this.data.lanOpen}); },
+  scanFailed(error) {
+    if (!/cancel/.test(error.errMsg || '')) this.notify('无法打开扫码，请检查微信相机权限后重试。', 'error');
+  },
 
   scanCloud() {
     if (this.data.busy) return;
     wx.scanCode({onlyFromCamera: true, scanType: ['qrCode'], success: async ({result}) => {
       let pairing;
       try { pairing = parseCloudPairing(result); }
-      catch (error) { this.setData({feedback: error.message}); return; }
-      wx.showModal({title: '连接 Cloud', content: `允许此手机连接 ${pairing.url} 并控制其中的电脑？`,
+      catch (error) { this.notify(error.message, 'error'); return; }
+      wx.showModal({title: '授权这部手机', content: `允许此手机连接 ${pairing.url} 并查看、控制已授权的 Windows 电脑？\n\n凭据保存在这部手机，可在小程序或 Cloud 网页撤销授权。`,
         success: async ({confirm}) => {
           if (!confirm || this.data.busy) return;
+          this.serial = (this.serial || 0) + 1;
           this.setData({busy: true});
           try {
             const client = await CloudClient.enroll(wx, pairing);
+            const sameCloud = this.client && this.client.session.url === pairing.url;
             this.serial = (this.serial || 0) + 1;
             if (this.client) this.client.close();
             this.client = client;
-            this.setData({connected: true, devices: [], selectedId: '', canControl: false, canWake: false, feedback: 'Cloud 已连接'});
-          } catch (error) { this.setData({feedback: error.message}); }
+            this.route = ''; this.wakeRoute = '';
+            this.setData({connected: true, ...(sameCloud ? {} : {devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑'}),
+              cloudHost: pairing.url.replace(/^https:\/\//, ''), cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
+              devicesLoaded: false, activeTab: 'home', canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态',
+              routeHint: '正在读取电脑列表', controlHint: '选择电脑后显示可执行操作', wakeHint: '正在检查可用的唤醒方式'});
+            this.syncPairing(); this.cacheDevices();
+            this.notify('手机已授权，正在读取电脑列表。', 'success');
+            if (wx.pageScrollTo) wx.pageScrollTo({scrollTop: 0, duration: 0});
+          } catch (error) { this.notify(error.message, 'error'); }
           finally { this.setData({busy: false}); this.refresh(); }
         }});
-    }});
+    }, fail: error => this.scanFailed(error)});
   },
 
   disconnect() {
     if (!this.client || this.data.busy) return;
-    wx.showModal({title: '断开 Cloud', content: '撤销这部手机的 Cloud 授权，电脑的局域网配对仍保留。',
+    const client = this.client;
+    wx.showModal({title: this.data.needsReauthorize ? '移除失效授权' : '撤销手机授权', content: '退出后需要重新扫码才能访问电脑列表。局域网关联会保留，重新授权同一 Cloud 后可以继续使用。',
       success: async ({confirm}) => {
-        if (!confirm) return;
+        if (!confirm || client !== this.client || this.data.busy) return;
+        this.serial = (this.serial || 0) + 1;
         this.setData({busy: true});
         try {
-          await this.client.call('/api/v2/clients/revoke', 'POST');
+          if (!this.data.needsReauthorize) await this.client.call('/api/v2/clients/revoke', 'POST');
           this.client.close();
           wx.removeStorageSync(CLIENT_KEY);
           this.client = null;
+          this.route = ''; this.wakeRoute = '';
           this.serial = (this.serial || 0) + 1;
-          this.setData({connected: false, devices: [], selectedId: '', paired: false, canControl: false,
-            canWake: false, stateText: '已断开', feedback: '手机授权已撤销'});
-        } catch (_) { this.setData({feedback: '暂时无法撤销，请重试或在 Cloud 页面移除此手机'}); }
+          this.setData({connected: false, devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', cloudHost: '', paired: false, canControl: false,
+            canWake: false, statusClass: 'idle', lanOpen: false, stateText: '已断开', modeText: '未连接', routeHint: '等待重新连接 Cloud',
+            needsReauthorize: false, devicesLoaded: false, cloudState: 'idle', cloudStatusText: '未授权', controlHint: '扫描授权码后即可重新开始'});
+          this.notify('已退出手机授权。', 'success');
+        } catch (error) { this.cloudError(error); this.notify('暂时无法撤销，请重试或在 Cloud 网页移除此手机。', 'error'); }
         finally { this.setData({busy: false}); }
       }});
   },
@@ -91,11 +152,14 @@ Page({
   pairing() { return this.local[this.localKey()]; },
   canUseLan() { return !this.networkType || this.networkType === 'wifi' || this.networkType === 'unknown'; },
   selectDevice(event) {
-    if (this.data.busy) return;
+    if (this.data.busy || this.data.updatingList) return;
     const device = this.data.devices[Number(event.detail.value)];
     if (!device) return;
     this.serial = (this.serial || 0) + 1;
-    this.setData({selectedId: device.device_id, device: device.name, canControl: false, canWake: false, feedback: ''});
+    this.route = ''; this.wakeRoute = '';
+    this.setData({selectedId: device.device_id, selectedIndex: Number(event.detail.value), device: device.name,
+      canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态',
+      routeHint: '正在检查局域网和 Cloud 连接', controlHint: '正在同步设备状态', wakeHint: '正在检查可用的唤醒方式', feedback: ''});
     this.syncPairing();
     this.cacheDevices();
     this.refresh();
@@ -105,46 +169,73 @@ Page({
       devices: this.data.devices.map(d => ({device_id: d.device_id, name: d.name, device_type: 'windows'})), selectedId: this.data.selectedId});
   },
   async reloadDevices() {
-    if (!this.client || this.data.busy) return;
+    if (!this.client || this.data.busy || this.data.updatingList) return;
     const client = this.client;
+    const serial = this.serial = (this.serial || 0) + 1;
+    this.setData({updatingList: true, canControl: false, canWake: false});
     try {
-      const devices = (await client.call('/api/v2/devices')).filter(d => d.device_type === 'windows');
-      if (client !== this.client) return;
+      const list = await client.call('/api/v2/devices');
+      if (client !== this.client || serial !== this.serial) return;
+      if (!Array.isArray(list)) throw new Error('设备列表暂时无法读取，请稍后重试');
+      const devices = list.filter(d => d.device_type === 'windows');
       const selected = devices.find(d => d.device_id === this.data.selectedId) || devices[0];
       this.serial = (this.serial || 0) + 1;
-      this.setData({devices, selectedId: selected ? selected.device_id : '', device: selected ? selected.name : '还没有电脑', canControl: false, canWake: false});
-      this.syncPairing(); this.cacheDevices(); this.refresh();
-    } catch (error) { this.setData({feedback: error.message}); }
+      this.setData({devices, selectedId: selected ? selected.device_id : '', selectedIndex: selected ? devices.indexOf(selected) : 0,
+        device: selected ? selected.name : '还没有电脑', devicesLoaded: true, cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
+        canControl: false, canWake: false, statusClass: 'busy',
+        routeHint: selected ? '正在检查局域网和 Cloud 连接' : '等待 Windows 应用连接 Cloud', controlHint: selected ? '正在同步设备状态' : '请先在 Windows 应用中连接 Cloud'});
+      this.syncPairing(); this.cacheDevices();
+    } catch (error) {
+      if (client === this.client && serial === this.serial) { this.cloudError(error); this.notify(error.message, 'error'); }
+    } finally { this.setData({updatingList: false}); await this.refresh(); }
   },
   syncPairing() {
     const pairing = this.pairing();
-    this.setData({paired: !!pairing, mac: pairing && pairing.mac || '', broadcast: pairing && pairing.broadcast || '255.255.255.255'});
+    const draft = this.wakeDrafts[this.localKey()];
+    this.setData({paired: !!pairing, mac: draft ? draft.mac : pairing && pairing.mac || '',
+      broadcast: draft ? draft.broadcast : pairing && pairing.broadcast || '255.255.255.255',
+      wakeDirty: !!draft, lanOpen: !!pairing && this.data.lanOpen});
   },
   scanLocal() {
     const key = this.localKey();
-    if (!this.data.selectedId || this.data.busy) return;
+    if (this.data.busy || this.data.updatingList) return;
+    if (!this.data.selectedId) { this.notify('请先授权手机，并在“我的电脑”选择要关联的电脑。'); return; }
     wx.scanCode({onlyFromCamera: true, scanType: ['qrCode'], success: ({result}) => {
       try {
         const pairing = parsePairingLink(result);
         wx.showModal({title: '关联局域网电脑', content: `确认此二维码来自“${this.data.device}”这台电脑？`, success: ({confirm}) => {
-          if (!confirm || key !== this.localKey()) return;
-          const local = {...this.local, [key]: pairing};
+          if (!confirm || key !== this.localKey() || this.data.busy) return;
+          const local = {...this.local, [key]: {...this.local[key], ...pairing}};
           wx.setStorageSync(LOCAL_KEY, local);
           this.local = local;
           this.serial = (this.serial || 0) + 1;
+          this.setData({lanOpen: true});
+          this.notify('局域网已关联。需要离线开机时，请继续填写下方唤醒设置。', 'success');
           this.syncPairing(); this.refresh();
         }});
-      } catch (error) { this.setData({feedback: error.message}); }
-    }});
+      } catch (error) { this.notify(error.message, 'error'); }
+    }, fail: error => this.scanFailed(error)});
   },
   clearLocal() {
     if (this.data.busy) return;
-    const local = {...this.local}; delete local[this.localKey()];
-    wx.setStorageSync(LOCAL_KEY, local); this.local = local;
-    this.serial = (this.serial || 0) + 1; this.syncPairing(); this.refresh();
+    const key = this.localKey();
+    wx.showModal({title: '移除局域网关联', content: `移除“${this.data.device}”的直连凭据和唤醒设置？Cloud 手机授权不受影响。`,
+      success: ({confirm}) => {
+        if (!confirm || key !== this.localKey() || this.data.busy) return;
+        const local = {...this.local}; delete local[key]; delete this.wakeDrafts[key];
+        wx.setStorageSync(LOCAL_KEY, local); this.local = local;
+        this.serial = (this.serial || 0) + 1;
+        this.route = ''; this.wakeRoute = '';
+        this.setData({lanOpen: false, canControl: false, canWake: false});
+        this.notify('已移除局域网关联。', 'success'); this.syncPairing(); this.refresh();
+      }});
   },
-  editMac(event) { this.setData({mac: event.detail.value}); },
-  editBroadcast(event) { this.setData({broadcast: event.detail.value}); },
+  editWake(field, value) {
+    this.wakeDrafts[this.localKey()] = {mac: this.data.mac, broadcast: this.data.broadcast, [field]: value};
+    this.setData({[field]: value, wakeDirty: true});
+  },
+  editMac(event) { this.editWake('mac', event.detail.value); },
+  editBroadcast(event) { this.editWake('broadcast', event.detail.value); },
   saveWake() {
     if (!this.pairing() || this.data.busy) return;
     try {
@@ -154,12 +245,13 @@ Page({
       if (octets.length !== 4 || octets.some(o => !/^\d{1,3}$/.test(o) || Number(o) > 255)) throw new Error('广播地址无效');
       const local = {...this.local, [this.localKey()]: {...this.pairing(), mac: this.data.mac.trim(), broadcast}};
       wx.setStorageSync(LOCAL_KEY, local); this.local = local;
-      this.setData({feedback: '局域网唤醒设置已保存'}); this.refresh();
-    } catch (error) { this.setData({feedback: error.message}); }
+      delete this.wakeDrafts[this.localKey()]; this.syncPairing();
+      this.notify('局域网唤醒设置已保存。', 'success'); this.refresh();
+    } catch (error) { this.notify(error.message, 'error'); }
   },
 
   refresh() {
-    if (!this.client || this.data.busy || this.visible === false) return Promise.resolve();
+    if (!this.client || this.data.busy || this.data.updatingList || this.visible === false) return Promise.resolve();
     if (this.refreshing) { this.refreshAgain = true; return this.refreshing; }
     const promise = this.refreshOnce(); this.refreshing = promise;
     return promise.finally(() => {
@@ -180,8 +272,10 @@ Page({
           success: r => resolve(r.statusCode === 200 && r.data && r.data.state === 'online'), fail: () => resolve(false)}));
         if (!current()) return;
         if (reachable) {
-          this.route = 'local';
-          this.setData({stateText: '在线 · 局域网', modeText: '局域网直连', detail: '可以控制这台电脑', canControl: true, canWake: false});
+          this.route = 'local'; this.wakeRoute = '';
+          this.setData({stateText: '在线 · 局域网', statusClass: 'online', modeText: '局域网直连', routeHint: '通过当前局域网直接连接电脑',
+            detail: '电脑在线，可以发送电源指令', controlHint: '可执行睡眠、休眠、重启和关机', wakeHint: '电脑已在线，无需唤醒',
+            canControl: true, canWake: false});
           return;
         }
       }
@@ -191,29 +285,49 @@ Page({
       const devices = list.filter(d => d.device_type === 'windows');
       const device = devices.find(d => d.device_id === this.data.selectedId) || devices[0];
       const changed = device && device.device_id !== this.data.selectedId;
-      this.setData({devices, selectedId: device ? device.device_id : '', device: device ? device.name : '还没有电脑'});
+      this.setData({devices, selectedId: device ? device.device_id : '', selectedIndex: device ? devices.indexOf(device) : 0,
+        device: device ? device.name : '还没有电脑', devicesLoaded: true,
+        cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false});
       this.cacheDevices();
       this.syncPairing();
       if (!device) {
         this.route = ''; this.wakeRoute = '';
-        this.setData({stateText: '没有设备', detail: '先在 Windows 应用中连接 Cloud', canControl: false, canWake: false}); return;
+        this.setData({stateText: '没有设备', statusClass: 'idle', modeText: '等待连接', routeHint: 'Windows 应用尚未向 Cloud 注册电脑',
+          detail: '先在 Windows 应用中连接 Cloud', controlHint: '连接完成后回到这里更新设备列表', wakeHint: '请先添加电脑',
+          canControl: false, canWake: false}); return;
       }
-      if (changed && this.pairing()) { this.refreshAgain = true; return; }
+      if (changed && this.pairing()) {
+        this.route = ''; this.wakeRoute = '';
+        this.setData({canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态',
+          controlHint: '正在检查新选中电脑的连接', wakeHint: '正在检查可用的唤醒方式'});
+        this.refreshAgain = true; return;
+      }
       this.route = 'cloud';
       this.wakeRoute = device.wake_available ? 'cloud' : this.canUseLan() && this.pairing() && this.pairing().mac ? 'local' : '';
-      this.setData({stateText: device.state === 'online' ? '在线 · Cloud' : device.state === 'transitioning' ? '正在执行电源操作' : '离线 · Cloud',
-        modeText: device.cloud_agent === 'online' ? '云端直连' : device.remote_control_available ? '网关连接' : 'Cloud',
-        detail: device.state === 'transitioning' ? '等待电脑完成操作并重新同步状态' : device.remote_control_available ? '可以控制这台电脑' :
-          device.state === 'online' ? '电脑在线，Cloud 未连接且未启用网关备用控制' : device.wake_available ? '可通过唤醒网关开机' :
-          this.wakeRoute === 'local' ? '仍可尝试局域网唤醒' : '未连接唤醒网关，远程开机不可用',
-        canControl: device.state === 'online' && !!device.remote_control_available,
+      const online = device.state === 'online';
+      const transitioning = device.state === 'transitioning';
+      const canControl = online && !!device.remote_control_available;
+      const wakeHint = online ? '电脑已在线，无需唤醒' : transitioning ? '请等待上一次操作完成' :
+        this.wakeRoute === 'cloud' ? '通过在线网关尝试唤醒电脑' : this.wakeRoute === 'local' ? '通过当前 Wi-Fi 发送局域网唤醒包' :
+          device.wake_unavailable_reason || '尚未配置可用的唤醒方式';
+      const routeHint = device.cloud_agent === 'online' ? 'Cloud 直接连接 Windows 服务' : device.remote_control_available ? 'Cloud 通过唤醒网关转发指令' : 'Cloud 已连接，但 Windows 服务未响应';
+      const controlHint = transitioning ? '正在等待电脑完成上一次操作' : canControl ? '可执行睡眠、休眠、重启和关机' : online ? '电脑在线，但还没有可用的控制通道' : this.wakeRoute ? '电脑离线，可尝试开机；其他操作需电脑在线' : '电脑离线，请先配置局域网或唤醒网关';
+      this.setData({stateText: online ? '在线 · Cloud' : transitioning ? '正在执行电源操作' : '离线 · Cloud', statusClass: canControl ? 'online' : transitioning ? 'busy' : this.wakeRoute ? 'ready' : 'idle',
+        modeText: device.cloud_agent === 'online' ? '云端直连' : device.remote_control_available ? '网关连接' : 'Cloud', routeHint, controlHint, wakeHint,
+        detail: transitioning ? '等待电脑完成操作并重新同步状态' : canControl ? '可以控制这台电脑' :
+          online ? '电脑在线，但 Windows 服务与备用控制通道暂时不可用' : wakeHint,
+        canControl,
         canWake: device.state === 'offline' && !!this.wakeRoute});
     } catch (error) {
       if (!current()) return;
+      this.cloudError(error);
       this.route = '';
       this.wakeRoute = this.canUseLan() && this.pairing() && this.pairing().mac ? 'local' : '';
-      this.setData({stateText: '状态未知', modeText: this.wakeRoute ? '局域网唤醒可用' : '未连接',
-        detail: error.message, canControl: false, canWake: !!this.wakeRoute});
+      this.setData({stateText: '状态未知', statusClass: this.wakeRoute ? 'ready' : 'idle', modeText: this.wakeRoute ? '局域网唤醒可用' : '未连接',
+        routeHint: this.wakeRoute ? 'Cloud 暂时不可用，已保留局域网唤醒' : '请检查网络或刷新授权',
+        detail: error.message, controlHint: this.wakeRoute ? '当前只能尝试局域网开机' : '恢复连接后再执行电源操作',
+        wakeHint: this.wakeRoute ? '状态暂时未知，可尝试局域网唤醒' : this.data.needsReauthorize ? '请重新授权后检查唤醒方式' : '暂时无法检查唤醒方式，请恢复连接',
+        canControl: false, canWake: !!this.wakeRoute});
     }
   },
 
@@ -221,17 +335,19 @@ Page({
     const action = event.currentTarget.dataset.action;
     if (!ACTIONS[action] || this.data.busy || (action === 'wake' ? !this.data.canWake : !this.data.canControl)) return;
     const id = this.data.selectedId, client = this.client, route = action === 'wake' ? this.wakeRoute : this.route;
-    wx.showModal({title: `确定${ACTIONS[action]}？`, content: `目标电脑：${this.data.device}`,
+    wx.showModal({title: `确定${ACTIONS[action]}？`, content: `${ACTION_HINTS[action]}\n\n目标电脑：${this.data.device}`,
       success: async ({confirm}) => {
         if (!confirm || id !== this.data.selectedId || client !== this.client || this.data.busy ||
             route !== (action === 'wake' ? this.wakeRoute : this.route) ||
             (action === 'wake' ? !this.data.canWake : !this.data.canControl)) return;
         this.serial = (this.serial || 0) + 1;
-        this.setData({busy: true, canControl: false, canWake: false, feedback: '正在发送指令…'});
+        this.setData({busy: true, statusClass: 'busy', canControl: false, canWake: false, controlHint: '指令发送中，请不要重复点击', wakeHint: '请等待指令处理完成'});
+        this.notify('正在发送指令…');
         try {
           if (route === 'local' && action === 'wake') {
-            broadcastWake(wx, () => this.setData({feedback: '部分唤醒包发送失败，请检查局域网连接'}), this.pairing());
-            this.setData({feedback: '已发送唤醒包，正在等待电脑上线'});
+            let sendFailed = false;
+            const sent = broadcastWake(wx, () => { sendFailed = true; this.notify('部分唤醒包发送失败，请检查局域网连接。', 'error'); }, this.pairing());
+            if (sent && !sendFailed) this.notify('唤醒包已发出，请等待电脑上线；发送成功不代表已开机。');
           } else if (route === 'local') {
             const pairing = this.pairing();
             const response = await new Promise((resolve, reject) => wx.request({
@@ -239,11 +355,11 @@ Page({
               header: {Authorization: `Bearer ${pairing.token}`, 'Content-Type': 'application/json'}, data: {action},
               success: resolve, fail: () => reject(new Error('未收到确认，请先刷新状态再决定是否重试'))}));
             if (response.statusCode !== 202) throw new Error('局域网指令未被接受，请刷新状态');
-            this.setData({feedback: `${ACTIONS[action]}指令已送达`});
+            this.notify(`${ACTIONS[action]}指令已送达，正在同步电脑状态。`, 'success');
           } else {
             let result = await client.call(`/api/v2/devices/${encodeURIComponent(id)}/commands`, 'POST', {action});
             if (result.accepted && result.command_id) {
-              this.setData({feedback: 'Cloud 已接收，正在等待电脑或网关确认'});
+              this.notify('Cloud 已接收，正在等待电脑或网关确认。');
               for (let attempt = 0; attempt < 23 && result.state === 'accepted'; attempt += 1) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 if (this.visible === false) break;
@@ -251,9 +367,10 @@ Page({
               }
             }
             if (result.state === 'failed' || result.ok === false) throw new Error('设备未能完成操作，请刷新状态');
-            this.setData({feedback: result.state === 'accepted' ? '尚未收到设备确认，请刷新状态查看' : `${ACTIONS[action]}指令已送达`});
+            this.notify(result.state === 'accepted' ? '尚未收到设备确认，请刷新状态查看。' : `${ACTIONS[action]}指令已送达，请以电脑实际状态为准。`,
+              result.state === 'accepted' ? 'info' : 'success');
           }
-        } catch (error) { this.setData({feedback: error.message}); }
+        } catch (error) { if (error.code === 'REAUTHORIZE') this.cloudError(error); this.notify(error.message, 'error'); }
         finally { this.setData({busy: false}); if (this.visible !== false) this.refresh(); }
       }});
   }

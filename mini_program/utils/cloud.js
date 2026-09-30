@@ -3,6 +3,12 @@ const {VERSION, PROTOCOL_VERSION} = require('./version');
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 
+function authorizationError(message = 'Cloud 授权已失效，请重新扫码') {
+  const error = new Error(message);
+  error.code = 'REAUTHORIZE';
+  return error;
+}
+
 function cloudOrigin(value) {
   const match = /^(https:\/\/[a-z0-9.-]+(?::([0-9]{1,5}))?)$/i.exec(value || '');
   if (!match || value.includes('..') || (match[2] && (+match[2] < 1 || +match[2] > 65535))) {
@@ -66,7 +72,7 @@ class CloudClient {
   }
 
   refresh() {
-    if (this.closed || this.session.refresh_pending) return Promise.reject(new Error('请重新扫描 Cloud 授权二维码'));
+    if (this.closed || this.session.refresh_pending) return Promise.reject(authorizationError('请重新扫描 Cloud 授权二维码'));
     if (this.refreshInFlight) return this.refreshInFlight;
     const original = this.session;
     // Persist the in-flight marker before rotating. A terminated app or lost
@@ -83,7 +89,7 @@ class CloudClient {
       this.wx.setStorageSync(CLIENT_KEY, next);
       this.session = next;
       this.refreshInFlight = null;
-    }).catch(() => { throw new Error('Cloud 连接需要重新授权，请重新扫码'); });
+    }).catch(() => { throw authorizationError('Cloud 连接需要重新授权，请重新扫码'); });
     return this.refreshInFlight;
   }
 
@@ -98,8 +104,8 @@ class CloudClient {
       response = await request(this.wx, this.session.url + path, method, data, this.session.access_token);
     }
     if (response.statusCode !== 200) {
-      throw new Error(response.statusCode === 401 ? 'Cloud 授权已失效，请重新扫码' :
-        response.statusCode === 429 ? '操作过于频繁，请稍后重试' : '操作不可用，请刷新设备状态');
+      if (response.statusCode === 401) throw authorizationError();
+      throw new Error(response.statusCode === 429 ? '操作过于频繁，请稍后重试' : '操作不可用，请刷新设备状态');
     }
     return response.data;
   }

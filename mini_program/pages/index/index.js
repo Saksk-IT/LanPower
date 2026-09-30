@@ -1,4 +1,4 @@
-const {broadcastWake, PC_MAC} = require('../../utils/wol');
+const {broadcastWake, makeMagicPacket, PC_MAC, BROADCAST} = require('../../utils/wol');
 const {parsePairingLink} = require('../../utils/pairing');
 const {parseRemotePairing} = require('../../utils/remote');
 
@@ -11,14 +11,16 @@ Page({
     paired: false, remotePaired: false, host: '', device: '我的 Windows 电脑',
     state: 'unpaired', stateText: '未配对', detail: '先扫描电脑上的配对二维码',
     feedback: '', busy: false, canControl: false, canWake: false, wakeRoute: 'none',
-    mode: 'none', modeText: '未连接', mac: PC_MAC
+    mode: 'none', modeText: '未连接', mac: '', broadcast: BROADCAST, wakeOpen: false, wakeConfigured: false
   },
 
   onLoad() {
     const local = wx.getStorageSync(LOCAL_KEY);
     if (local && typeof local.host === 'string' && /^[0-9a-f]{64}$/i.test(local.token || '')) {
       this.pairing = local;
-      this.setData({paired: true, host: local.host, canWake: true, wakeRoute: 'local'});
+      const target = this.localWakeTarget();
+      this.setData({paired: true, host: local.host, canWake: !!target, wakeRoute: target ? 'local' : 'none',
+        mac: target ? target.mac : '', broadcast: target ? target.broadcast : BROADCAST, wakeConfigured: !!target});
     }
     const remote = wx.getStorageSync(REMOTE_KEY);
     if (remote && typeof remote.url === 'string') {
@@ -40,11 +42,39 @@ Page({
     this.refreshQueued = false;
     if (this.data.state === 'waking') {
       this.setData({state: 'offline', stateText: '等待开机', detail: '返回页面后会重新检查电脑状态',
-        canWake: !!this.pairing || !!this.remote});
+        canWake: !!this.localWakeTarget() || !!this.remote});
     }
   },
 
   onUnload() { this.stopTimers(); },
+
+  goCloud() {
+    if (typeof getCurrentPages === 'function' && getCurrentPages().length > 1) wx.navigateBack();
+    else wx.reLaunch({url: '/pages/cloud/cloud'});
+  },
+  localWakeTarget() {
+    if (!this.pairing) return null;
+    // Preserve older installations with a customized constant, but never wake a demonstration MAC.
+    const mac = this.pairing.mac || (PC_MAC !== '02-11-22-33-44-55' ? PC_MAC : '');
+    return mac ? {mac, broadcast: this.pairing.broadcast || BROADCAST} : null;
+  },
+  toggleWakeSettings() { this.setData({wakeOpen: !this.data.wakeOpen}); },
+  editMac(event) { this.setData({mac: event.detail.value}); },
+  editBroadcast(event) { this.setData({broadcast: event.detail.value}); },
+  saveWakeSettings() {
+    if (!this.pairing || this.data.busy) return;
+    try {
+      const mac = this.data.mac.trim(), broadcast = this.data.broadcast.trim();
+      makeMagicPacket(mac);
+      const octets = broadcast.split('.');
+      if (octets.length !== 4 || octets.some(o => !/^\d{1,3}$/.test(o) || Number(o) > 255)) throw new Error('广播地址无效');
+      this.pairing = {...this.pairing, mac, broadcast};
+      wx.setStorageSync(LOCAL_KEY, this.pairing);
+      this.setData({wakeConfigured: true, feedback: '局域网唤醒设置已保存。'});
+      this.refresh();
+    } catch (error) { this.setData({feedback: error.message}); }
+  },
+  dismissFeedback() { this.setData({feedback: ''}); },
 
   stopTimers() {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
@@ -56,10 +86,14 @@ Page({
   scanPairing() {
     wx.scanCode({onlyFromCamera: true, scanType: ['qrCode'], success: (result) => {
       try {
-        const pairing = parsePairingLink(result.result);
+        const parsed = parsePairingLink(result.result);
+        const pairing = {...(this.pairing && this.pairing.host === parsed.host ? this.pairing : {}), ...parsed};
         wx.setStorageSync(LOCAL_KEY, pairing);
         this.pairing = pairing;
-        this.setData({paired: true, host: pairing.host, canWake: true, wakeRoute: 'local', feedback: '局域网配对信息已保存。'});
+        const target = this.localWakeTarget();
+        this.setData({paired: true, host: pairing.host, canWake: !!target, wakeRoute: target ? 'local' : 'none',
+          mac: target ? target.mac : '', broadcast: target ? target.broadcast : BROADCAST, wakeConfigured: !!target,
+          wakeOpen: !target, feedback: '局域网已配对。需要离线开机时，请继续填写唤醒设置。'});
         this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
       } catch (error) {
@@ -89,7 +123,7 @@ Page({
         if (!confirm) return;
         wx.removeStorageSync(LOCAL_KEY);
         this.pairing = null;
-        this.setData({paired: false, host: '', feedback: '', canControl: false,
+        this.setData({paired: false, host: '', feedback: '', canControl: false, mac: '', broadcast: BROADCAST, wakeConfigured: false, wakeOpen: false,
           canWake: !!this.remote, wakeRoute: this.remote ? 'remote' : 'none'});
         this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
@@ -104,7 +138,7 @@ Page({
         wx.removeStorageSync(REMOTE_KEY);
         this.remote = null;
         this.setData({remotePaired: false, feedback: '', canControl: false,
-          canWake: !!this.pairing, wakeRoute: this.pairing ? 'local' : 'none'});
+          canWake: !!this.localWakeTarget(), wakeRoute: this.localWakeTarget() ? 'local' : 'none'});
         this.refreshSerial = (this.refreshSerial || 0) + 1;
         this.refresh();
       }
@@ -158,7 +192,7 @@ Page({
 
   refreshRemote(serial) {
     if (!this.remote) {
-      this.markOffline('local', '电脑未连接；开机可点下方按钮');
+      this.markOffline('local', this.localWakeTarget() ? '电脑未连接，可尝试局域网唤醒' : '电脑未连接；离线开机需先保存局域网唤醒设置');
       return Promise.resolve(false);
     }
     return new Promise((resolve) => {
@@ -197,14 +231,14 @@ Page({
     this.setData({
       state: 'online', stateText: mode === 'local' ? '在线 · 局域网' : '在线 · 远程',
       mode, modeText: mode === 'local' ? '局域网' : '远程', detail: '可以发送电源指令',
-      canWake: true, wakeRoute: mode,
+      canWake: false, wakeRoute: mode,
       device: device || this.data.device, canControl: !this.data.busy, busy: false,
       feedback: this.data.state === 'waking' ? '电脑已开机。' : this.data.feedback
     });
   },
 
   markOffline(mode, detail) {
-    const wakeRoute = mode === 'remote' && this.remote ? 'remote' : this.pairing ? 'local' : 'none';
+    const wakeRoute = mode === 'remote' && this.remote ? 'remote' : this.localWakeTarget() ? 'local' : 'none';
     const localFallback = mode === 'none' && wakeRoute === 'local';
     const changes = {
       mode, wakeRoute, canWake: wakeRoute !== 'none' && this.data.state !== 'waking',
@@ -248,7 +282,7 @@ Page({
     }
     if (!this.pairing) return;
     try {
-      broadcastWake(wx, (message) => this.setData({feedback: `唤醒包发送异常：${message}`}));
+      broadcastWake(wx, (message) => this.setData({feedback: `唤醒包发送异常：${message}`}), this.localWakeTarget());
       this.startWakeWait('local');
     } catch (error) { this.setData({feedback: error.message}); }
   },

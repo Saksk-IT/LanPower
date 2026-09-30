@@ -1,35 +1,142 @@
-<view class="shell">
-  <view class="topbar"><view class="brand">⏻</view><view><view class="eyebrow">LANPOWER</view><view class="title">我的电脑</view></view></view>
-  <view class="pair-card" wx:if="{{!connected}}">
-    <view class="section-title">连接 Cloud</view><view class="muted">登录 Cloud 网页，在“已授权客户端”中为手机生成二维码。</view>
-    <button class="primary pair-button" bindtap="scanCloud" disabled="{{busy}}">扫描授权二维码</button>
+<view class="app-shell">
+  <view wx:if="{{feedback}}" class="feedback feedback-{{feedbackKind}}" role="alert">
+    <text class="feedback-copy">{{feedback}}</text>
+    <button class="feedback-close" bindtap="dismissFeedback" aria-label="关闭提示">×</button>
   </view>
-  <view wx:if="{{connected}}">
-    <picker range="{{devices}}" range-key="name" bindchange="selectDevice" disabled="{{busy}}"><view class="device-picker">{{device}} ▾</view></picker>
-    <view class="device-card"><view class="card-top"><text>{{modeText}}</text><text>{{stateText}}</text></view>
-      <view class="screen">⏻</view><view class="device-name">{{device}}</view><view class="detail">{{detail}}</view></view>
-    <view wx:if="{{selectedId}}">
-      <view class="section-head"><view class="section-title">电源控制</view><text bindtap="refresh">刷新状态</text></view>
-      <button class="wake-button" data-action="wake" bindtap="action" disabled="{{!canWake || busy}}"><view class="button-icon">↟</view><view>开机</view></button>
-      <view class="action-grid">
-        <button class="action" data-action="sleep" bindtap="action" disabled="{{!canControl || busy}}">睡眠</button>
-        <button class="action" data-action="hibernate" bindtap="action" disabled="{{!canControl || busy}}">休眠</button>
-        <button class="action" data-action="restart" bindtap="action" disabled="{{!canControl || busy}}">重启</button>
-        <button class="action danger" data-action="shutdown" bindtap="action" disabled="{{!canControl || busy}}">关机</button>
+
+  <view wx:if="{{activeTab == 'home'}}" class="page-content">
+    <view class="page-heading heading-row">
+      <view><view class="page-title">我的电脑</view><view class="page-subtitle">{{connected ? '查看状态，管理电脑电源' : '从连接第一台电脑开始'}}</view></view>
+      <button wx:if="{{connected}}" class="text-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">刷新</button>
+    </view>
+
+    <block wx:if="{{!connected}}">
+      <view class="onboarding-card">
+        <view class="onboarding-title">把电脑连接到微信</view>
+        <view class="onboarding-copy">授权这部手机后，就能查看电脑是否在线，并在需要时开机、休眠或关机。</view>
+        <button class="primary-button" bindtap="scanCloud" loading="{{busy}}" disabled="{{busy}}">扫描 Cloud 授权码</button>
+        <view class="onboarding-note">二维码来自你的 Cloud 网页 → 已授权客户端。</view>
       </view>
-      <view class="pair-card"><view class="section-title">局域网优先</view>
-        <view class="muted">为当前电脑扫描 Windows 应用的局域网二维码。在家时直接连接电脑，离家后自动连接 Cloud。</view>
-        <button class="primary pair-button" bindtap="scanLocal" disabled="{{busy}}">{{paired ? '重新关联局域网电脑' : '扫描这台电脑的局域网码'}}</button>
-        <view wx:if="{{paired}}"><view class="muted">局域网唤醒（可选）</view>
-          <input value="{{mac}}" bindinput="editMac" placeholder="网卡 MAC，如 02-11-22-33-44-55" maxlength="17" />
-          <input value="{{broadcast}}" bindinput="editBroadcast" placeholder="广播地址" maxlength="15" />
-          <button bindtap="saveWake" disabled="{{busy}}">保存唤醒设置</button><text class="remote-clear" bindtap="clearLocal">移除局域网关联</text>
+      <view class="intro-list">
+        <view class="section-title">第一次使用，完成这三步</view>
+        <view class="steps-group">
+          <view class="step-card"><view class="step-number">1</view><view><view class="step-title">让电脑连接 Cloud</view><view class="step-copy">打开 Windows 版 LanPower，完成 Cloud 配对。</view></view></view>
+          <view class="step-card"><view class="step-number">2</view><view><view class="step-title">在网页生成手机授权码</view><view class="step-copy">登录同一个 Cloud，在“已授权客户端”添加手机。</view></view></view>
+          <view class="step-card"><view class="step-number">3</view><view><view class="step-title">用小程序扫码，选择电脑</view><view class="step-copy">点击上方扫码按钮，确认服务地址后即可开始。</view></view></view>
         </view>
       </view>
+      <button class="list-card list-button" bindtap="openLocal"><view class="list-content"><view class="list-title">只在家中使用？</view><view class="list-copy">通过局域网直接配对，无需 Cloud</view></view><text class="chevron">›</text></button>
+    </block>
+
+    <view wx:if="{{connected && needsReauthorize}}" class="notice-card">
+      <view class="notice-title">手机授权需要更新</view><view class="notice-copy">在 Cloud 网页重新生成手机授权码。已关联电脑的局域网直连仍可尝试使用。</view>
+      <button class="outline-button compact-button" bindtap="scanCloud" disabled="{{busy}}">重新扫描授权码</button>
     </view>
-    <view class="footer"><text bindtap="reloadDevices">更新设备列表</text><text bindtap="scanCloud">重新授权</text><text bindtap="disconnect">断开 Cloud</text></view>
+
+    <view wx:if="{{connected && !devices.length}}" class="empty-card">
+      <view class="empty-symbol"><view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view></view>
+      <view class="onboarding-title">{{cloudState == 'unavailable' || needsReauthorize ? '暂时无法读取电脑列表' : devicesLoaded ? '还没有添加电脑' : '正在读取电脑列表'}}</view>
+      <view class="onboarding-copy">{{cloudState == 'unavailable' || needsReauthorize ? '请检查手机网络和 Cloud 服务，或按提示重新授权。' : devicesLoaded ? '手机已授权。接下来在 Windows 版 LanPower 连接同一个 Cloud，电脑就会显示在这里。' : '正在连接 Cloud，请稍候。'}}</view>
+      <button class="outline-button compact-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">更新电脑列表</button>
+      <button class="text-button centered-button" bindtap="switchTab" data-tab="help">查看连接步骤</button>
+    </view>
+
+    <block wx:if="{{connected && devices.length}}">
+      <picker range="{{devices}}" range-key="name" value="{{selectedIndex}}" bindchange="selectDevice" disabled="{{busy || updatingList}}" aria-label="选择要控制的电脑">
+        <view class="device-picker"><view class="picker-copy"><view class="picker-title">{{device}}</view><view class="picker-sub">共 {{devices.length}} 台电脑 · 点击切换</view></view><text class="chevron">›</text></view>
+      </picker>
+      <view class="status-card status-{{statusClass}}">
+        <view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view>
+        <view class="status-copy"><view class="status-title">{{stateText}}</view><view class="status-detail">{{detail}}</view><view class="connection-line">{{modeText}} · {{networkText}}</view></view>
+      </view>
+      <view class="route-caption">{{routeHint}}</view>
+      <view class="section-title-row"><view class="section-title">电源控制</view><view class="section-caption">{{controlHint}}</view></view>
+      <button class="power-button wake" data-action="wake" bindtap="action" disabled="{{!canWake || busy}}"><view class="power-symbol">↟</view><view class="power-copy"><view class="power-title">开机 / 唤醒</view><view class="power-sub">{{wakeHint}}</view></view></button>
+      <view class="power-grid">
+        <button class="power-button" data-action="sleep" bindtap="action" disabled="{{!canControl || busy}}"><view class="power-symbol">☾</view><view class="power-copy"><view class="power-title">睡眠</view><view class="power-sub">低功耗，快速恢复</view></view></button>
+        <button class="power-button" data-action="hibernate" bindtap="action" disabled="{{!canControl || busy}}"><view class="power-symbol">◐</view><view class="power-copy"><view class="power-title">休眠</view><view class="power-sub">保存状态再断电</view></view></button>
+        <button class="power-button" data-action="restart" bindtap="action" disabled="{{!canControl || busy}}"><view class="power-symbol">↻</view><view class="power-copy"><view class="power-title">重启</view><view class="power-sub">重新启动 Windows</view></view></button>
+        <button class="power-button danger" data-action="shutdown" bindtap="action" disabled="{{!canControl || busy}}"><view class="power-symbol">⏻</view><view class="power-copy"><view class="power-title">关机</view><view class="power-sub">请先保存文件</view></view></button>
+      </view>
+      <view class="action-tip">点击操作后会在手机上再次确认。指令送达后，请等待电脑状态更新。</view>
+      <button class="list-card list-button" bindtap="switchTab" data-tab="connect"><view class="list-content"><view class="list-title">管理这台电脑的连接</view><view class="list-copy">{{paired ? '局域网已关联 · 可调整唤醒设置' : '可选：添加局域网直连与唤醒'}}</view></view><text class="chevron">›</text></button>
+    </block>
+    <button class="text-button centered-button" bindtap="switchTab" data-tab="help">需要帮助？查看使用指引</button>
   </view>
-  <view class="feedback" wx:if="{{feedback}}">{{feedback}}</view>
-  <view class="footer"><text bindtap="openLocal">仅使用局域网 / 旧版连接</text></view>
-  <view class="version-note">小程序版本 {{version}}</view>
+
+  <view wx:if="{{activeTab == 'connect'}}" class="page-content">
+    <view class="page-heading"><view class="page-title">连接设置</view><view class="page-subtitle">手机授权与电脑直连，分开管理</view></view>
+    <view class="setting-card">
+      <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">手机远程授权</view><view class="setting-copy">连接 Cloud 后，可在 Wi-Fi 或蜂窝网络下管理电脑。</view></view><view class="setting-state {{cloudState == 'online' ? 'success-text' : needsReauthorize ? 'warning-text' : 'muted-text'}}">{{cloudStatusText}}</view></view>
+      <view wx:if="{{connected}}" class="setting-row"><text>Cloud 地址</text><text class="setting-value">{{cloudHost}}</text></view>
+      <button class="{{connected && !needsReauthorize ? 'outline-button' : 'primary-button'}} compact-button" bindtap="scanCloud" loading="{{busy}}" disabled="{{busy}}">{{connected ? '重新扫描授权码' : '扫描 Cloud 授权码'}}</button>
+      <view class="setting-copy">在 Cloud 网页 → 已授权客户端生成二维码。</view>
+    </view>
+    <view class="setting-card">
+      <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">电脑局域网直连</view><view class="setting-copy">手机连接与电脑同一局域网的 Wi-Fi 时，优先直接控制。</view></view><view class="setting-state {{paired ? 'success-text' : 'muted-text'}}">{{paired ? '已关联' : '可选'}}</view></view>
+      <view wx:if="{{selectedId}}" class="setting-row"><text>当前电脑</text><text class="setting-value">{{device}}</text></view>
+      <view wx:else class="setting-copy prerequisite">先完成手机授权，并在“我的电脑”选择一台电脑。</view>
+      <button class="outline-button compact-button" bindtap="scanLocal" disabled="{{busy || updatingList || !selectedId}}">{{paired ? '重新扫描电脑配对码' : '扫描电脑配对码'}}</button>
+      <view wx:if="{{selectedId}}" class="setting-copy">在这台电脑的 Windows 版 LanPower → 手机配对，点击“显示配对二维码”。</view>
+      <button wx:if="{{paired}}" class="setting-row row-button" bindtap="toggleLan"><text>局域网唤醒设置</text><text class="row-end"><text wx:if="{{wakeDirty}}" class="draft-label">未保存</text><text class="chevron">{{lanOpen ? '−' : '+'}}</text></text></button>
+      <view wx:if="{{paired && lanOpen}}" class="advanced-settings">
+        <view class="setting-copy">用于电脑离线时发送唤醒包。配对码只包含连接信息，以下参数需要手动填写。</view>
+        <label class="field-label" for="wake-mac">电脑有线网卡 MAC 地址</label>
+        <input id="wake-mac" value="{{mac}}" bindinput="editMac" placeholder="例如 02-11-22-33-44-55" maxlength="17" disabled="{{busy}}" />
+        <view class="field-help">在 Windows 版 LanPower 首页的“网络与唤醒”中查看网卡 MAC。</view>
+        <label class="field-label" for="wake-broadcast">局域网广播地址</label>
+        <input id="wake-broadcast" value="{{broadcast}}" bindinput="editBroadcast" placeholder="例如 192.168.1.255" maxlength="15" disabled="{{busy}}" />
+        <view class="field-help">可先使用默认的 255.255.255.255；指定网段地址需与家中网络一致。</view>
+        <button class="outline-button compact-button" bindtap="saveWake" disabled="{{busy}}">保存唤醒设置</button>
+        <view class="setting-copy">电脑还需开启网络唤醒并保持网线连接。参数仅保存在这部手机。</view>
+      </view>
+      <button wx:if="{{paired}}" class="danger-link remove-link" bindtap="clearLocal" disabled="{{busy}}">移除这台电脑的局域网关联</button>
+    </view>
+    <button class="list-card list-button legacy-card" bindtap="openLocal"><view class="list-content"><view class="list-title">独立局域网 / 旧版连接</view><view class="list-copy">无需 Cloud 的直连模式，也兼容已有 v1 远程配对</view></view><text class="chevron">›</text></button>
+    <button wx:if="{{connected}}" class="danger-link" bindtap="disconnect" disabled="{{busy}}">{{needsReauthorize ? '移除失效授权' : '撤销这部手机的授权'}}</button>
+  </view>
+
+  <view wx:if="{{activeTab == 'help'}}" class="page-content">
+    <view class="page-heading"><view class="page-title">使用帮助</view><view class="page-subtitle">选一个场景，按步骤开始</view></view>
+    <view class="topic-tabs">
+      <button class="topic-tab {{helpTopic == 'remote' ? 'active' : ''}}" data-topic="remote" bindtap="selectHelpTopic">远程控制</button>
+      <button class="topic-tab {{helpTopic == 'lan' ? 'active' : ''}}" data-topic="lan" bindtap="selectHelpTopic">局域网</button>
+      <button class="topic-tab {{helpTopic == 'wake' ? 'active' : ''}}" data-topic="wake" bindtap="selectHelpTopic">开机 / 唤醒</button>
+    </view>
+    <view wx:if="{{helpTopic == 'remote'}}" class="help-card">
+      <view class="help-card-title">在外也能管理电脑</view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">电脑连接 Cloud</view><view class="step-copy">在 Windows 版 LanPower 中完成 Cloud 配对，并在网页确认电脑已出现。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">为手机生成授权码</view><view class="step-copy">在同一个 Cloud 网页的“已授权客户端”中添加手机。二维码十分钟有效，只能使用一次。</view></view></view>
+      <view class="help-step"><view class="help-number">3</view><view><view class="step-title">扫码后选择电脑</view><view class="step-copy">在小程序“连接”中扫码，回到“我的电脑”选择设备。电脑在线且控制通道可用时，即可执行电源操作。</view></view></view>
+      <button class="primary-button" bindtap="switchTab" data-tab="connect">去授权手机</button>
+    </view>
+    <view wx:if="{{helpTopic == 'lan'}}" class="help-card">
+      <view class="help-card-title">在家优先使用局域网</view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">让手机和电脑处于同一局域网</view><view class="step-copy">手机连接家中 Wi-Fi，电脑可连接同一路由器的网线或 Wi-Fi。允许微信访问本地网络。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">为当前电脑扫码关联</view><view class="step-copy">在“我的电脑”选好目标，再到“连接”扫描该电脑的局域网配对码，并核对名称。</view></view></view>
+      <view class="help-step"><view class="help-number">3</view><view><view class="step-title">自动选择可用连接</view><view class="step-copy">局域网可达时直接控制；离开家中网络后尝试 Cloud。配对凭据只保存在手机。</view></view></view>
+      <button class="primary-button" bindtap="switchTab" data-tab="connect">去关联局域网</button>
+      <button class="text-button centered-button" bindtap="openLocal">没有 Cloud？使用独立局域网模式</button>
+    </view>
+    <view wx:if="{{helpTopic == 'wake'}}" class="help-card">
+      <view class="help-card-title">电脑离线，也能尝试唤醒</view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">先准备好电脑</view><view class="step-copy">启用电脑和网卡的网络唤醒功能，保持供电与网线连接。能否从睡眠、休眠或关机唤醒取决于电脑配置。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">在家用 Wi-Fi，在外用网关</view><view class="step-copy">在家：关联局域网并保存 MAC 和广播地址。在外：需要在 Cloud 为电脑关联在线的唤醒网关，并配置该电脑的唤醒信息。</view></view></view>
+      <view class="help-step"><view class="help-number">3</view><view><view class="step-title">发送后等待电脑上线</view><view class="step-copy">回到“我的电脑”点击“开机 / 唤醒”。页面会定期更新状态；唤醒包发出或指令送达，都不代表电脑已经开机。</view></view></view>
+      <button class="primary-button" bindtap="switchTab" data-tab="connect">去查看连接设置</button>
+    </view>
+    <view class="faq-title">常见问题</view>
+    <view class="faq-card">
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="offline"><text>电脑离线时可以做什么？</text><text class="chevron">{{faqOpen == 'offline' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'offline'}}" class="faq-answer">有可用唤醒方式时，可以尝试开机。睡眠、休眠、重启和关机需要电脑在线且控制通道可用。离线也可能是服务停止或网络中断，请结合电脑实际情况判断。</view></view>
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="sleep"><text>睡眠和休眠有什么区别？</text><text class="chevron">{{faqOpen == 'sleep' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'sleep'}}" class="faq-answer">睡眠把当前状态保留在内存，耗电较低、恢复较快；休眠先把状态写入磁盘，再进入低功耗或断电状态，恢复通常更慢。操作前仍建议保存文件；休眠需要 Windows 已启用此功能。</view></view>
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="auth"><text>授权失效后怎么办？</text><text class="chevron">{{faqOpen == 'auth' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'auth'}}" class="faq-answer">在 Cloud 网页重新生成手机授权码，再到“连接”扫描。已使用的二维码不能再次兑换。重新授权同一 Cloud 后，原有电脑的局域网关联会保留；旧手机授权记录可在网页移除。</view></view>
+    </view>
+    <view class="about-copy">LanPower · 小程序 v{{version}}<view>电脑电源，随手管理</view></view>
+  </view>
+
+  <view class="tabbar">
+    <button class="tab-item {{activeTab == 'home' ? 'active' : ''}}" data-tab="home" bindtap="switchTab"><view class="tab-icon"><view class="icon-computer"></view></view><view>我的电脑</view></button>
+    <button class="tab-item {{activeTab == 'connect' ? 'active' : ''}}" data-tab="connect" bindtap="switchTab"><view class="tab-icon"><view class="icon-connect"></view></view><view>连接</view></button>
+    <button class="tab-item {{activeTab == 'help' ? 'active' : ''}}" data-tab="help" bindtap="switchTab"><view class="tab-icon"><view class="icon-help">?</view></view><view>帮助</view></button>
+  </view>
 </view>

@@ -55,7 +55,8 @@ def main() -> None:
     for path in filter(None, paths):
         parts = PurePosixPath(path.lower())
         name = parts.name
-        if (name in PRIVATE_NAMES or "private" in parts.parts
+        is_page_config = path == "mini_program/pages/cloud/cloud.json"
+        if ((name in PRIVATE_NAMES and not is_page_config) or "private" in parts.parts
                 or name == ".env" or name.startswith(".env.") and name != ".env.example"
                 or name.endswith((".db", ".sqlite", ".sqlite3", ".log")) or ".log." in name
                 or "recovery-codes" in name and name.endswith(".txt")

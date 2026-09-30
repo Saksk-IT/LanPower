@@ -1,11 +1,11 @@
 {
   "pages": ["pages/cloud/cloud", "pages/index/index"],
   "window": {
-    "navigationBarTitleText": "电脑电源",
-    "navigationBarBackgroundColor": "#0b1729",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#0b1729",
-    "backgroundTextStyle": "light"
+    "navigationBarTitleText": "LanPower",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f5f6f7",
+    "backgroundTextStyle": "dark"
   },
   "style": "v2"
 }

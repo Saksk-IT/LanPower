@@ -7,11 +7,13 @@ const {parseRemotePairing} = require('../mini_program/utils/remote');
 
 const token = 'a'.repeat(64);
 const pairing = parsePairingLink(`http://192.168.1.100:48211/#access=${token}`);
+const configuredPairing = {...pairing, mac: '02-11-22-33-44-66', broadcast: '192.168.1.255'};
 const remote = parseRemotePairing(`https://power.example.com/#lanpower-remote=home-router.${'b'.repeat(64)}`);
 
 function createPage(stored, request, extra = {}) {
   global.wx = {
     getStorageSync: (key) => stored[key] || null,
+    setStorageSync: (key, value) => {stored[key] = value;},
     removeStorageSync: (key) => delete stored[key],
     request,
     showModal: (options) => options.success({confirm: true}),
@@ -74,7 +76,7 @@ async function main() {
 
     // A reachable Windows API always wins, even when remote pairing exists.
     const localCalls = [];
-    const localPage = createPage({lanpower_pairing_v1: pairing, lanpower_remote_v1: remote}, (options) => {
+    const localPage = createPage({lanpower_pairing_v1: configuredPairing, lanpower_remote_v1: remote}, (options) => {
       localCalls.push(options);
       if (options.method === 'POST') options.success({statusCode: 202});
       else options.success({statusCode: 200, data: {state: 'online', device: 'Test PC'}});
@@ -92,7 +94,7 @@ async function main() {
     // Local status failure can select the Cloud relay for an online PC.
     const remoteCalls = [];
     let remotePCOnline = true;
-    const remotePage = createPage({lanpower_pairing_v1: pairing, lanpower_remote_v1: remote}, (options) => {
+    const remotePage = createPage({lanpower_pairing_v1: configuredPairing, lanpower_remote_v1: remote}, (options) => {
       remoteCalls.push(options);
       if (options.url.startsWith('http://')) options.fail({errMsg: 'PC is offline'});
       else if (options.method === 'POST') options.success({statusCode: 200, data: {ok: true, state: 'transitioning'}});
@@ -114,7 +116,7 @@ async function main() {
     // Regression: a powered-off PC and failed LAN + Cloud checks still permit LAN WOL.
     const unavailableCalls = [];
     const localWakePackets = [];
-    const offlinePage = createPage({lanpower_pairing_v1: pairing, lanpower_remote_v1: remote}, (options) => {
+    const offlinePage = createPage({lanpower_pairing_v1: configuredPairing, lanpower_remote_v1: remote}, (options) => {
       unavailableCalls.push(options);
       options.fail({errMsg: 'network unreachable'});
     }, {createUDPSocket: () => ({
@@ -132,6 +134,7 @@ async function main() {
     offlinePage.wake();
     assert.equal(offlinePage.data.state, 'waking');
     assert.equal(localWakePackets.length, 2);
+    assert.deepEqual(localWakePackets[0].message, makeMagicPacket(configuredPairing.mac));
     assert.equal(unavailableCalls.filter(({method}) => method === 'POST').length, 0);
 
     // Wake polling coalesces calls while one LAN request is still pending.
@@ -147,11 +150,34 @@ async function main() {
     assert.equal(pending.length, 2);
     pending[1].fail({errMsg: 'PC is offline'});
     await tick();
+
+    // Pairing codes carry no MAC. Require actual wake settings instead of the demo constant.
+    const setupStorage = {lanpower_pairing_v1: pairing};
+    const setup = createPage(setupStorage, opts => opts.fail({}));
+    await setup.refresh();
+    assert.equal(setup.data.canWake, false);
+    setup.editMac({detail: {value: 'invalid'}});
+    setup.saveWakeSettings();
+    assert.equal(setupStorage.lanpower_pairing_v1.mac, undefined);
+    setup.editMac({detail: {value: configuredPairing.mac}});
+    setup.editBroadcast({detail: {value: '192.168.1.255'}});
+    setup.saveWakeSettings(); await tick();
+    assert.equal(setup.data.canWake, true);
+    const reopened = createPage(setupStorage, opts => opts.fail({}));
+    assert.equal(reopened.data.mac, configuredPairing.mac);
+    let navigation;
+    global.getCurrentPages = () => [1, 2];
+    global.wx.navigateBack = () => {navigation = 'back';};
+    reopened.goCloud(); assert.equal(navigation, 'back');
+    global.getCurrentPages = () => [1];
+    global.wx.reLaunch = opts => {navigation = opts.url;};
+    reopened.goCloud(); assert.equal(navigation, '/pages/cloud/cloud');
+    delete global.getCurrentPages;
   } finally {
     global.setTimeout = originalTimeout;
     global.setInterval = originalInterval;
   }
-  console.log('mini program LAN, remote, WOL fallback and polling: PASS');
+  console.log('mini program LAN, remote, wake settings, WOL fallback, navigation and polling: PASS');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

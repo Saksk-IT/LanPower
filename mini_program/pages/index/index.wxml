@@ -1,54 +1,44 @@
-<view class="shell">
-  <view class="topbar">
-    <view class="brand">⏻</view>
-    <view>
-      <view class="eyebrow">LAN POWER</view>
-      <view class="title">电脑电源</view>
+<view class="legacy-shell">
+  <view wx:if="{{feedback}}" class="feedback"><text>{{feedback}}</text><button bindtap="dismissFeedback" aria-label="关闭提示">×</button></view>
+  <view class="page-heading"><view class="page-title">独立局域网</view><view class="page-subtitle">手机连接与电脑同一局域网的 Wi-Fi</view></view>
+
+  <view wx:if="{{paired || remotePaired}}" class="status-card">
+    <view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view>
+    <view class="status-copy"><view class="status-title {{state}}">{{stateText}}</view><view class="status-detail">{{detail}}</view><view class="connection-line">{{modeText}}</view></view>
+  </view>
+
+  <view class="notice-card"><view class="notice-icon">i</view><view><view class="notice-title">无需 Cloud，也能在家控制</view><view class="notice-copy">扫描电脑配对码即可局域网直连。本页也兼容已有的 v1 远程配对；新建远程连接请使用首页的手机授权。</view></view></view>
+
+  <view wx:if="{{!paired}}" class="section-card"><view class="section-title">连接这台电脑</view><view class="section-copy">在电脑上打开 LanPower 配对页，用微信扫描一次即可保存局域网凭据。</view><button class="primary-button" bindtap="scanPairing">扫描电脑配对码</button></view>
+  <view wx:else class="section-card"><view class="section-title-row"><view><view class="section-title">局域网配对</view><view class="section-copy">已保存这台电脑的局域网凭据</view></view><text class="status-text">已配对</text></view><view class="setting-row"><text>电脑地址</text><text class="setting-value">{{host}}</text></view><button class="outline-button" bindtap="scanPairing">重新扫描配对码</button></view>
+
+  <view wx:if="{{paired}}" class="section-card">
+    <view class="section-title">局域网开机 / 唤醒</view>
+    <view class="section-copy">{{wakeConfigured ? '已保存唤醒参数。电脑需开启网络唤醒，并保持供电和网线连接。' : '配对码不包含唤醒参数。填写本机网卡 MAC 和广播地址后，才能尝试离线开机。'}}</view>
+    <button class="outline-button" bindtap="toggleWakeSettings">{{wakeOpen ? '收起唤醒设置' : wakeConfigured ? '修改唤醒设置' : '填写唤醒设置'}}</button>
+    <view wx:if="{{wakeOpen}}" class="wake-settings">
+      <label class="field-label" for="legacy-mac">电脑有线网卡 MAC 地址</label>
+      <input id="legacy-mac" value="{{mac}}" bindinput="editMac" placeholder="例如 02-11-22-33-44-55" maxlength="17" disabled="{{busy}}" />
+      <view class="section-copy">在 Windows 版 LanPower 首页的“网络与唤醒”中查看。</view>
+      <label class="field-label" for="legacy-broadcast">局域网广播地址</label>
+      <input id="legacy-broadcast" value="{{broadcast}}" bindinput="editBroadcast" placeholder="例如 192.168.1.255" maxlength="15" disabled="{{busy}}" />
+      <view class="section-copy">请按家中网段填写，也可先尝试 255.255.255.255。</view>
+      <button class="primary-button" bindtap="saveWakeSettings" disabled="{{busy}}">保存唤醒设置</button>
     </view>
   </view>
 
-  <view class="device-card">
-    <view class="card-top">
-      <text>我的 Windows 电脑</text>
-      <view class="status {{state}}"><view class="dot"></view>{{stateText}}</view>
-    </view>
-    <view class="screen"><text>⏻</text></view>
-    <view class="device-name">{{device}}</view>
-    <view class="detail">{{detail}}</view>
-  </view>
+  <view class="section-card"><view class="section-title">旧版远程连接（v1）</view><view class="section-copy">{{remotePaired ? '已保存 v1 远程配对，局域网不可达时尝试通过 Cloud 和网关控制。' : '已有 v1 网关可扫描旧版远程配对码。Cloud v2 的手机授权码请在首页扫描。'}}</view><button wx:if="{{!remotePaired}}" class="outline-button" bindtap="scanRemotePairing">扫描旧版远程配对码</button><view wx:else class="setting-row setting-action" bindtap="clearRemotePairing"><text class="danger-text">清除远程配对</text><text class="chevron">›</text></view></view>
 
-  <view wx:if="{{!paired}}" class="pair-card">
-    <view class="section-title">连接这台电脑</view>
-    <view class="muted">在电脑上打开配对页面，然后用微信扫码。</view>
-    <button class="primary pair-button" bindtap="scanPairing">扫描配对二维码</button>
+  <view wx:if="{{paired || remotePaired}}">
+  <view class="section-title-row power-heading"><view><view class="section-title">电源控制</view><view class="section-copy">{{modeText}} · {{canControl ? '在线操作可用' : '等待电脑在线'}}</view></view><text class="refresh-link" bindtap="refresh">刷新</text></view>
+  <button class="power-button wake" bindtap="wake" disabled="{{!canWake || state === 'waking'}}"><view class="power-symbol">↟</view><view><view class="power-title">开机 / 唤醒</view><view class="power-sub">{{state === 'online' ? '电脑已在线，无需唤醒' : state === 'waking' ? '正在等待电脑上线' : wakeRoute === 'remote' ? '通过远程网关唤醒' : wakeConfigured ? '发送局域网唤醒包' : '请先保存唤醒设置'}}</view></view></button>
+  <view class="power-grid">
+    <button class="power-button" data-action="sleep" bindtap="sendAction" disabled="{{!canControl}}"><view class="power-symbol">☾</view><view><view class="power-title">睡眠</view><view class="power-sub">快速恢复</view></view></button>
+    <button class="power-button" data-action="hibernate" bindtap="sendAction" disabled="{{!canControl}}"><view class="power-symbol">◐</view><view><view class="power-title">休眠</view><view class="power-sub">保存工作状态</view></view></button>
+    <button class="power-button" data-action="restart" bindtap="sendAction" disabled="{{!canControl}}"><view class="power-symbol">↻</view><view><view class="power-title">重启</view><view class="power-sub">重新启动电脑</view></view></button>
+    <button class="power-button danger" data-action="shutdown" bindtap="sendAction" disabled="{{!canControl}}"><view class="power-symbol">⏻</view><view><view class="power-title">关机</view><view class="power-sub">请先保存文件</view></view></button>
   </view>
-
-  <view class="pair-card">
-    <view class="section-title">远程控制</view>
-    <view class="muted">{{remotePaired ? '已配置远程网关，离开家后自动连接。' : '部署远程服务后，扫描管理员生成的远程配对码。'}}</view>
-    <button wx:if="{{!remotePaired}}" class="primary pair-button" bindtap="scanRemotePairing">扫描远程配对码</button>
-    <text wx:else class="remote-clear" bindtap="clearRemotePairing">清除远程配对</text>
   </view>
-
-  <view class="section-head">
-    <view class="section-title">电源控制</view>
-    <text>{{modeText}}</text>
-  </view>
-  <button class="wake-button" bindtap="wake" disabled="{{!canWake || state === 'waking'}}">
-    <view class="button-icon">↟</view><view><view class="button-title">开机</view><view class="button-sub">{{wakeRoute === 'remote' ? '通过家中路由器唤醒' : '发送局域网唤醒包'}}</view></view>
-  </button>
-  <view class="action-grid">
-    <button class="action" data-action="sleep" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">☾</view><view><view class="button-title">睡眠</view><view class="button-sub">快速恢复</view></view></button>
-    <button class="action" data-action="hibernate" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">◐</view><view><view class="button-title">休眠</view><view class="button-sub">保存工作状态</view></view></button>
-    <button class="action" data-action="restart" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">↻</view><view><view class="button-title">重启</view><view class="button-sub">重新启动 Windows</view></view></button>
-    <button class="action danger" data-action="shutdown" bindtap="sendAction" disabled="{{!canControl}}"><view class="button-icon">⏻</view><view><view class="button-title">关机</view><view class="button-sub">完全关闭电脑</view></view></button>
-  </view>
-  <view wx:if="{{feedback}}" class="feedback">{{feedback}}</view>
-
-  <view class="footer">
-    <text bindtap="refresh">刷新状态</text>
-    <text wx:if="{{paired}}" bindtap="scanPairing">重新扫码</text>
-    <text wx:if="{{paired}}" bindtap="clearPairing">清除配对</text>
-  </view>
-  <view wx:if="{{paired}}" class="address">电脑地址：{{host}} · 网卡：{{mac}}</view>
+  <view class="legacy-footer"><text bindtap="refresh">刷新状态</text><text wx:if="{{paired}}" bindtap="clearPairing">清除局域网配对</text></view>
+  <button class="outline-button" bindtap="goCloud">返回我的电脑</button>
 </view>

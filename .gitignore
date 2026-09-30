@@ -19,6 +19,8 @@
 **/gateway.lock
 **/seen.json
 **/cloud.json
+# WeChat page configuration is public; runtime Cloud configuration is not.
+!mini_program/pages/cloud/cloud.json
 **/*.db
 **/setup-code
 /windows/**/bin/
