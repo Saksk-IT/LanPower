@@ -3,11 +3,14 @@ services:
     build:
       context: ../..
       dockerfile: cloud_app/Dockerfile
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       LANPOWER_DATABASE_URL: sqlite:////var/lib/lanpower-cloud/platform.db
+      LANPOWER_PUBLIC_URL: ${LANPOWER_PUBLIC_URL:?Set LANPOWER_PUBLIC_URL in .env}
     volumes:
-      - ./data:/var/lib/lanpower-cloud
+      - ${LANPOWER_DATA_MOUNT:-./data}:/var/lib/lanpower-cloud
     ports:
       - 127.0.0.1:8765:8765
     read_only: true
@@ -16,3 +19,30 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+  caddy:
+    image: caddy:2.11.4
+    profiles: [https]
+    environment:
+      LANPOWER_PUBLIC_URL: ${LANPOWER_PUBLIC_URL:?Set LANPOWER_PUBLIC_URL in .env}
+    ports:
+      - 80:80
+      - 443:443
+      - 443:443/udp
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      cloud:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cloud-data:
+  caddy-data:
+  caddy-config:

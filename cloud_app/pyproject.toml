@@ -19,6 +19,9 @@ dependencies = [
 [project.optional-dependencies]
 test = ["httpx>=0.28,<1", "pytest>=8,<10"]
 
+[project.scripts]
+lanpower-cloud = "cloud_app.cli:main"
+
 [tool.setuptools]
 packages = ["cloud_app", "cloud_app.app"]
 

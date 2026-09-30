@@ -15,6 +15,8 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 新版 [Cloud Web 部署说明](cloud_app/README.md) 介绍 Passkey 初始化与登录、恢复码、无网关模式、浏览器控制与旧版 Gateway 兼容。[Cloud Direct 说明](docs/cloud-direct.md) 列出配对步骤、控制路径和验收边界。
 
+完整文档入口：[架构与实现状态](docs/architecture-v2.md)、[Windows 应用](docs/windows-app.md)、[Docker 一键 HTTPS](deploy/docker/README.md)、[认证](docs/authentication-v2.md)、[数据迁移](docs/migration-v1.md)、[安全边界](docs/security-model.md)、[故障排查](docs/troubleshooting.md)。
+
 ## 新架构快速开始（源码版本）
 
 1. 按 [Windows 构建说明](windows/README.md) 生成并安装 Windows 应用，或等待新版安装包发布。安装后，局域网控制无需 Cloud。

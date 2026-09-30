@@ -22,4 +22,5 @@ tests
 deploy/docker/.env
 deploy/docker/private
 deploy/docker/data
+deploy/docker/backups
 AGENTS.md

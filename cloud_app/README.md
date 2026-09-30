@@ -16,10 +16,10 @@ python -m venv cloud_app/.venv
 
 ## 部署
 
-需要 Docker Compose 和 HTTPS 反向代理。没有 Wake Gateway 时，不需要 `cloud.json` 或 `relay.db`。若从旧版升级，先备份原文件并保留 Gateway/小程序凭据；新 Cloud 可接管旧 `/api/v1` 路径，切换期间避免新旧进程同时写入同一 `relay.db`。
+需要 Docker Compose 和 HTTPS。新部署可使用内置 Caddy 自动配置 HTTPS，详见 [Docker 快速部署](../deploy/docker/README.md)。没有 Wake Gateway 时，不需要 `cloud.json` 或 `relay.db`。若从旧版升级，先备份原文件并保留 Gateway/小程序凭据；新 Cloud 可接管旧 `/api/v1` 路径，切换期间避免新旧进程同时写入同一 `relay.db`。
 
-1. 将 `deploy/docker/.env.example` 复制为 `deploy/docker/.env`，设置实际 HTTPS 域名 `LANPOWER_PUBLIC_URL`。新安装无需设置管理员密码。`.env`、`private/` 和 `data/` 不应提交。
-2. 创建 `deploy/docker/data/` 并使 UID 10001 可写。在 `deploy/docker/` 运行 `docker compose up -d --build`。容器入口只绑定宿主机 `127.0.0.1:8765`；由 Caddy 等反向代理提供 HTTPS。不要把 `8765`、Windows `48211` 或路由器 SSH 直接暴露到公网。
+1. 新安装将 `deploy/docker/.env.example` 复制为 `deploy/docker/.env`，设置实际 `LANPOWER_DOMAIN`；`LANPOWER_PUBLIC_URL` 随之生成。已有安装保留原 `.env` 和数据挂载。新安装无需设置管理员密码。`.env`、`private/`、`data/` 和 `backups/` 不应提交。
+2. 在 `deploy/docker/` 运行 `docker compose up -d --build`。新示例默认启用 Caddy 和 Cloud 数据卷；已有 `./data` 目录需保持 UID 10001 可写。应用入口只绑定宿主机 `127.0.0.1:8765`；公网 HTTPS 由 Caddy 提供。已有反向代理时将 `COMPOSE_PROFILES` 留空。不要把 `8765`、Windows `48211` 或路由器 SSH 直接暴露到公网。
 3. 检查本机 `http://127.0.0.1:8765/healthz`。在服务器运行 `docker compose exec cloud cat /var/lib/lanpower-cloud/setup-code` 读取初始化验证码，并在自己的 HTTPS 地址打开 `/setup`。填入验证码，按浏览器提示创建管理员 `admin` 的 Passkey，保存随后显示的 10 个恢复码，再进入控制台。验证码不会写入应用日志；初始化完成后会删除验证码文件并永久关闭 `/setup`，重启也不会重新开放。
 4. 在 Windows 应用中填写 Cloud 地址并点击“连接 Cloud”，电脑将显示短配对码。打开 Cloud 的 `/enroll`（也可从“连接 Windows 电脑”进入），输入短码、核对设备名称并允许连接。设备在线后可在网页中直接控制。旧版 Windows 仍可使用网页生成的一次性长配对码。
 
@@ -55,7 +55,7 @@ Passkey 由浏览器与系统提供，可使用 Windows Hello、Face ID、Touch 
 
 - 当前 Web 为单管理员；设备表与 API 已按 `owner_id` 和设备关系设计。旧 `/api/v1/*` 保留单家庭配置。
 - 小程序 v2 使用独立客户端授权，见 [小程序 v2](../docs/mini-program-v2.md)；微信原生扫码与真机网络切换尚待验收。
-- Docker 镜像与真实公网 HTTPS、真实 Windows 电源动作需要在可恢复环境中验收。本阶段自动测试模拟命令回传，未安装到当前工作电脑。
+- Docker 镜像构建、普通用户容器启动、新数据卷、重启数据保留、Caddy 本地 HTTPS 和备份恢复已通过。真实公网证书与 Windows 电源动作仍需在可恢复环境中验收，未安装到当前工作电脑。
 
 ## Wake Gateway v2
 

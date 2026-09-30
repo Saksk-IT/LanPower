@@ -25,5 +25,6 @@ private/
 /deploy/docker/.env
 /deploy/docker/private/
 /deploy/docker/data/
+/deploy/docker/backups/
 /AGENTS.md
 /router-gateway-implementation.md
