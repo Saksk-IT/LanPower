@@ -44,7 +44,7 @@ def test_migration_login_and_csrf() -> None:
         client, app = make_client(directory)
         try:
             with closing(sqlite3.connect(directory / "platform.db")) as connection:
-                assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0008_persistent_clients"
+                assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0009_automation"
                 assert connection.execute("SELECT count(*) FROM devices").fetchone()[0] == 2
                 assert connection.execute("SELECT count(*) FROM device_links").fetchone()[0] == 1
                 assert connection.execute("SELECT count(*) FROM legacy_clients").fetchone()[0] == 1

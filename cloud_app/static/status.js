@@ -12,14 +12,22 @@
 
   function renderCard(card, status) {
     card.dataset.state = status.state;
+    if (status.last_seen_at != null) card.dataset.lastSeen = status.last_seen_at;
     const known = ['online', 'offline', 'transitioning'].includes(status.state);
     const canControl = known && status.state === 'online' && !!status.remote_control_available;
     setText(card, 'badge', stateLabels[status.state] || stateLabels.unknown);
     card.querySelectorAll('[data-status-badge]').forEach(badge => badge.classList.toggle('good', status.state === 'online'));
+    card.querySelectorAll('[data-status-dot]').forEach(dot => {
+      dot.classList.toggle('online', status.state === 'online');
+      dot.classList.toggle('offline', status.state !== 'online');
+    });
     if (status.name != null) setText(card, 'name', status.name);
     card.querySelectorAll('form input[name="action"]').forEach(input => {
-      input.form.querySelector('button[type="submit"]').disabled = input.value === 'wake'
-        ? !known || status.state !== 'offline' || !status.wake_available : !canControl;
+      const button = input.form.querySelector('button[type="submit"]');
+      const unavailable = input.value === 'wake'
+        ? !known || status.state === 'transitioning' || !status.wake_available : !canControl;
+      if (button.dataset) button.dataset.unavailable = String(unavailable);
+      button.disabled = unavailable || button.dataset?.busy === 'true';
     });
     const connection = !known ? '暂时无法取得设备状态，请检查连接。' : status.state === 'transitioning'
       ? '正在执行电源操作，等待状态更新。' : status.cloud_agent === 'online'
@@ -57,11 +65,19 @@
     } else {
       setText(card, 'gateway', '状态未知');
     }
+    card.querySelectorAll('[data-status-rdp]').forEach(element => {
+      element.hidden = status.state !== 'online' || !status.lan_ip;
+      const address = status.lan_ip?.includes(':') ? `[${status.lan_ip}]` : status.lan_ip;
+      element.querySelector('[data-rdp-link]').href = `rdp://full%20address%3Ds%3A${encodeURIComponent(address || '')}%3A3389`;
+      element.querySelector('[data-copy-ip]').dataset.copyIp = status.lan_ip || '';
+    });
   }
 
   // Node tests exercise the same rendering used by the browser.
   if (typeof module !== 'undefined' && module.exports) module.exports = {renderCard};
+  if (typeof window !== 'undefined') window.LanPowerStatus = {renderCard, relativeTime};
   if (typeof document === 'undefined' || !document.querySelector('[data-status-sync]')) return;
+  if (document.body?.dataset.page === 'dashboard' && typeof EventSource !== 'undefined') return;
   const cards = [...document.querySelectorAll('[data-status-id]')];
   const message = document.querySelector('[data-status-sync]');
   let serial = 0, controller, timer;

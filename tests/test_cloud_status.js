@@ -27,7 +27,7 @@ async function main() {
   renderCard(card, online);
   assert.equal(card.field('badge').textContent, '在线');
   assert.equal(card.controls.shutdown.disabled, false);
-  assert.equal(card.controls.wake.disabled, true);
+  assert.equal(card.controls.wake.disabled, false);
   renderCard(card, {...online, cloud_agent: 'offline', remote_control_available: false});
   assert.equal(card.field('badge').textContent, '在线');
   assert.equal(card.controls.shutdown.disabled, true, 'LAN reachability does not imply permission to control');

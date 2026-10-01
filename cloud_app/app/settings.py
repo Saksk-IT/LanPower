@@ -14,6 +14,8 @@ class Settings:
     database_url: str
     admin_password_hash: str | None = field(repr=False)
     public_url: str
+    wx_app_id: str = field(default="", repr=False)
+    wx_app_secret: str = field(default="", repr=False)
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -22,7 +24,9 @@ class Settings:
         database_url = os.environ.get("LANPOWER_DATABASE_URL", "sqlite:////var/lib/lanpower-cloud/platform.db")
         admin_password_hash = os.environ.get("LANPOWER_ADMIN_PASSWORD_HASH") or None
         public_url = os.environ["LANPOWER_PUBLIC_URL"].rstrip("/")
-        settings = cls(legacy, database_url, admin_password_hash, public_url)
+        settings = cls(legacy, database_url, admin_password_hash, public_url,
+                       wx_app_id=os.environ.get("WX_APP_ID", ""),
+                       wx_app_secret=os.environ.get("WX_APP_SECRET", ""))
         settings.validate()
         return settings
 

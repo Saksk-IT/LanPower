@@ -14,6 +14,19 @@ from cloud_app.app.auth import digest
 from cloud_app.app.device_auth import ACCESS_SECONDS
 from cloud_app.app.models import AuditLog, ClientEnrollment, ClientSession, UsedClientRefreshToken, User
 
+CLIENT_ACTIONS = ("status", "sleep", "hibernate", "restart", "shutdown", "wake")
+
+
+def normalize_actions(actions: list[str] | None) -> str:
+    # Missing scopes preserve the old full-access enrollment API. An explicitly
+    # empty selection must never become an unrestricted authorization.
+    if actions is None:
+        return ""
+    if (not isinstance(actions, list) or not actions or
+            any(not isinstance(action, str) or action not in CLIENT_ACTIONS for action in actions)):
+        raise ValueError("请至少选择一项有效的客户端权限")
+    return ",".join(action for action in CLIENT_ACTIONS if action in actions)
+
 
 class Clients:
     def __init__(self, sessions: sessionmaker[Session]):
@@ -28,16 +41,18 @@ class Clients:
     def audit(db: Session, owner_id: str, event: str) -> None:
         db.add(AuditLog(id=str(uuid.uuid4()), owner_id=owner_id, event=event, created_at=int(time.time())))
 
-    def create_enrollment(self, owner_id: str, name: str) -> str:
+    def create_enrollment(self, owner_id: str, name: str, allowed_actions: list[str] | None = None) -> str:
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
             raise ValueError("请填写客户端名称，最多 100 个字")
+        scopes = normalize_actions(allowed_actions)
         code, now = secrets.token_urlsafe(32), int(time.time())
         with self.sessions.begin() as db:
             if not self.active(db, owner_id):
                 raise PermissionError("administrator unavailable")
             # A newly displayed QR replaces all unclaimed QR codes for this owner.
             db.execute(delete(ClientEnrollment).where(ClientEnrollment.owner_id == owner_id))
-            db.add(ClientEnrollment(code_hash=digest(code), owner_id=owner_id, name=name.strip(), expires_at=now + 600))
+            db.add(ClientEnrollment(code_hash=digest(code), owner_id=owner_id, name=name.strip(),
+                                    allowed_actions=scopes, expires_at=now + 600))
             self.audit(db, owner_id, "client_enrollment_created")
         return code
 
@@ -62,6 +77,7 @@ class Clients:
             client_id, access, refresh = str(uuid.uuid4()), secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             db.add(ClientSession(id=client_id, owner_id=enrollment.owner_id, name=enrollment.name,
                                  version=version, protocol_version=protocol,
+                                 allowed_actions=enrollment.allowed_actions,
                                  access_hash=digest(access), refresh_hash=digest(refresh),
                                  access_expires_at=now + ACCESS_SECONDS, refresh_expires_at=None,
                                  created_at=now, last_seen_at=now))
@@ -87,6 +103,12 @@ class Clients:
         if result is None:
             raise PermissionError("client unauthorized")
         return result
+
+    def permits(self, client_id: str, action: str) -> bool:
+        with self.sessions() as db:
+            client = db.get(ClientSession, client_id)
+            return bool(client and client.revoked_at is None and
+                        (not client.allowed_actions or action in client.allowed_actions.split(",")))
 
     def revoke_reuse(self, db: Session, token_hash: str, client_id: str) -> None:
         used = db.get(UsedClientRefreshToken, token_hash)

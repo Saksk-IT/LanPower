@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}计划任务{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">让电脑按时就绪</p><h1>计划任务</h1><p class="muted">按北京时间安排电源操作，每分钟检查一次到期任务。</p></div></div>
+<section class="card"><div class="card-heading"><h2>{{ icon('plus', 20) }}新建计划</h2></div>
+{% if devices %}<form method="post" action="/schedules" class="automation-form" data-confirm-message="此计划启用后，将在指定时间自动执行电源操作。请确认电脑上没有需要手动保存的工作。" data-confirm-target="启用计划任务">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>目标电脑<select name="device_id" required>{% for device in devices %}<option value="{{ device.id }}">{{ device.name }}</option>{% endfor %}</select></label>
+<label>操作<select name="action">{% for action in ['sleep','hibernate','restart','shutdown','wake'] %}<option value="{{ action }}">{{ action | action_label }}</option>{% endfor %}</select></label>
+<label>小时<input type="number" name="hour" min="0" max="23" value="22" required></label>
+<label>分钟<input type="number" name="minute" min="0" max="59" value="0" required></label>
+<label>星期<select name="weekday"><option value="-1">每天</option>{% for day in weekdays %}<option value="{{ loop.index0 }}">{{ day }}</option>{% endfor %}</select></label>
+<label>备注<input name="label" maxlength="100" placeholder="例如：晚间睡眠"></label>
+<button type="submit" class="primary">创建并启用</button>
+</form><p class="hint">远程开机需要已配置的唤醒网关。工作日计划可分别为周一至周五创建；电脑离线或网关不可用时，本次操作失败，详情见活动记录。</p>
+{% else %}<p class="muted">先<a href="/enroll">连接一台电脑</a>，即可创建计划。</p>{% endif %}</section>
+{% for task, device_name, revoked_at in tasks %}<section class="card">
+<div class="card-heading"><div><h2>{{ device_name }} · {{ task.action | action_label }}</h2><p class="hint">{{ task | schedule_description }}（北京时间）{% if task.label %} · {{ task.label }}{% endif %}</p></div><span class="badge {{ 'good' if task.enabled and not revoked_at else '' }}">{{ '设备已移除' if revoked_at else '已启用' if task.enabled else '已暂停' }}</span></div>
+<p class="muted">下次执行：{{ task.next_run_at | absolute_time if task.enabled and not revoked_at else '–' }}<br>上次尝试：{{ task.last_run_at | absolute_time }}</p>
+<div class="controls"><form method="post" action="/schedules/{{ task.id }}/toggle"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="secondary" {% if revoked_at and not task.enabled %}disabled{% endif %}>{{ '暂停' if task.enabled else '启用' }}</button></form>
+<form method="post" action="/schedules/{{ task.id }}/delete" data-confirm-message="删除后将不再执行此计划。" data-confirm-target="删除计划任务"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="danger-quiet">删除</button></form></div>
+</section>{% else %}<section class="card quiet-empty"><p>还没有计划任务。</p></section>{% endfor %}
+{% endblock %}

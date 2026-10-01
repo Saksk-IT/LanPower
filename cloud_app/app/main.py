@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
+from datetime import datetime
 import hmac
 from pathlib import Path
 import secrets
@@ -13,24 +15,29 @@ import qrcode
 from qrcode.image.svg import SvgPathImage
 from markupsafe import Markup
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, func, select
 from starlette.concurrency import run_in_threadpool
 from webauthn.helpers.exceptions import WebAuthnException
 
 from cloud_app.app.auth import SESSION_SECONDS, create_session, current_session, digest, parse_form, read_limited, require_csrf
+from cloud_app.app.automation import owned_device, record, register_automation_routes
 from cloud_app.app.database import make_engine, migrate, session_factory
 from cloud_app.app.identity import BootstrapCode, Identity
 from cloud_app.app.enrollment import EnrollmentError
-from cloud_app.app.models import Device, User
+from cloud_app.app.models import AuditLog, Device, NotificationConfig, User
+from cloud_app.app.clients import CLIENT_ACTIONS
+from cloud_app.app.events import device_events
+from cloud_app.app.notify import Notifier
+from cloud_app.app.scheduled import SCHEDULE_ZONE, Scheduler, schedule_description
 from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.6.1"
+VERSION = "1.7.0"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -44,6 +51,11 @@ EVENT_LABELS.update({"client_enrollment_created": "创建客户端二维码", "c
                      "client_refresh_reuse": "客户端凭据异常"})
 EVENT_LABELS.update({"gateway_linked": "关联唤醒网关", "gateway_unlinked": "移除网关关联"})
 EVENT_LABELS.update({"device_credential_failed": "设备授权失败", "client_credential_failed": "客户端授权失败"})
+EVENT_LABELS.update({"schedule_created": "创建计划任务", "schedule_deleted": "删除计划任务",
+                     "schedule_fired": "计划任务已执行", "schedule_failed": "计划任务执行失败",
+                     "schedule_toggled": "切换计划任务状态", "device_grouped": "修改设备分组",
+                     "notification_saved": "保存离线通知", "notification_deleted": "删除离线通知",
+                     "notification_toggled": "切换离线通知状态"})
 templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
@@ -60,6 +72,9 @@ def relative_time(value: int | None) -> str:
 
 
 templates.env.filters["relative_time"] = relative_time
+templates.env.filters["absolute_time"] = lambda value: (datetime.fromtimestamp(value, SCHEDULE_ZONE)
+    .strftime("%Y-%m-%d %H:%M") if value is not None else "–")
+templates.env.filters["schedule_description"] = schedule_description
 
 
 class LoginLimiter:
@@ -107,11 +122,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bootstrap.disable()
     limiter = LoginLimiter()
     enrollment_limiter = LoginLimiter()
-    app = FastAPI(title="LanPower Cloud", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+    notifier = Notifier(platform)
+    scheduler = Scheduler(platform, notifier)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        scheduler.start()
+        try:
+            yield
+        finally:
+            await run_in_threadpool(scheduler.stop)
+            engine.dispose()
+
+    app = FastAPI(title="LanPower Cloud", version=VERSION, docs_url=None, redoc_url=None,
+                  openapi_url=None, lifespan=lifespan)
     app.state.platform = platform
     app.state.identity = identity
     app.state.bootstrap = bootstrap
     app.state.engine = engine
+    app.state.scheduler = scheduler
     app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
     @app.exception_handler(HTTPException)
@@ -142,7 +171,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def page(request: Request, name: str, session, **context):
         status = context.pop("status", 200)
         base = {"request": request, "page": name, "csrf": request.cookies.get("lp_csrf", ""),
-                "version": VERSION, "public_url": settings.public_url}
+                "version": VERSION, "public_url": settings.public_url, "action_labels": ACTION_LABELS}
         base.update(context)
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
 
@@ -168,15 +197,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, "unauthorized")
         return session
 
-    def client_owner(request: Request, *, mutation: bool = False) -> str:
+    def client_owner(request: Request, *, mutation: bool = False, action: str | None = None) -> str:
         authorization = request.headers.get("authorization")
         if authorization is not None:
             if not authorization.startswith("Bearer "):
                 raise HTTPException(401, "unauthorized")
             try:
-                return platform.mobile.authorize(authorization[7:])[0]
+                owner_id, client_id = platform.mobile.authorize(authorization[7:])
             except PermissionError as error:
                 raise HTTPException(401, str(error)) from error
+            if action is not None and not platform.mobile.permits(client_id, action):
+                raise HTTPException(403, f"此客户端无权执行“{ACTION_LABELS.get(action, action)}”操作")
+            return owner_id
         session = session_owner(request)
         if mutation:
             json_csrf(request, session)
@@ -453,7 +485,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session, redirect = browser_guard(request)
         if redirect: return redirect
         devices = platform.devices(session.owner_id)
+        groups: dict[str, list] = {}
+        for device in devices:
+            if device.device_type == "windows":
+                groups.setdefault(device.meta.get("group") or "", []).append(device)
         return page(request, "dashboard", session, devices=devices,
+                    groups=groups,
                     device_names={device.id: device.name for device in devices},
                     statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices},
                     presence=platform.presence(), commands=platform.recent_commands(session.owner_id))
@@ -588,7 +625,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not enrollment_limiter.allow_ceremony(session.owner_id):
             raise HTTPException(429, "尝试次数过多，请稍后重试")
         try:
-            code = platform.mobile.create_enrollment(session.owner_id, form.get("name", ""))
+            actions = ([action for action in CLIENT_ACTIONS if form.get("allow_" + action) == "on"]
+                       if form.get("scopes_present") == "1" else None)
+            code = platform.mobile.create_enrollment(session.owner_id, form.get("name", ""), actions)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         pairing = settings.public_url.rstrip("/") + "/#lanpower-client=" + code
@@ -648,10 +687,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.get("/activity")
-    def activity_page(request: Request):
+    def activity_page(request: Request, event: str = "", page_number: int = Query(1, alias="page", ge=1)):
         session, redirect = browser_guard(request)
         if redirect: return redirect
-        return page(request, "activity", session, events=platform.audit(session.owner_id),
+        filters = [AuditLog.owner_id == session.owner_id]
+        if event:
+            filters.append(AuditLog.event == event)
+        with platform.sessions() as db:
+            total = db.scalar(select(func.count()).select_from(AuditLog).where(*filters))
+            total_pages = max(1, (total + 49) // 50)
+            page_number = min(page_number, total_pages)
+            events = db.execute(select(AuditLog, Device.name.label("device_name"))
+                .outerjoin(Device, and_(Device.id == AuditLog.target_device_id, Device.owner_id == session.owner_id))
+                .where(*filters).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+                .offset((page_number - 1) * 50).limit(50)).all()
+        return page(request, "activity", session, events=events, selected_event=event,
+                    event_labels=EVENT_LABELS, page_number=page_number, total_pages=total_pages, total=total,
                     device_names={device.id: device.name for device in platform.devices(session.owner_id)},
                     commands=platform.recent_commands(session.owner_id))
 
@@ -659,9 +710,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def settings_page(request: Request):
         session, redirect = browser_guard(request)
         if redirect: return redirect
+        with platform.sessions() as db:
+            notifications = db.execute(select(NotificationConfig, Device.name.label("device_name"))
+                .join(Device, Device.id == NotificationConfig.device_id)
+                .where(NotificationConfig.owner_id == session.owner_id, Device.owner_id == session.owner_id)
+                .order_by(Device.name, NotificationConfig.id)).all()
         return page(request, "settings", session, passkeys=identity.passkeys(session.owner_id),
                     recovery_count=identity.recovery_count(session.owner_id)[1],
-                    password_enabled=settings.admin_password_hash is not None)
+                    password_enabled=settings.admin_password_hash is not None,
+                    devices=platform.devices(session.owner_id), notifications=notifications,
+                    notifications_enabled=notifier.enabled)
 
     @app.get("/system")
     def system_page(request: Request):
@@ -823,12 +881,87 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(404, str(error)) from error
 
+    @app.get("/api/v2/events/devices")
+    async def events(request: Request):
+        session = session_owner(request)
+
+        def snapshot():
+            statuses = []
+            for device in platform.devices(session.owner_id):
+                try:
+                    statuses.append(platform.device_status(session.owner_id, device.id))
+                except ValueError:
+                    # A device can be revoked between listing and reading it.
+                    continue
+            return statuses
+
+        return StreamingResponse(device_events(request, snapshot, lambda: web_session(request) is not None),
+            media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"})
+
+    @app.get("/api/v2/devices/{device_id}/online")
+    def device_online(request: Request, device_id: str):
+        owner_id = client_owner(request)
+        try:
+            status = platform.device_status(owner_id, device_id)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+        return {"online": status["state"] == "online", "last_seen": status["last_seen_at"], "state": status["state"]}
+
+    @app.post("/api/v2/devices/{device_id}/group")
+    async def device_group(request: Request, device_id: str):
+        session = session_owner(request)
+        json_csrf(request, session)
+        payload = await json_body(request)
+        if (set(payload) != {"group"} or not isinstance(payload["group"], str) or
+                len(payload["group"].strip()) > 50 or any(ord(c) < 32 for c in payload["group"])):
+            raise HTTPException(400, "分组名称最多 50 个字，不能包含控制字符")
+        group = payload["group"].strip()
+        with platform.sessions.begin() as db:
+            device = owned_device(db, session.owner_id, device_id, windows=True)
+            metadata = dict(device.meta)
+            if group:
+                metadata["group"] = group
+            else:
+                metadata.pop("group", None)
+            device.meta = metadata
+            record(db, session.owner_id, "device_grouped", device.id)
+        return {"ok": True, "group": group}
+
+    @app.post("/api/v2/devices/batch-command")
+    async def batch_command(request: Request):
+        # Batch management is a browser operation. Mobile tokens cannot bypass
+        # their command scopes by selecting a different endpoint.
+        session = session_owner(request)
+        if request.headers.get("authorization") is not None:
+            raise HTTPException(403, "批量操作需要浏览器登录")
+        json_csrf(request, session)
+        payload = await json_body(request)
+        ids, action = payload.get("device_ids"), payload.get("action")
+        if (set(payload) != {"device_ids", "action"} or not isinstance(ids, list) or not 1 <= len(ids) <= 20
+                or any(not isinstance(value, str) or not 1 <= len(value) <= 36 for value in ids)
+                or len(set(ids)) != len(ids) or not isinstance(action, str) or action not in ACTION_LABELS):
+            raise HTTPException(400, "请选择 1–20 台不同的电脑和有效操作")
+        # Validate the entire selection before issuing the first command.
+        with platform.sessions() as db:
+            for device_id in ids:
+                owned_device(db, session.owner_id, device_id, windows=True)
+        results = []
+        for device_id in ids:
+            try:
+                result = await run_in_threadpool(platform.issue_command, session.owner_id, device_id, action)
+                results.append({"device_id": device_id, **result, "ok": bool(result.get("ok") or result.get("accepted"))})
+            except (ValueError, ConnectionError, BlockingIOError) as error:
+                results.append({"device_id": device_id, "ok": False, "error": str(error)})
+        return {"results": results}
+
     @app.post("/api/v2/devices/{device_id}/commands")
     async def api_command(request: Request, device_id: str):
         owner_id = client_owner(request, mutation=True)
         payload = await json_body(request)
-        if set(payload) != {"action"} or not isinstance(payload["action"], str):
+        if set(payload) != {"action"} or not isinstance(payload["action"], str) or payload["action"] not in ACTION_LABELS:
             raise HTTPException(400, "invalid command request")
+        if request.headers.get("authorization") is not None:
+            client_owner(request, action=payload["action"])
         try:
             return await run_in_threadpool(platform.issue_command, owner_id, device_id, payload["action"])
         except (ValueError, ConnectionError, BlockingIOError) as error:
@@ -842,4 +975,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(404, str(error)) from error
 
+    register_automation_routes(app, platform, session_owner, browser_guard, page)
     return app

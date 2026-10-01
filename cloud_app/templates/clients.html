@@ -16,6 +16,8 @@
   <form method="post" action="/clients/enroll" class="login-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>手机名称<input name="name" maxlength="100" placeholder="例如：我的 iPhone" required autocomplete="off"></label>
+    <input type="hidden" name="scopes_present" value="1">
+    <fieldset class="permission-options"><legend>允许执行的操作</legend>{% for action, label in action_labels.items() %}<label class="checkbox-field"><input type="checkbox" name="allow_{{ action }}" checked>{{ label }}</label>{% endfor %}</fieldset>
     <button type="submit" class="primary">{{ icon('plus', 18) }}{{ '重新生成二维码' if pairing else '生成授权二维码' }}</button>
   </form>
 {% if pairing %}</details>{% endif %}
@@ -24,7 +26,7 @@
 </div>
 <div class="section-heading"><h2>已授权手机 <span class="count">{{ clients | length }}</span></h2><span class="muted small">只保留你信任的手机</span></div>
 {% for client in clients %}
-<section class="card list-card"><div class="device-identity"><span class="icon-tile subtle">{{ icon('phone', 23) }}</span><div><h2>{{ client.name }}</h2><p class="hint">最近使用 {{ client.last_seen_at | relative_time }}<span class="text-divider">·</span>授权时版本：{{ client.version or '尚未上报' }}</p></div></div>
+<section class="card list-card"><div class="device-identity"><span class="icon-tile subtle">{{ icon('phone', 23) }}</span><div><h2>{{ client.name }}</h2><p class="hint">最近使用 {{ client.last_seen_at | relative_time }}<span class="text-divider">·</span>授权时版本：{{ client.version or '尚未上报' }}</p><p class="hint">允许操作：{% if client.allowed_actions %}{% for action in client.allowed_actions.split(',') %}{{ action | action_label }}{{ '、' if not loop.last else '' }}{% endfor %}{% else %}全部操作{% endif %}</p></div></div>
 <form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="撤销后，此手机将无法再通过 Cloud 控制电脑，需要重新扫码授权。" data-confirm-target="{{ client.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="danger-quiet">撤销授权</button></form></section>
 {% else %}<section class="card quiet-empty">{{ icon('phone', 24) }}<p>还没有授权手机，使用上方二维码开始连接。</p></section>{% endfor %}
 {% if legacy_clients %}<details class="help-details"><summary>旧版客户端连接（{{ legacy_clients | length }}）</summary>{% for client in legacy_clients %}<h3>{{ client.name }}</h3><p>扫描新二维码可升级为独立手机授权。旧凭据请在服务器的旧版配置中移除。</p>{% endfor %}</details>{% endif %}

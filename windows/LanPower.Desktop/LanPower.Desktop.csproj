@@ -13,6 +13,9 @@
     <Using Remove="System.Drawing" />
     <Resource Include="Assets\LanPower.ico" />
     <Resource Include="Assets\LanPower.png" />
+    <Resource Include="Resources\tray-green.ico" />
+    <Resource Include="Resources\tray-yellow.ico" />
+    <Resource Include="Resources\tray-gray.ico" />
     <ProjectReference Include="..\LanPower.Shared\LanPower.Shared.csproj" />
   </ItemGroup>
 </Project>

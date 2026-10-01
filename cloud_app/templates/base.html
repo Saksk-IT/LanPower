@@ -1,7 +1,7 @@
 {% from "components.html" import icon %}
 {% set gateway_enrollment = page == 'approve' and (request.query_params.get('type') == 'gateway' or (device and device.device_type == 'gateway')) %}
 {% set nav_page = 'gateways' if gateway_enrollment else 'devices' if page in ['enroll', 'approve'] else 'dashboard' if page == 'result' else page %}
-{% set page_names = {'dashboard':'总览', 'devices':'我的电脑', 'gateways':'远程唤醒', 'clients':'手机授权', 'activity':'活动记录', 'settings':'设置'} %}
+{% set page_names = {'dashboard':'总览', 'devices':'我的电脑', 'gateways':'远程唤醒', 'clients':'手机授权', 'schedules':'计划任务', 'activity':'活动记录', 'settings':'设置'} %}
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -14,11 +14,12 @@
   <link rel="stylesheet" href="/static/app.css?v={{ version }}">
   <script defer src="/static/app.js?v={{ version }}"></script>
   <script defer src="/static/status.js?v={{ version }}"></script>
+  {% block scripts %}{% endblock %}
 </head>
-<body>
+<body data-page="{{ page }}">
   <a href="#main-content" class="skip-link">跳到主要内容</a>
   <div class="shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="main-navigation">
       <a class="brand" href="/dashboard"><span class="brand-icon">{{ icon('power', 24) }}</span><span>LanPower<small>让连接，触手可及</small></span></a>
       <nav aria-label="主要导航">
         <span class="nav-label">工作空间</span>
@@ -26,7 +27,7 @@
         <a class="nav-item {{ 'active' if nav_page == key else '' }}" href="{{ url }}" {% if nav_page == key %}aria-current="page"{% endif %}>{{ icon(glyph) }}<span>{{ label }}</span></a>
         {% endfor %}
         <span class="nav-label nav-label-second">管理</span>
-        {% for key, label, glyph in [('activity','活动记录','activity'),('settings','设置','settings')] %}
+        {% for key, label, glyph in [('schedules','计划任务','clock'),('activity','活动记录','activity'),('settings','设置','settings')] %}
         <a class="nav-item {{ 'active' if nav_page == key else '' }}" href="/{{ key }}" {% if nav_page == key %}aria-current="page"{% endif %}>{{ icon(glyph) }}<span>{{ label }}</span></a>
         {% endfor %}
       </nav>
@@ -36,7 +37,7 @@
       </div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><div class="breadcrumb">个人控制台 <span>/</span> <strong>{{ page_names.get(nav_page, '控制台') }}</strong></div><div class="account"><span class="avatar">管</span><span>管理员</span></div></header>
+      <header class="topbar"><button type="button" class="secondary mobile-menu" data-nav-toggle aria-controls="main-navigation" aria-expanded="false" aria-label="展开导航">☰ 菜单</button><div class="breadcrumb">个人控制台 <span>/</span> <strong>{{ page_names.get(nav_page, '控制台') }}</strong></div><div class="account"><span class="avatar">管</span><span>管理员</span></div></header>
       <main class="content" id="main-content" tabindex="-1">
         {% block content %}{% endblock %}
         <footer class="workspace-footer"><span>LanPower · 连接你的每一台电脑</span><span>Cloud {{ version }}</span></footer>

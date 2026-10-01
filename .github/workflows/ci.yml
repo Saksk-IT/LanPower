@@ -95,6 +95,8 @@ jobs:
         run: node tests/test_mini_program_v2.js
       - name: Cloud live status UI tests
         run: node tests/test_cloud_status.js
+      - name: Cloud wake feedback tests
+        run: node tests/test_cloud_dashboard.js
 
   router-gateway:
     runs-on: ubuntu-latest

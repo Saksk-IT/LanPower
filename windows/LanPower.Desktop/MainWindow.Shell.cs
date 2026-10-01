@@ -105,7 +105,6 @@ public partial class MainWindow
         LastRefresh.Text = $"已刷新 {_lastSuccess:HH:mm:ss} · 每 {_statusTimer.Interval.TotalSeconds:0} 秒更新";
         if (_networkIdentity is not null && _networkIdentity != status.LanIp + status.Mac) ClearPairingQr();
         _networkIdentity = status.LanIp + status.Mac;
-        if (Application.Current is App app) app.UpdateTray(lan ? "局域网已连接" : "服务运行中，请检查网络");
     }
 
     private void ApplyUnavailableDisplay()
@@ -126,7 +125,6 @@ public partial class MainWindow
         LastRefresh.Text = _lastSuccess is null ? "等待服务连接" : $"最近成功 {_lastSuccess:HH:mm:ss}";
         ClearPairingQr();
         UpdateCloudButtons();
-        if (Application.Current is App app) app.UpdateTray("后台服务未连接");
     }
 
     private void UpdateCloudButtons()

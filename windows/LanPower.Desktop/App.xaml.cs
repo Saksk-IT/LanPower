@@ -1,5 +1,10 @@
 using System.Windows;
 using System.Security.Principal;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 using Drawing = System.Drawing;
 
@@ -12,7 +17,12 @@ public partial class App : Application
     private EventWaitHandle? _activation;
     private RegisteredWaitHandle? _activationWait;
     private Forms.NotifyIcon? _tray;
-    private Drawing.Icon? _icon;
+    private readonly Dictionary<string, Drawing.Icon> _trayIcons = new();
+    private readonly DispatcherTimer _trayTimer = new() { Interval = TimeSpan.FromSeconds(30) };
+    private readonly CancellationTokenSource _trayLifetime = new();
+    private readonly HttpClient _trayHttp = new(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
+        { Timeout = TimeSpan.FromSeconds(5) };
+    private bool _trayUpdating;
     private Forms.ContextMenuStrip? _trayMenu;
     private bool _ownsInstance;
     private bool _trayHintShown;
@@ -48,25 +58,32 @@ public partial class App : Application
     {
         try
         {
-            var resource = GetResourceStream(new Uri("pack://application:,,,/LanPower.Desktop;component/Assets/LanPower.ico"));
-            using var stream = resource.Stream;
-            using var original = new Drawing.Icon(stream);
-            _icon = (Drawing.Icon)original.Clone();
+            foreach (var color in new[] { "green", "yellow", "gray" })
+            {
+                var resource = GetResourceStream(new Uri($"pack://application:,,,/LanPower.Desktop;component/Resources/tray-{color}.ico"));
+                using var stream = resource.Stream;
+                using var original = new Drawing.Icon(stream);
+                _trayIcons[color] = (Drawing.Icon)original.Clone();
+            }
             _trayMenu = new Forms.ContextMenuStrip();
             _trayMenu.Items.Add("打开 LanPower", null, (_, _) => RestoreWindow());
             _trayMenu.Items.Add("手机配对", null, (_, _) => RestoreWindow("pairing"));
             _trayMenu.Items.Add("查看日志", null, (_, _) => RestoreWindow("logs"));
             _trayMenu.Items.Add(new Forms.ToolStripSeparator());
             _trayMenu.Items.Add("退出界面", null, async (_, _) => await ExitInterfaceAsync());
-            _tray = new Forms.NotifyIcon { Icon = _icon, Text = "LanPower · 正在连接服务", ContextMenuStrip = _trayMenu, Visible = true };
+            _tray = new Forms.NotifyIcon { Icon = _trayIcons["gray"], Text = "LanPower · 服务未运行", ContextMenuStrip = _trayMenu, Visible = true };
             _tray.DoubleClick += (_, _) => RestoreWindow();
+            _trayTimer.Tick += async (_, _) => await RefreshTrayAsync();
+            _trayTimer.Start();
+            _ = RefreshTrayAsync();
         }
         catch
         {
             _tray?.Dispose();
             _tray = null;
             _trayMenu?.Dispose();
-            _icon?.Dispose();
+            foreach (var icon in _trayIcons.Values) icon.Dispose();
+            _trayIcons.Clear();
         }
     }
 
@@ -79,9 +96,35 @@ public partial class App : Application
         window.Activate();
     }
 
-    public void UpdateTray(string state)
+    internal static (string Color, string Tooltip) TrayState(bool serviceRunning, bool cloudConnected) =>
+        !serviceRunning ? ("gray", "LanPower · 服务未运行") : cloudConnected
+            ? ("green", "LanPower · 已连接云端") : ("yellow", "LanPower · 未连接云端");
+
+    private async Task RefreshTrayAsync()
     {
-        if (_tray is not null) _tray.Text = "LanPower · " + state;
+        if (_trayUpdating || IsExiting || _tray is null) return;
+        _trayUpdating = true;
+        var state = TrayState(false, false);
+        try
+        {
+            // IPC grants only a read-only status capability, not the LAN secret.
+            using var access = await PipeClient.RequestAsync("tray_status_access", _trayLifetime.Token);
+            var port = access.RootElement.GetProperty("port").GetInt32();
+            if (port is < 1 or > 65535) throw new InvalidOperationException("Invalid local port");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{port}/api/status");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", access.RootElement.GetProperty("token").GetString());
+            using var response = await _trayHttp.SendAsync(request, _trayLifetime.Token);
+            response.EnsureSuccessStatusCode();
+            using var status = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: _trayLifetime.Token);
+            state = TrayState(true, status?.RootElement.TryGetProperty("cloud_connected", out var connected) == true &&
+                connected.ValueKind == JsonValueKind.True);
+        }
+        catch (Exception error) when (error is HttpRequestException or System.IO.IOException or
+            OperationCanceledException or JsonException or InvalidOperationException or KeyNotFoundException) { }
+        finally { _trayUpdating = false; }
+        if (IsExiting || _tray is null) return;
+        _tray.Icon = _trayIcons[state.Color];
+        _tray.Text = state.Tooltip;
     }
 
     public void NotifyHidden()
@@ -95,6 +138,9 @@ public partial class App : Application
     {
         if (IsExiting) return;
         IsExiting = true;
+        _trayTimer.Stop();
+        _trayLifetime.Cancel();
+        _trayHttp.Dispose();
         if (MainWindow is MainWindow window) await window.CancelPendingEnrollmentAsync();
         Shutdown();
     }
@@ -108,9 +154,12 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         IsExiting = true;
+        _trayTimer.Stop();
+        _trayLifetime.Cancel();
+        _trayHttp.Dispose();
         _tray?.Dispose();
         _trayMenu?.Dispose();
-        _icon?.Dispose();
+        foreach (var icon in _trayIcons.Values) icon.Dispose();
         _activationWait?.Unregister(null);
         _activation?.Dispose();
         if (_ownsInstance) _instance?.ReleaseMutex();

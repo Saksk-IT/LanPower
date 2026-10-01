@@ -13,6 +13,9 @@ public sealed class CloudAgent(
     Func<LanConfig>? currentConfig = null) : BackgroundService
 {
     private readonly CloudTokenSession _tokens = new(client, credentials);
+    public CloudConnectionStatus ConnectionStatus { get; } = new();
+    public bool CloudConnected => ConnectionStatus.Connected;
+    public long CloudLastSeen => ConnectionStatus.LastSeen;
     private readonly object _connectionSync = new();
     private CancellationTokenSource _connection = new();
     private readonly SemaphoreSlim _heartbeatWakeup = new(0, 1);
@@ -84,6 +87,7 @@ public sealed class CloudAgent(
             _connection = new CancellationTokenSource();
             previous.Cancel();
             previous.Dispose();
+            ConnectionStatus.Reset();
         }
     }
 
@@ -268,6 +272,7 @@ public sealed class CloudAgent(
                 ?? throw new InvalidDataException("Cloud 命令响应无效");
             token.ThrowIfCancellationRequested();
             var command = data.RootElement.GetProperty("command");
+            ConnectionStatus.RecordSuccess(poll: true);
             if (command.ValueKind != JsonValueKind.Null) await ProcessCommandAsync(saved, command, token);
         }
     }
@@ -297,7 +302,13 @@ public sealed class CloudAgent(
                 throw new UnauthorizedAccessException();
             }
             if (path == "/api/v2/windows/heartbeat" && response.StatusCode == HttpStatusCode.BadRequest) return response;
-            try { response.EnsureSuccessStatusCode(); return response; }
+            try
+            {
+                response.EnsureSuccessStatusCode();
+                token.ThrowIfCancellationRequested();
+                ConnectionStatus.RecordSuccess();
+                return response;
+            }
             catch { response.Dispose(); throw; }
         }
     }

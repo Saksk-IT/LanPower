@@ -1,4 +1,11 @@
 const confirmation = document.querySelector('[data-confirm-dialog]');
+document.querySelector('[data-nav-toggle]')?.addEventListener('click', event => {
+  const button = event.currentTarget;
+  const expanded = button.getAttribute('aria-expanded') !== 'true';
+  button.setAttribute('aria-expanded', String(expanded));
+  button.setAttribute('aria-label', expanded ? '收起导航' : '展开导航');
+  document.getElementById('main-navigation').classList.toggle('mobile-open', expanded);
+});
 const approvedForms = new WeakSet();
 let pendingConfirmation;
 document.querySelectorAll('form[data-confirm], form[data-confirm-message]').forEach((form) => {

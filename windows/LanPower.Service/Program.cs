@@ -37,9 +37,11 @@ builder.Services.AddSingleton(new ReplayStore(dataDirectory));
 builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
     { Timeout = TimeSpan.FromSeconds(35) });
 builder.Services.AddSingleton<CloudAgent>();
+builder.Services.AddSingleton<LocalStatusAccess>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<CloudAgent>());
 builder.Services.AddHostedService(provider => new PipeWorker(provider.GetRequiredService<CloudAgent>(),
-    provider.GetRequiredService<ServiceLog>(), provider.GetRequiredService<LanNetworkManager>(), dryRun));
+    provider.GetRequiredService<ServiceLog>(), provider.GetRequiredService<LanNetworkManager>(), dryRun,
+    provider.GetRequiredService<LocalStatusAccess>()));
 var app = builder.Build();
 
 app.Use(async (context, next) =>
@@ -58,9 +60,11 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-app.MapGet("/api/status", (HttpContext context) =>
-    config.IsAuthorized(context.Request.Headers.Authorization) ?
-        Results.Json(new { ok = true, device = Environment.MachineName, state = "online" }) :
+app.MapGet("/api/status", (HttpContext context, CloudAgent cloud, LocalStatusAccess desktop) =>
+    config.IsAuthorized(context.Request.Headers.Authorization) ||
+    desktop.IsAuthorized(context.Connection.RemoteIpAddress, context.Request.Headers.Authorization) ?
+        Results.Json(new { ok = true, device = Environment.MachineName, state = "online",
+            cloud_connected = cloud.CloudConnected, cloud_last_seen = cloud.CloudLastSeen }) :
         Results.Json(new { error = "not paired" }, statusCode: 401));
 
 app.MapGet("/api/wake-profile", (HttpContext context, CloudAgent cloud) =>

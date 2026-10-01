@@ -27,6 +27,15 @@ internal static class Program
             // Dispatcher pumping must not launch or activate the installed app.
             var app = new App { LaunchShell = false };
             app.InitializeComponent();
+            Check(App.TrayState(false, false) == ("gray", "LanPower · 服务未运行"), "stopped service tray state");
+            Check(App.TrayState(true, false) == ("yellow", "LanPower · 未连接云端"), "disconnected cloud tray state");
+            Check(App.TrayState(true, true) == ("green", "LanPower · 已连接云端"), "connected cloud tray state");
+            foreach (var color in new[] { "gray", "yellow", "green" })
+            {
+                using var stream = Application.GetResourceStream(new Uri($"pack://application:,,,/LanPower.Desktop;component/Resources/tray-{color}.ico")).Stream;
+                var icon = BitmapFrame.Create(stream);
+                Check(icon.PixelWidth == 16 && icon.PixelHeight == 16, "tray icon dimensions: " + color);
+            }
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
             var available = true;
             var status = new ServiceStatus("我的电脑", "192.168.1.100", "02:11:22:33:44:55", "系统允许唤醒",

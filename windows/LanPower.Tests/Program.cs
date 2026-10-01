@@ -73,6 +73,16 @@ try
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     using var status = await client.GetAsync("/api/status");
     Check(status.IsSuccessStatusCode && (await status.Content.ReadAsStringAsync()).Contains("online"), "legacy status response");
+    using var localStatus = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
+    Check(!localStatus.RootElement.GetProperty("cloud_connected").GetBoolean() &&
+        localStatus.RootElement.GetProperty("cloud_last_seen").GetInt64() == 0, "unconfigured Cloud connection status");
+    using var desktopAccess = await RequestPipeAsync("tray_status_access");
+    using var desktopHttp = new HttpClient { BaseAddress = client.BaseAddress };
+    desktopHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+        desktopAccess.RootElement.GetProperty("token").GetString());
+    Check((await desktopHttp.GetAsync("/api/status")).IsSuccessStatusCode, "desktop status capability can read status");
+    Check((int)(await desktopHttp.PostAsync("/api/power", new StringContent("{\"action\":\"shutdown\"}", Encoding.UTF8,
+        "application/json"))).StatusCode == 401, "desktop status capability cannot execute power actions");
     using var setup = await client.GetAsync("/setup");
     Check(setup.IsSuccessStatusCode && (await setup.Content.ReadAsStringAsync()).Contains(token), "loopback pairing page");
     using var qr = await client.GetAsync("/setup/qr.svg");

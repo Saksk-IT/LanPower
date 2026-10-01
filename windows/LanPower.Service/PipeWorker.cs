@@ -7,7 +7,8 @@ using LanPower.Shared;
 
 namespace LanPower.Service;
 
-public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManager network, bool dryRun = false) : BackgroundService
+public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManager network, bool dryRun = false,
+    LocalStatusAccess? statusAccess = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -70,6 +71,8 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
                     "status" => JsonSerializer.Serialize(new { ok = true, status = GetStatus() }),
                     "logs" => JsonSerializer.Serialize(new { ok = true, logs = log.ReadTail() }),
                     "network_settings" => JsonSerializer.Serialize(new { ok = true, settings = network.Settings() }),
+                    "tray_status_access" when statusAccess is not null => JsonSerializer.Serialize(new
+                        { ok = true, port = network.Config.Port, token = statusAccess.Token }),
                     _ => await EnrollAsync(line, timeout.Token)
                 };
                 await writer.WriteLineAsync(response.AsMemory(), timeout.Token);

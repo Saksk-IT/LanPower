@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, JSON, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -108,6 +108,7 @@ class ClientSession(Base):
     name: Mapped[str] = mapped_column(String(100))
     version: Mapped[str] = mapped_column(String(32), default="")
     protocol_version: Mapped[str] = mapped_column(String(16), default="2")
+    allowed_actions: Mapped[str] = mapped_column(String(100), default="", server_default="")
     access_hash: Mapped[str] = mapped_column(String(64), unique=True)
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
     access_expires_at: Mapped[int] = mapped_column(Integer)
@@ -123,6 +124,7 @@ class ClientEnrollment(Base):
     code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
+    allowed_actions: Mapped[str] = mapped_column(String(100), default="", server_default="")
     expires_at: Mapped[int] = mapped_column(Integer)
     used_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -251,3 +253,41 @@ class AuditLog(Base):
     target_device_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     route: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_at: Mapped[int] = mapped_column(Integer)
+
+
+class ScheduledTask(Base):
+    __tablename__ = "scheduled_tasks"
+    __table_args__ = (
+        CheckConstraint("hour BETWEEN 0 AND 23", name="ck_schedule_hour"),
+        CheckConstraint("minute BETWEEN 0 AND 59", name="ck_schedule_minute"),
+        CheckConstraint("weekday BETWEEN -1 AND 6", name="ck_schedule_weekday"),
+        CheckConstraint("action IN ('sleep','hibernate','restart','shutdown','wake')", name="ck_schedule_action"),
+        Index("ix_scheduled_tasks_due", "enabled", "next_run_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    action: Mapped[str] = mapped_column(String(16))
+    hour: Mapped[int] = mapped_column(Integer)
+    minute: Mapped[int] = mapped_column(Integer)
+    weekday: Mapped[int] = mapped_column(Integer, default=-1)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    label: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[int] = mapped_column(Integer)
+    last_run_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_run_at: Mapped[int] = mapped_column(Integer)
+
+
+class NotificationConfig(Base):
+    __tablename__ = "notification_configs"
+    __table_args__ = (CheckConstraint("offline_minutes BETWEEN 1 AND 10080", name="ck_notification_threshold"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    openid: Mapped[str] = mapped_column(String(128))
+    template_id: Mapped[str] = mapped_column(String(128))
+    offline_minutes: Mapped[int] = mapped_column(Integer, default=5)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    last_sent_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
