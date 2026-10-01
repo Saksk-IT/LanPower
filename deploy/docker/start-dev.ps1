@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Build)
+param([switch]$Build, [switch]$WebOnly)
 
 $ErrorActionPreference = 'Stop'
 $composeArgs = @('compose', '-p', 'lanpower-dev', '-f', (Join-Path $PSScriptRoot 'compose.dev.yml'))
-$image = 'lanpower-cloud:1.7.0-dev.1'
+$image = 'lanpower-cloud:1.7.0-dev.2'
 $privateDir = Join-Path $PSScriptRoot 'private'
 $envFile = Join-Path $PSScriptRoot '.env.dev'
 $loginFile = Join-Path $privateDir 'dev-login.txt'
@@ -75,13 +75,8 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 
 Invoke-Docker @composeArgs up -d --no-build --wait --wait-timeout 120
 Invoke-Docker @composeArgs cp caddy:/data/caddy/pki/authorities/local/root.crt $certificateFile
-$certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($certificateFile)
-if (-not (Test-Path -LiteralPath ('Cert:\CurrentUser\Root\' + $certificate.Thumbprint))) {
-    & certutil.exe -user -f -addstore Root $certificateFile | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Could not trust the local development certificate.' }
-}
+& (Join-Path $PSScriptRoot 'trust-dev-certificate.ps1') -WebOnly:$WebOnly
 $health = Invoke-RestMethod -Uri 'https://localhost:8443/healthz' -TimeoutSec 15
 if (-not $health.ok) { throw 'The Cloud health check failed.' }
 Write-Output ('LanPower Cloud ' + $health.version + ' is ready: https://localhost:8443')
 Write-Output ('Local login details: ' + $loginFile)
-Write-Output ('Trusted development CA: ' + $certificate.Thumbprint)
