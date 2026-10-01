@@ -109,3 +109,39 @@ class DeviceTokens:
         if result is None:
             raise PermissionError("refresh unavailable")
         return result
+
+    def renew(self, payload: dict, *, expected_type: str | None = None) -> dict:
+        """Renew short-lived access without consuming the device authorization.
+
+        The retryable endpoint lets a gateway recover when Cloud committed a
+        renewal but the response or the local credential write was interrupted.
+        The long-lived refresh token remains unchanged and is never recorded as
+        used, so a restart can safely submit it again.
+        """
+        if (set(payload) != {"device_id", "refresh_token"} or
+                not all(isinstance(value, str) for value in payload.values()) or
+                not 1 <= len(payload["refresh_token"]) <= 128 or len(payload["device_id"]) > 64):
+            raise ValueError("invalid renewal request")
+        now, result = int(time.time()), None
+        submitted_hash = digest(payload["refresh_token"])
+        with self.sessions.begin() as db:
+            session = db.scalar(select(DeviceSession).where(
+                DeviceSession.device_id == payload["device_id"], DeviceSession.refresh_hash == submitted_hash))
+            if session is not None:
+                if (session.revoked_at is not None or session.refresh_expires_at <= now
+                        or not self.active(db, session, expected_type)):
+                    credential_failure(db, session.owner_id, "device_credential_failed", now, session.device_id)
+                else:
+                    access = secrets.token_urlsafe(32)
+                    changed = db.execute(update(DeviceSession).where(
+                        DeviceSession.id == session.id, DeviceSession.refresh_hash == submitted_hash,
+                        DeviceSession.revoked_at.is_(None), DeviceSession.refresh_expires_at > now
+                    ).values(access_hash=digest(access), access_expires_at=now + ACCESS_SECONDS,
+                             refresh_expires_at=now + REFRESH_SECONDS))
+                    if changed.rowcount == 1:
+                        result = {"device_id": session.device_id, "access_token": access,
+                                  "refresh_token": payload["refresh_token"],
+                                  "access_expires_at": now + ACCESS_SECONDS}
+        if result is None:
+            raise PermissionError("device renewal unavailable")
+        return result

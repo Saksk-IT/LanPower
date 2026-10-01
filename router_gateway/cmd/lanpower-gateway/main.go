@@ -147,7 +147,7 @@ func main() {
 	version := flag.Bool("version", false, "show binary version and exit")
 	flag.Parse()
 	if *version {
-		fmt.Println("LanPower Gateway 2.1.1 (protocols 1 and 2)")
+		fmt.Println("LanPower Gateway 2.1.2 (protocols 1 and 2)")
 		return
 	}
 	cfg, err := config.Load(cfgPath)

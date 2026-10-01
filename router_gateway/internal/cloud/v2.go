@@ -100,8 +100,8 @@ func LoadCredentials(path, origin string) (Credentials, error) {
 		return credentials, errors.New("credential file must have mode 600")
 	}
 	data, err := os.ReadFile(path)
-	if err != nil || len(data) > 4096 || json.Unmarshal(data, &credentials) != nil || !credentials.valid() || credentials.CloudURL != origin || credentials.RefreshPending {
-		return Credentials{}, errors.New("gateway needs enrollment; credentials are invalid or refresh was interrupted")
+	if err != nil || len(data) > 4096 || json.Unmarshal(data, &credentials) != nil || !credentials.valid() || credentials.CloudURL != origin {
+		return Credentials{}, errors.New("gateway needs enrollment; credentials are invalid")
 	}
 	return credentials, nil
 }
@@ -185,7 +185,7 @@ func (c *V2Client) Enroll(ctx context.Context, show func(code, uri string)) erro
 		Interval        int    `json:"interval"`
 	}
 	_, err := c.raw(ctx, "POST", "/api/v2/enroll/start", "", map[string]any{
-		"device_type": "gateway", "name": c.config.Name, "version": "2.1.1", "protocol_version": "2"}, &start)
+		"device_type": "gateway", "name": c.config.Name, "version": "2.1.2", "protocol_version": "2"}, &start)
 	if err != nil {
 		return err
 	}
@@ -246,35 +246,49 @@ func (c *V2Client) access(ctx context.Context, rejected string) (Credentials, er
 		c.credentials = *c.pending
 		c.pending = nil
 	}
-	if c.credentials.RefreshPending {
-		return Credentials{}, errors.New("refresh interrupted; enroll the gateway again")
-	}
-	if c.credentials.AccessExpiresAt > time.Now().Unix()+30 && c.credentials.AccessToken != rejected {
+	if !c.credentials.RefreshPending && c.credentials.AccessExpiresAt > time.Now().Unix()+30 && c.credentials.AccessToken != rejected {
 		return c.credentials, nil
 	}
-	marker := c.credentials
-	marker.RefreshPending = true
-	if err := SaveCredentials(c.path, marker); err != nil {
-		return Credentials{}, err
-	}
-	c.credentials = marker
 	var response tokenResponse
-	_, err := c.raw(ctx, "POST", "/api/v2/devices/token", "", map[string]string{
+	status, err := c.raw(ctx, "POST", "/api/v2/devices/renew", "", map[string]string{
 		"device_id": c.credentials.DeviceID, "refresh_token": c.credentials.RefreshToken}, &response)
-	if err != nil {
-		return Credentials{}, errors.New("credential refresh failed; enroll the gateway again")
+	legacy := status == http.StatusNotFound || status == http.StatusMethodNotAllowed
+	if legacy {
+		// Only an absent endpoint permits the legacy rotation. A pending legacy
+		// exchange may already have consumed this token; replay would revoke it.
+		if c.credentials.RefreshPending {
+			return Credentials{}, errors.New("legacy credential refresh interrupted; verified recovery or Cloud upgrade required")
+		}
+		marker := c.credentials
+		marker.RefreshPending = true
+		if err := SaveCredentials(c.path, marker); err != nil {
+			return Credentials{}, err
+		}
+		c.credentials = marker
+		status, err = c.raw(ctx, "POST", "/api/v2/devices/token", "", map[string]string{
+			"device_id": c.credentials.DeviceID, "refresh_token": c.credentials.RefreshToken}, &response)
 	}
-	rotated := response.credentials(c.config.CloudURL)
-	if !rotated.valid() || rotated.DeviceID != c.credentials.DeviceID || rotated.AccessExpiresAt <= time.Now().Unix() || rotated.RefreshToken == c.credentials.RefreshToken {
+	if err != nil {
+		if status == http.StatusUnauthorized {
+			return Credentials{}, errors.New("gateway authorization expired or revoked; enroll the gateway again")
+		}
+		if legacy {
+			return Credentials{}, errors.New("legacy credential refresh interrupted; verified recovery or Cloud upgrade required")
+		}
+		return Credentials{}, errors.New("credential renewal unavailable; retrying")
+	}
+	renewed := response.credentials(c.config.CloudURL)
+	if !renewed.valid() || renewed.DeviceID != c.credentials.DeviceID || renewed.AccessExpiresAt <= time.Now().Unix() ||
+		(legacy && renewed.RefreshToken == c.credentials.RefreshToken) || (!legacy && renewed.RefreshToken != c.credentials.RefreshToken) {
 		return Credentials{}, errors.New("invalid refreshed credentials")
 	}
-	c.pending = &rotated
-	if err := SaveCredentials(c.path, rotated); err != nil {
+	c.pending = &renewed
+	if err := SaveCredentials(c.path, renewed); err != nil {
 		return Credentials{}, err
 	}
-	c.credentials = rotated
+	c.credentials = renewed
 	c.pending = nil
-	return rotated, nil
+	return renewed, nil
 }
 
 func (c *V2Client) request(ctx context.Context, method, path string, payload, output any) error {
@@ -303,7 +317,7 @@ type TargetStatus struct {
 func (c *V2Client) DeviceID() string { c.mu.Lock(); defer c.mu.Unlock(); return c.credentials.DeviceID }
 func (c *V2Client) Heartbeat(ctx context.Context, targets []TargetStatus, uptime int64) error {
 	return c.request(ctx, "POST", "/api/v2/gateway/heartbeat", map[string]any{
-		"device_id": c.DeviceID(), "version": "2.1.1", "uptime": uptime, "targets": targets}, nil)
+		"device_id": c.DeviceID(), "version": "2.1.2", "uptime": uptime, "targets": targets}, nil)
 }
 func (c *V2Client) Poll(ctx context.Context) (*protocol.Command, error) {
 	var response struct {

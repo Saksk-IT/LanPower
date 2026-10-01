@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-应用源码版本为 `1.7.0`，本地部署配置版本为 `1.7.0-dev.2`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.7.1`，本地部署配置版本为 `1.7.1-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
 
@@ -18,7 +18,7 @@
 
 ## 连接本机 Windows 应用
 
-Windows 后台服务以 `LocalSystem` 运行，不使用浏览器当前用户的证书存储。只给当前用户信任开发 CA 时，会出现“浏览器能打开，但 Windows 端连接 Cloud 失败”，服务日志包含 `SecureConnectionError -> AuthenticationException`。开发配置 `1.7.0-dev.2` 默认同时配置计算机级信任；已部署环境可只运行以下命令修复证书，无需重装应用或重建账户：
+Windows 后台服务以 `LocalSystem` 运行，不使用浏览器当前用户的证书存储。只给当前用户信任开发 CA 时，会出现“浏览器能打开，但 Windows 端连接 Cloud 失败”，服务日志包含 `SecureConnectionError -> AuthenticationException`。开发配置 `1.7.1-dev.1` 默认同时配置计算机级信任；已部署环境可只运行以下命令修复证书，无需重装应用或重建账户：
 
 ```powershell
 ./deploy/docker/trust-dev-certificate.ps1
@@ -69,7 +69,11 @@ Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<开发 CA 指纹>'
 Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 ```
 
-## 本机部署验证（2026-10-01）
+## 本机部署验证（2026-10-02）
+
+本轮更新前先备份开发 SQLite 数据库并通过完整性检查；本机 Docker 使用 Cloud `1.7.1`、开发配置 `1.7.1-dev.1`，保留原数据卷、`.env.dev`、登录身份和开发证书。更新后应检查 `/healthz` 返回 `1.7.1`，不使用本机开发库覆盖正式 Cloud。
+
+## 历史本机部署验证（2026-10-01）
 
 Cloud `1.7.0` 与 Caddy `2.11.4` 已在 Docker Desktop 启动，开发镜像标签为 `lanpower-cloud:1.7.0-dev.1`，两个容器均为 healthy。首次直连 Docker Hub 超时，本次核对本机缓存依赖与当前声明一致，并用已逐字节核对的 54 个应用运行文件构建离线镜像；包版本、运行版本与源码一致，依赖完整性检查通过。日常启动直接复用此镜像，显式 `-Build` 仍需镜像仓库和包源可达。
 

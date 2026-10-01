@@ -1,6 +1,6 @@
 # LanPower 微信小程序
 
-当前公开版本：`2.0.3`，可从 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载 `LanPower-mini-program.zip`。包内使用公开 AppID 占位符，导入后配置自己的小程序身份。
+当前源码版本：`2.0.4`；公开下载入口仍为 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。包内使用公开 AppID 占位符，导入后配置自己的小程序身份。
 
 小程序主入口是 Cloud v2，底部导航分为三个区域：
 

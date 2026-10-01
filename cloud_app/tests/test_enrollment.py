@@ -1,13 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor
 import time
 import uuid
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import select
 
 from cloud_app.app.auth import digest
-from cloud_app.app.models import AuditLog, Device, DeviceAuthorization, DeviceSession, User
+from cloud_app.app.models import AuditLog, Device, DeviceAuthorization, DeviceSession, UsedRefreshToken, User
 from cloud_app.app.platform import ADMIN_ID
 from cloud_app.tests.test_platform import login, make_client
 
@@ -37,6 +38,12 @@ def approve(client, enrollment, decision="approve"):
 def permit_poll(app, enrollment):
     with app.state.platform.sessions.begin() as db:
         db.get(DeviceAuthorization, digest(enrollment["device_code"])).next_poll_at = 0
+
+
+def enroll(app, _kind="device"):
+    code = app.state.platform.windows.create_enrollment(ADMIN_ID)
+    return app.state.platform.windows.enroll({
+        "code": code, "name": "Test PC", "version": "1.4.0", "protocol_version": "2"})
 
 
 def test_device_starts_browser_approves_and_only_device_redeems(cloud):
@@ -108,6 +115,105 @@ def test_gateway_token_cannot_call_windows_protocol(cloud):
     rotated = client.post("/api/v2/devices/token", json=token)
     assert rotated.status_code == 200
     assert app.state.platform.tokens.authorize(rotated.json()["access_token"], expected_type="gateway")[1] == credentials["device_id"]
+
+
+def test_windows_device_cannot_call_gateway_renewal(cloud):
+    client, app = cloud
+    credentials = enroll(app, "device")
+    response = client.post("/api/v2/devices/renew", json={
+        "device_id": credentials["device_id"],
+        "refresh_token": credentials["refresh_token"],
+    })
+    assert response.status_code == 401
+
+
+def test_device_renew_retries_after_response_loss_without_rotating_refresh(cloud):
+    client, app = cloud
+    enrollment = start(client, "gateway")
+    login(client)
+    approve(client, enrollment)
+    credentials = client.post("/api/v2/enroll/token", json={"device_code": enrollment["device_code"]}).json()
+    payload = {"device_id": credentials["device_id"], "refresh_token": credentials["refresh_token"]}
+
+    # Treat the first successful response as lost: the same long-lived token
+    # must remain valid for the retry after a process or network interruption.
+    first = client.post("/api/v2/devices/renew", json=payload)
+    second = client.post("/api/v2/devices/renew", json=payload)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["refresh_token"] == second.json()["refresh_token"] == credentials["refresh_token"]
+    assert first.json()["access_token"] != second.json()["access_token"]
+    assert app.state.platform.tokens.authorize(second.json()["access_token"], expected_type="gateway")[1] == credentials["device_id"]
+    with app.state.platform.sessions() as db:
+        row = db.scalar(select(DeviceSession).where(DeviceSession.device_id == credentials["device_id"]))
+        assert row.refresh_hash == digest(credentials["refresh_token"])
+        assert row.generation == 0
+        assert db.scalar(select(UsedRefreshToken).where(UsedRefreshToken.session_id == row.id)) is None
+
+
+def test_concurrent_device_renewals_keep_one_refresh_authorization(cloud):
+    _client, app = cloud
+    credentials = enroll(app, "device")
+    payload = {"device_id": credentials["device_id"], "refresh_token": credentials["refresh_token"]}
+
+    def renew(_):
+        try:
+            return app.state.platform.tokens.renew(payload, expected_type="windows")
+        except PermissionError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(renew, range(4)))
+    assert all(results)
+    assert {result["refresh_token"] for result in results} == {credentials["refresh_token"]}
+    with app.state.platform.sessions() as db:
+        row = db.scalar(select(DeviceSession).where(DeviceSession.device_id == credentials["device_id"]))
+        assert row.refresh_hash == digest(credentials["refresh_token"])
+        assert row.generation == 0
+        assert db.scalar(select(UsedRefreshToken).where(UsedRefreshToken.session_id == row.id)) is None
+
+
+def test_gateway_renewal_extends_active_authorization_but_not_expired_token(cloud, monkeypatch):
+    client, app = cloud
+    enrollment = start(client, "gateway")
+    login(client)
+    approve(client, enrollment)
+    credentials = client.post("/api/v2/enroll/token", json={"device_code": enrollment["device_code"]}).json()
+    payload = {"device_id": credentials["device_id"], "refresh_token": credentials["refresh_token"]}
+    with app.state.platform.sessions() as db:
+        row = db.scalar(select(DeviceSession).where(DeviceSession.device_id == credentials["device_id"]))
+        initial_expiry = row.refresh_expires_at
+    from cloud_app.app.device_auth import REFRESH_SECONDS
+    now = initial_expiry - 1
+    monkeypatch.setattr("cloud_app.app.device_auth.time", SimpleNamespace(time=lambda: now))
+    assert client.post("/api/v2/devices/renew", json=payload).status_code == 200
+    with app.state.platform.sessions() as db:
+        row = db.scalar(select(DeviceSession).where(DeviceSession.device_id == credentials["device_id"]))
+        assert row.refresh_expires_at == now + REFRESH_SECONDS
+    now = initial_expiry + 1
+    assert client.post("/api/v2/devices/renew", json=payload).status_code == 200
+    with app.state.platform.sessions() as db:
+        row = db.scalar(select(DeviceSession).where(DeviceSession.device_id == credentials["device_id"]))
+        assert row.refresh_hash == digest(credentials["refresh_token"])
+        renewed_expiry = row.refresh_expires_at
+        assert renewed_expiry == now + REFRESH_SECONDS
+    now = renewed_expiry
+    assert client.post("/api/v2/devices/renew", json=payload).status_code == 401
+    with app.state.platform.sessions() as db:
+        row = db.scalar(select(DeviceSession).where(DeviceSession.device_id == credentials["device_id"]))
+        assert row.refresh_expires_at == renewed_expiry
+
+
+def test_device_renew_rejects_unknown_credentials_without_attributing_owner(cloud):
+    client, app = cloud
+    enrollment = start(client, "gateway")
+    login(client)
+    approve(client, enrollment)
+    credentials = client.post("/api/v2/enroll/token", json={"device_code": enrollment["device_code"]}).json()
+    endpoint = "/api/v2/devices/renew"
+    assert client.post(endpoint, json={"device_id": credentials["device_id"], "refresh_token": "unknown"}).status_code == 401
+    assert client.post(endpoint, json={"device_id": str(uuid.uuid4()), "refresh_token": credentials["refresh_token"]}).status_code == 401
+    with app.state.platform.sessions() as db:
+        assert db.scalar(select(AuditLog).where(AuditLog.event == "device_credential_failed")) is None
 
 
 def test_concurrent_exchange_issues_one_device_and_refresh_reuse_revokes(cloud):

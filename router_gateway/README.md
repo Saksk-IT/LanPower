@@ -1,16 +1,20 @@
 # AX3000T Router Gateway
 
-当前公开版本：Wake Gateway `2.1.1`，协议 2，兼容协议 1；Linux ARM64 程序见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。
+当前源码版本：Wake Gateway `2.1.2`，协议 2，兼容协议 1；公开 Linux ARM64 程序仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。
 
 本目录是 Xiaomi AX3000T / RD03（MediaTek MT7981、aarch64）的 LanPower Gateway。它只主动连接 Cloud，不在路由器上开放控制端口。WOL 已纳入 Go 程序；Windows 的 LAN Token 只存于 Windows 和路由器。
 
 ## Gateway v2
 
-新版支持设备短码注册、独立凭据轮换、一个网关关联多台 Windows、远程唤醒和可选备用局域网控制。Windows 在线时，Cloud 优先直接控制 Windows。使用 `config.v2.example.json` 创建新版配置，默认 `devices: []`，在 Cloud 选择电脑后会自动从局域网读取并保存唤醒信息，无需手动编辑配置或重启。完整注册、安装和迁移步骤见 [Wake Gateway v2](../docs/wake-gateway.md)。下文的共享密钥配置与 `seen.json` 为保留的 v1 兼容方式。
+新版支持设备短码注册、可重试的访问凭据续期、一个网关关联多台 Windows、远程唤醒和可选备用局域网控制。Windows 在线时，Cloud 优先直接控制 Windows。使用 `config.v2.example.json` 创建新版配置，默认 `devices: []`，在 Cloud 选择电脑后会自动从局域网读取并保存唤醒信息，无需手动编辑配置或重启。完整注册、安装和迁移步骤见 [Wake Gateway v2](../docs/wake-gateway.md)。下文的共享密钥配置与 `seen.json` 为保留的 v1 兼容方式。
 
 2026-09-30 已在指定真实路由器完成 v1 到 v2 迁移、网页短码批准、在线与单电脑唤醒关联，并验证子进程退出后自动恢复、凭据保留与自动启动配置。公网只读状态保持 Windows 直连优先；物理 WOL、多电脑、备用控制和整机重启仍待验收，详见 [实机验证记录](../docs/wake-gateway.md#指定路由器验证2026-09-30)。
 
 v2 凭据保存在配置同目录的 `device-credentials.json`，命令执行记录保存在 `command-receipts.json`，二者均为 `0600`。注册和常驻进程共用独占锁；重复命令返回原结果，执行中断后结果未知的命令不会重新执行。网关仅上传设备编号和能力/连通状态，不上传 Windows LAN Token、MAC 或广播地址。
+
+Cloud `1.7.1` 起，续期请求使用原有长期 Refresh Token 调用 `/api/v2/devices/renew`，Cloud 不轮换该长期凭据，并延长有效授权的闲置期限。响应丢失、进程重启、`refresh_pending` 或本地写盘失败时，网关可重试并清除挂起状态；凭据明确失效时需要重新注册。
+
+旧 Cloud 在新接口返回 `404` 或 `405` 时，网关兼容原 `/api/v2/devices/token` 轮换流程；其他 HTTP 错误、网络中断或无效响应不会触发回退。旧接口请求前持久化挂起标记，收到的新凭据写盘失败时只重试本地保存；旧轮换响应丢失或进程重启后仍不能重放旧凭据，须先核对 Cloud 中该凭据仍匹配、未消耗且有效，再备份恢复。Cloud 更新后，下次续期自动使用新接口，无需重新配对。
 
 自动唤醒配置单独保存为 `auto-targets.json`（`0600`），原子写入并同步到存储后才上报可用；电脑离线或网关重启会保留，解除关联后移除。文件绑定 Cloud 地址与网关身份，重新注册不会继承其他身份的配置。手工 `gateway.json` 条目优先，自动配置不覆盖高级备用控制。只允许从网关直连的私有 IPv4 子网读取配置，禁用代理和重定向，并校验目标编号、地址与本接口广播地址。
 

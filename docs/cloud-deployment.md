@@ -2,7 +2,7 @@
 
 推荐在 Linux 服务器使用 Docker Compose。新部署的 Caddy 配置负责 HTTPS，Cloud 默认采用 SQLite，数据和证书持久保存在 Docker 数据卷。详细命令见 [Docker 快速部署](../deploy/docker/README.md)。
 
-在本机 Docker Desktop 进行开发测试时，使用独立的 [本机开发环境](local-development.md)，入口为 **https://localhost:8443**。该环境提供源码自动重载与独立测试数据；2026-10-01 已验证 Cloud `1.7.0` 的 HTTPS、登录、页面、实时状态和重启数据保留。
+在本机 Docker Desktop 进行开发测试时，使用独立的 [本机开发环境](local-development.md)，入口为 **https://localhost:8443**。该环境提供源码自动重载与独立测试数据；本轮使用 Cloud `1.7.1` 更新本机服务，正式 Cloud 仍按历史记录运行 `1.7.0`。
 
 ## 配置选择
 

@@ -1,6 +1,6 @@
 # Windows 应用
 
-当前源码版本：Windows `1.7.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。v1.7 新增三色托盘：绿表示最近 90 秒内 Cloud 命令轮询成功，黄表示服务运行但云端未连接，灰表示本机服务不可达；每 30 秒刷新，关闭到托盘后仍生效。升级方式和验证见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.7.1`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。v1.7 新增三色托盘：绿表示最近 90 秒内 Cloud 命令轮询成功，黄表示服务运行但云端未连接，灰表示本机服务不可达；每 30 秒刷新，关闭到托盘后仍生效。升级方式和验证见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。本轮 Windows 仅更新版本并保留本机配对、Cloud 凭据和 LAN 配置。
 
 本目录是 .NET 10 Windows 服务、WPF 桌面端和安装包的源码。服务同时提供 LAN Direct 与可选的 Cloud Direct，旧版 Python 实现继续保留。局域网控制不依赖 Cloud 或 Wake Gateway。
 
