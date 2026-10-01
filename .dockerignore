@@ -20,6 +20,7 @@ tests
 **/config.json
 **/setup-code
 deploy/docker/.env
+deploy/docker/.env.*
 deploy/docker/private
 deploy/docker/data
 deploy/docker/backups

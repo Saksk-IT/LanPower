@@ -12,6 +12,8 @@ Cloud 1.6.0 的总览负责电源控制，“我的电脑”负责电脑详情�
 
 ## 本地验证
 
+需要在浏览器中开发测试时，可在仓库根目录运行 `./deploy/docker/start-dev.ps1`，启动独立 Docker 环境并访问 **https://localhost:8443**。源码自动重载、开发账户、证书与数据保留方式见 [本机开发指南](../docs/local-development.md)。
+
 ```powershell
 python -m venv cloud_app/.venv
 ./cloud_app/.venv/Scripts/python.exe -m pip install -e './cloud_app[test]'

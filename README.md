@@ -50,6 +50,8 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 ## 快速开始
 
+开发测试可直接在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **https://localhost:8443**。独立 Docker 环境支持源码自动重载、可信本地 HTTPS 和持久化测试数据；账号与操作说明见 [本机开发指南](docs/local-development.md)。当前本地部署配置版本为 `1.7.0-dev.1`。
+
 1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
 3. 在 Windows 应用中输入 Cloud 地址，点击“连接 Cloud”查看设备配对码。登录 Cloud 网页的“连接电脑”，输入短码并核对名称后允许连接。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。

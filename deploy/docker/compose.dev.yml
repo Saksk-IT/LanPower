@@ -1,0 +1,69 @@
+name: lanpower-dev
+
+services:
+  cloud:
+    image: lanpower-cloud:1.7.0-dev.1
+    build:
+      context: ../..
+      dockerfile: cloud_app/Dockerfile
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      LANPOWER_DATABASE_URL: sqlite:////var/lib/lanpower-cloud/platform.db
+      LANPOWER_PUBLIC_URL: https://localhost:8443
+      LANPOWER_LEGACY_CONFIG: ""
+      WX_APP_ID: ""
+      WX_APP_SECRET: ""
+    volumes:
+      - cloud-data:/var/lib/lanpower-cloud
+      - ../../cloud_app:/app/cloud_app:ro
+      - ../../cloud_remote:/app/cloud_remote:ro
+    command:
+      - uvicorn
+      - cloud_app.app.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --no-access-log
+      - --reload
+      - --reload-dir
+      - /app/cloud_app/app
+      - --reload-dir
+      - /app/cloud_remote
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  caddy:
+    image: caddy:2.11.4
+    ports:
+      - 127.0.0.1:8443:443
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:2019/config/]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 6
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      cloud:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cloud-data:
+  caddy-data:
+  caddy-config:

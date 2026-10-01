@@ -1,5 +1,7 @@
 # Cloud Docker 快速部署
 
+本机开发测试使用独立的 `compose.dev.yml`：在仓库根目录运行 `./deploy/docker/start-dev.ps1`，访问 **https://localhost:8443**。脚本准备本地证书和随机开发密码，复用已有测试数据；详见 [本机开发指南](../../docs/local-development.md)。以下为正式 HTTPS 部署流程。
+
 新部署默认由 Caddy 自动提供 HTTPS，Windows 和 Wake Gateway 只建立出站连接。
 
 ## 新安装
