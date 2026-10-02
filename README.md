@@ -50,6 +50,10 @@ LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制�
 
 完整文档入口：[架构与实现状态](docs/architecture-v2.md)、[Windows 应用](docs/windows-app.md)、[Docker 一键 HTTPS](deploy/docker/README.md)、[认证](docs/authentication-v2.md)、[数据迁移](docs/migration-v1.md)、[安全边界](docs/security-model.md)、[故障排查](docs/troubleshooting.md)。
 
+## SVG 动画演示
+
+仓库还提供一个独立的纯 HTML + SVG 演示页：[鹈鹕骑自行车 2D 动画](docs/pelican-bicycle.html)。页面版本为 `1.0.0`，可直接在浏览器打开，包含暂停和重新开始控制，不依赖外部图片或脚本。
+
 发布资源包含安装器、便携分发包、ARM64 网关、小程序源码包及校验清单，Cloud 镜像发布至 GHCR。此前已验证 Setup 首次安装、旧 Python 迁移、就地升级、便携安装及卸载重装，可保留原 LAN 配对和 Cloud 连接。构建方法见 [构建与发布](docs/releasing.md)。
 
 ## 快速开始
