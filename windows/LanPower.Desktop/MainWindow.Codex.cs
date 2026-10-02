@@ -13,10 +13,23 @@ public partial class MainWindow
         try { _codexSettings = CodexHostSettings.Load(); }
         catch { _codexSettings = new(false, []); }
         CodexRemoteEnabled.IsChecked = _codexSettings.Enabled;
+        CodexAutoDiscover.IsChecked = _codexSettings.AutoDiscover;
         ShowCodexWorkspaces();
     }
-    private void ShowCodexWorkspaces() => CodexWorkspaces.Text = _codexSettings.Workspaces.Length > 0
-        ? string.Join(Environment.NewLine, _codexSettings.Workspaces) : "尚未选择项目";
+    private void ShowCodexWorkspaces()
+    {
+        var discovered = _codexSettings.AutoDiscover ? CodexProjects.FromState().Select(project => project.Path) : [];
+        var paths = discovered.Concat(_codexSettings.Workspaces).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        CodexWorkspaces.Text = paths.Length > 0 ? string.Join(Environment.NewLine, paths)
+            : _codexSettings.AutoDiscover ? "打开远程开发后，将自动读取本机 Codex 项目和最近会话。" : "尚未添加项目";
+    }
+
+    private void CodexDiscoveryChanged(object sender, RoutedEventArgs e)
+    {
+        if (CodexWorkspaces is null) return;
+        _codexSettings = _codexSettings with { AutoDiscover = CodexAutoDiscover.IsChecked == true };
+        ShowCodexWorkspaces();
+    }
 
     private void AddCodexWorkspace(object sender, RoutedEventArgs e)
     {
@@ -36,8 +49,8 @@ public partial class MainWindow
 
     private void SaveCodexRemote(object sender, RoutedEventArgs e)
     {
-        _codexSettings = _codexSettings with { Enabled = CodexRemoteEnabled.IsChecked == true };
-        if (_codexSettings.Enabled && !_codexSettings.Workspaces.Any(_codexSettings.Allows))
+        _codexSettings = _codexSettings with { Enabled = CodexRemoteEnabled.IsChecked == true, AutoDiscover = CodexAutoDiscover.IsChecked == true };
+        if (_codexSettings.Enabled && !_codexSettings.AutoDiscover && !_codexSettings.Workspaces.Any(_codexSettings.Allows))
         { CodexRemoteState.Text = "请先添加一个允许远程开发的项目目录。"; return; }
         try { _codexSettings.Save(); StartCodexHost(); CodexRemoteState.Text = "已保存，正在同步本机授权。"; }
         catch { CodexRemoteState.Text = "无法保存授权，请检查当前用户的目录权限。"; }

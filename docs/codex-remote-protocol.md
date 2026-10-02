@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud 1.8.0。电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
+适用于 LanPower Windows / Cloud 1.9.0。电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
 
 ## 认证与连接
 
@@ -36,7 +36,7 @@
 
 | 方法 | 允许参数 |
 |---|---|
-| `lanpower/status` | 无；Host 返回允许目录、是否登录、活动 Thread/Turn、最近 Diff、待审批 |
+| `lanpower/status` | 无；Host 返回自动发现/手动授权的项目和目录、是否登录、活动 Thread/Turn、最近 Diff、待审批 |
 | `model/list` | `cursor`, `limit` |
 | `thread/list` | `cursor`, `limit`, `cwd`, `archived` |
 | `thread/start` | `cwd`, `model` |
@@ -46,10 +46,15 @@
 | `thread/archive`, `thread/unarchive` | `threadId` |
 | `turn/start` | `threadId`, `input`, `model`, `effort` |
 | `turn/interrupt` | `threadId`, `turnId` |
+| `turn/steer` | `threadId`, `expectedTurnId`, `input`；必须匹配本 Runtime 的当前任务 |
 
 请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。任务 input 只能是一项 `{type:"text", text:"..."}`，最多 16,000 字符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
 
 Host 为创建/恢复强制 `approvalPolicy:on-request`、`sandbox:workspace-write`；为 turn 强制当前本地允许 cwd 和 `workspaceWrite` 策略，`networkAccess:false`，排除临时目录额外写入。`thread/list` 内部追加来源筛选以包含 app-server 创建的会话。浏览器不能修改这些字段。
+
+1.9.0 的 `thread/list` 可省略 `cwd`，按更新时间读取所有已授权本机会话，跨已配置的模型提供方；客户端不能覆盖来源、提供方或项目发现规则。自动发现通过内部 `project/list`、已登记的桌面项目元数据和近期有效工作目录进行，不读取登录文件。关闭自动发现后仍只允许手动目录。
+
+`thread/read` 只读取，不恢复会话；Host 内部使用分页历史取最近 8 轮，每轮最多 80 项、文字字段最多 8,000 字符，总内容约 240,000 字符。返回 `control: desktop/available/remote`、项目名称和范围。桌面仍持有写锁时，继续、引导、中断及其他修改操作被拒绝。`turn/steer` 的输入约束与 `turn/start` 相同，不能带模型、目录或策略覆盖；`expectedTurnId` 必须匹配本 Runtime 当前任务，不能引导其他会话。
 
 ## 通知与审批
 
@@ -69,6 +74,6 @@ Host 仅转发线程/任务状态、计划、item 开始/完成、AI/工具增�
 - 帧大小 1 MiB，JSON 深度 24；Relay 队列最多 32 帧且累计不超过 8 MiB，Agent/Host 出站队列各 16 帧。服务端发送超时 10 秒。
 - 待响应/审批各最多 64；浏览器最多 120 请求/10 秒。Runtime RPC 等待 30 秒、浏览器 35 秒，Relay 待请求超过 120 秒关闭。
 - 30 秒无消息时 Ping，90 秒无响应时关闭；不使用任务耗时判定 Runtime 失败。浏览器退避 1–30 秒、Agent 2–60 秒重连，均不重发任务。
-- 固定错误码包括 `invalid_frame`、`method_not_allowed`、`params_not_allowed`、`invalid_decision`、`approval_unavailable`、`request_busy`、`agent_offline`、`remote_backpressure`、`remote_revoked`、`rate_limited`。Host 拒绝返回 `-32000/request_rejected`，不暴露本机异常文本。
+- 固定错误码包括 `invalid_frame`、`method_not_allowed`、`params_not_allowed`、`invalid_decision`、`approval_unavailable`、`request_busy`、`agent_offline`、`remote_backpressure`、`remote_revoked`、`rate_limited`。Host 拒绝返回 `-32000` 与固定类别 `request_rejected/desktop_session_busy/task_running/workspace_not_allowed/turn_changed/approval_unavailable`，不暴露本机异常文本。本机 stdio 接收上限为 8 MiB，近期历史截断后才进入 1 MiB Relay。
 - Cloud 仅内存转发，审计记录固定事件类别、账户/设备编号与时间，不保存正文。浏览器内存和本机 Runtime 保存当前任务/历史，PWA 不缓存内容。TLS 在 Cloud 终止，当前不是端到端加密。
 - 部署保持一个 worker/副本，重启丢弃路由与队列。任务是否继续以本机 Host/Runtime 为准，重连后读取状态和 Thread；不能根据超时自动重新执行。

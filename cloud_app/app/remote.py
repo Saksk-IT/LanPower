@@ -28,6 +28,7 @@ FIELDS = {
     "thread/unarchive": {"threadId"},
     "turn/start": {"threadId", "input", "model", "effort"},
     "turn/interrupt": {"threadId", "turnId"},
+    "turn/steer": {"threadId", "expectedTurnId", "input"},
 }
 APPROVALS = {
     "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -89,7 +90,7 @@ def validate_request(payload: dict) -> str:
     if method.startswith("thread/") and method not in {"thread/list", "thread/start"} or method.startswith("turn/"):
         if not isinstance(params.get("threadId"), str) or not 1 <= len(params["threadId"]) <= 100:
             raise ProtocolError()
-    for key in ("cwd", "model", "cursor", "name", "effort", "turnId"):
+    for key in ("cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId"):
         if key in params and (not isinstance(params[key], str) or not 1 <= len(params[key]) <= 1000):
             raise ProtocolError()
     if "limit" in params and (type(params["limit"]) is not int or not 1 <= params["limit"] <= 50):
@@ -97,7 +98,8 @@ def validate_request(payload: dict) -> str:
     for key in ("includeTurns", "archived"):
         if key in params and type(params[key]) is not bool: raise ProtocolError()
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
-    if method == "turn/start":
+    if method == "turn/steer" and "expectedTurnId" not in params: raise ProtocolError()
+    if method in {"turn/start", "turn/steer"}:
         inputs = params.get("input")
         if (not isinstance(inputs, list) or len(inputs) != 1 or not isinstance(inputs[0], dict) or
                 set(inputs[0]) != {"type", "text"} or inputs[0]["type"] != "text" or

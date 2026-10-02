@@ -19,15 +19,16 @@ public static class CodexRemoteProtocol
         ["thread/read"] = ["threadId", "includeTurns"], ["thread/name/set"] = ["threadId", "name"],
         ["thread/archive"] = ["threadId"], ["thread/unarchive"] = ["threadId"],
         ["turn/start"] = ["threadId", "input", "model", "effort"],
-        ["turn/interrupt"] = ["threadId", "turnId"]
+        ["turn/interrupt"] = ["threadId", "turnId"],
+        ["turn/steer"] = ["threadId", "expectedTurnId", "input"]
     };
     public static readonly HashSet<string> ApprovalMethods = ["item/commandExecution/requestApproval",
         "item/fileChange/requestApproval", "item/permissions/requestApproval", "item/tool/requestUserInput",
         "mcpServer/elicitation/request"];
 
-    public static JsonObject Parse(string raw)
+    public static JsonObject Parse(string raw, int maxFrame = MaxFrame)
     {
-        if (Encoding.UTF8.GetByteCount(raw) > MaxFrame) throw new InvalidDataException("frame_too_large");
+        if (Encoding.UTF8.GetByteCount(raw) > maxFrame) throw new InvalidDataException("frame_too_large");
         try
         {
             using var document = JsonDocument.Parse(raw, new JsonDocumentOptions { MaxDepth = 24 });
@@ -71,15 +72,16 @@ public static class CodexRemoteProtocol
             throw new InvalidDataException("method_not_allowed");
         if ((method.StartsWith("thread/") && method is not "thread/list" and not "thread/start") ||
             method.StartsWith("turn/")) ValidateString(args, "threadId", 100, true);
-        foreach (var name in new[] { "cwd", "model", "cursor", "name", "effort", "turnId" })
-            ValidateString(args, name, 1000, method == "turn/interrupt" && name == "turnId");
+        foreach (var name in new[] { "cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId" })
+            ValidateString(args, name, 1000, method == "turn/interrupt" && name == "turnId" ||
+                method == "turn/steer" && name == "expectedTurnId");
         if (args.ContainsKey("limit") && (args["limit"] is not JsonValue limit ||
             !limit.TryGetValue<int>(out var count) || count is < 1 or > 50))
             throw new InvalidDataException("invalid_params");
         foreach (var name in new[] { "includeTurns", "archived" })
             if (args.ContainsKey(name) && (args[name] is not JsonValue value || !value.TryGetValue<bool>(out _)))
                 throw new InvalidDataException("invalid_params");
-        if (method == "turn/start")
+        if (method is "turn/start" or "turn/steer")
         {
             if (args["input"] is not JsonArray { Count: 1 } input || input[0] is not JsonObject { Count: 2 } text ||
                 text["type"]?.GetValue<string>() != "text") throw new InvalidDataException("invalid_input");
@@ -96,10 +98,10 @@ public static class CodexRemoteProtocol
     }
 
     // StreamReader.ReadLineAsync allocates an unbounded line; impose a bound before parsing.
-    public static Task<string?> ReadLineAsync(StreamReader reader, CancellationToken token) =>
-        Readers.GetValue(reader, key => new BoundedReader(key)).ReadAsync(token);
+    public static Task<string?> ReadLineAsync(StreamReader reader, CancellationToken token, int maxFrame = MaxFrame) =>
+        Readers.GetValue(reader, key => new BoundedReader(key, maxFrame)).ReadAsync(token);
 
-    private sealed class BoundedReader(StreamReader reader)
+    private sealed class BoundedReader(StreamReader reader, int maxFrame)
     {
         private readonly char[] _buffer = new char[8192];
         private int _offset, _count;
@@ -115,7 +117,7 @@ public static class CodexRemoteProtocol
                 }
                 var newline = Array.IndexOf(_buffer, '\n', _offset, _count - _offset);
                 var end = newline < 0 ? _count : newline;
-                if (result.Length + end - _offset > MaxFrame) throw new InvalidDataException("frame_too_large");
+                if (result.Length + end - _offset > maxFrame) throw new InvalidDataException("frame_too_large");
                 result.Append(_buffer, _offset, end - _offset); _offset = end;
                 if (newline >= 0) { _offset++; return result.ToString().TrimEnd('\r'); }
             }

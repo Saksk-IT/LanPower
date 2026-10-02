@@ -34,10 +34,14 @@ while (Console.ReadLine() is { } raw)
         "initialize" => new() { ["userAgent"] = "fixture" },
         "account/read" => new() { ["account"] = new JsonObject { ["type"] = "fixture" } },
         "model/list" => new() { ["data"] = new JsonArray(new JsonObject { ["id"] = "fixture", ["model"] = "fixture", ["displayName"] = "Test Runtime" }), ["nextCursor"] = null },
+        "project/list" => new() { ["data"] = new JsonArray(new JsonObject { ["id"] = "fixture-project", ["name"] = "Fixture project",
+            ["roots"] = new JsonArray(new JsonObject { ["path"] = Path.Combine(cwd, "second-project") }) }) },
+        "thread/list" when p?.ContainsKey("cwd") != true => new() { ["data"] = new JsonArray(Thread()), ["nextCursor"] = null },
         "thread/list" => new() { ["data"] = new JsonArray(Thread(), new JsonObject { ["id"] = "outside-test", ["cwd"] = Path.GetTempPath() }), ["nextCursor"] = null },
         "thread/read" when p?["threadId"]?.GetValue<string>() == "outside-test" => new() { ["thread"] = new JsonObject { ["id"] = "outside-test", ["cwd"] = Path.GetTempPath() } },
         "thread/start" or "thread/resume" or "thread/read" => new() { ["thread"] = Thread() },
         "turn/start" => new() { ["turn"] = new JsonObject { ["id"] = "turn-test", ["status"] = "inProgress" } },
+        "turn/steer" => new() { ["turnId"] = turn },
         _ => new()
     };
     if (method == "thread/start") thread = "thread-test";

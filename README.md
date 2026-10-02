@@ -1,17 +1,19 @@
 # LanPower
 
-当前源码版本：**v1.8.0**，公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。新增 Codex Remote：通过自建 Cloud 网页或 PWA 使用自己 Windows 电脑上的 Codex，创建和恢复会话、发送开发任务、查看实时输出、处理单次审批、查看 Diff 和中断任务。现有 LAN Direct、Cloud Direct、Wake Gateway、小程序和电源链路继续保留。
+当前源码版本：**v1.9.0**，公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。Codex Remote 支持选择电脑后自动读取本机项目和最近会话，按项目浏览、查看消息和进度、继续会话、发送引导、暂停任务与查看 Diff。手机采用会话列表与消息详情两步操作。
 
-Windows 主动通过 WSS 出站连接；Codex 在已登录 Windows 的用户会话中运行，Cloud 不保存任务、代码、Diff 或 OpenAI 凭据。电脑端默认关闭远程开发，需在 LanPower「远程连接」中启用并选择项目。本轮先更新本机 Docker 和 Windows，保留原配置；正式 Cloud 仍为 `1.7.2`，未推送远程或发布 Release。[使用与验收说明](docs/codex-remote.md) · [Relay 协议](docs/codex-remote-protocol.md) · [MVP 进度](docs/codex-remote-mvp-plan.md)。
+Windows 主动通过 WSS 出站连接；Codex 在已登录 Windows 的用户会话中运行，Cloud 不保存任务、代码、Diff 或 OpenAI 凭据。首次在「远程连接」开启授权并保存，默认自动识别本机 Codex 项目；可关闭自动识别，改用手动目录。桌面占用的已有会话支持同步查看，需由桌面释放后才能在 Remote 继续；Remote 自己的任务支持引导和暂停。本轮已更新本机 Docker 和 Windows，保留配置与设备身份；未改动远程服务器、推送或发布 Release。[使用与验收说明](docs/codex-remote.md) · [Relay 协议](docs/codex-remote-protocol.md) · [MVP 进度](docs/codex-remote-mvp-plan.md)。
 
 | 组件 | 当前源码版本 |
 |---|---|
-| Windows 应用 / 安装器 | `1.8.0` |
-| Cloud 控制台 | `1.8.0` |
+| Windows 应用 / 安装器 | `1.9.0` |
+| Cloud 控制台 | `1.9.0` |
 | 微信小程序 | `2.0.6` |
 | Wake Gateway | `2.1.2` |
 
-2026-10-02 本轮 Codex Remote：Cloud 184 项、Windows 61 项单元测试及桌面/LAN/小程序回归通过；浏览器 1440/390/320px 验证通过。真实登录的本机 Codex 经 WSS Agent、用户 Host 与浏览器完成单次审批、实际文件修改、Diff 和刷新恢复。本机 Docker 与 Windows 更新至 `1.8.0`；公网 5G、用户真实项目与正式 Cloud 更新待人工验收。
+2026-10-02 本轮 Codex Remote 1.9：Windows 63 项单元测试、42 项桌面检查及 LAN/小程序回归通过；Cloud 186 项测试和浏览器 1440/390/320px 检查通过。真实 WSS / 用户 Host / 浏览器读取了本机项目、最近会话和桌面占用会话；独立目录上的官方 Runtime 实际引导与中断通过。原配置、用户授权、Cloud 地址和设备身份保留；凭据按正常续期轮换。本机部署为 `1.9.0`，桌面正在运行的任务仍不能跨 Runtime 接管，手机 5G 仍待人工验收。
+
+2026-10-02 上轮 Codex Remote 1.8：Cloud 184 项、Windows 61 项单元测试通过。真实登录的本机 Codex 经 WSS Agent、用户 Host 与浏览器完成单次审批、实际文件修改、Diff 和刷新恢复。
 
 2026-10-02 上轮界面更新与正式部署：Cloud 164 项测试及浏览器 1440/390/320px 检查通过；本机 Docker、Windows 和正式 Cloud 已更新至 `1.7.2`，保留现有数据与配置。远程桌面验证覆盖文件下载、IPv4/IPv6、最新地址与错误提示；实际远程桌面登录和物理电源动作待手动验收。
 
@@ -31,7 +33,7 @@ Windows 主动通过 WSS 出站连接；Codex 在已登录 Windows 的用户会�
 - 配置微信订阅消息后，可按离线阈值向多个接收人发送通知。
 - 控制台适配 375–480px 手机屏幕，提供折叠菜单和触控按钮。
 
-正式 Cloud 当前运行 `1.7.2`，公开下载入口仍为 `1.6.1`；本机 Docker 使用 `1.8.0-dev.1`，部署记录见 [本机开发指南](docs/local-development.md)。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.0.6`，已撤销或已丢失的旧授权需重新扫码。
+正式 Cloud 当前运行 `1.7.2`，公开下载入口仍为 `1.6.1`；本机 Docker 使用 `1.9.0-dev.1`，部署记录见 [本机开发指南](docs/local-development.md)。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.0.6`，已撤销或已丢失的旧授权需重新扫码。
 
 LanPower 用于管理 Windows 电脑的电源和远程开发。在家可通过局域网控制电脑；在外可通过 Cloud 网页控制在线电脑，并连接本机 Codex Runtime。Wake Gateway 是可选组件，用于远程唤醒离线电脑。各版本的部署和实机验收结果分别记录；新版 Codex Remote 的手机 5G 公网链路仍需人工验收。
 
@@ -45,7 +47,7 @@ LanPower 用于管理 Windows 电脑的电源和远程开发。在家可通过�
 | Cloud Direct | 新 Windows 应用 + Cloud + 浏览器 | 公网只读状态已通过；在线电脑不需要 Wake Gateway |
 | 小程序 v2 | 新 Windows 应用 + Cloud + 微信小程序 | 原生编译已由用户确认通过；扫码授权、设备列表及网络切换待微信真机验收 |
 | Remote Wake | Windows + Cloud + Wake Gateway | v1.1.2 已验证；新版路由器注册与单电脑关联已通过，物理唤醒和多电脑仍待验收 |
-| Codex Remote | Windows 1.8 + Cloud 1.8 + 浏览器/PWA + 本机 Codex | MVP 已实现，本机验证见使用说明；正式云端与 5G 待验收 |
+| Codex Remote | Windows 1.9 + Cloud 1.9 + 浏览器/PWA + 本机 Codex | 自动读取项目/会话、实时查看、引导与暂停；桌面任务接管未实现，5G 待验收 |
 
 普通用户可从下方发布页下载安装器；开发者可按 [Windows 应用构建与安装说明](windows/README.md) 构建服务、桌面端和安装包。
 
@@ -61,14 +63,14 @@ LanPower 用于管理 Windows 电脑的电源和远程开发。在家可通过�
 
 ## 快速开始
 
-开发测试可直接在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **https://localhost:8443**。独立 Docker 环境支持源码自动重载、可信本地 HTTPS 和持久化测试数据；首次配置 Windows 后台服务的证书信任时需要管理员确认。账号与操作说明见 [本机开发指南](docs/local-development.md)。当前本地部署配置版本为 `1.8.0-dev.1`。
+开发测试可直接在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **https://localhost:8443**。独立 Docker 环境支持源码自动重载、可信本地 HTTPS 和持久化测试数据；首次配置 Windows 后台服务的证书信任时需要管理员确认。账号与操作说明见 [本机开发指南](docs/local-development.md)。当前本地部署配置版本为 `1.9.0-dev.1`。
 
 1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。
 3. 在 Windows 应用中输入 Cloud 地址，点击“连接 Cloud”查看设备配对码。登录 Cloud 网页的“连接电脑”，输入短码并核对名称后允许连接。电脑在线后，可在网页中查看状态、睡眠、休眠、重启和关机；远程唤醒仍需 Wake Gateway。
 4. 手机需要远程控制时，在 Cloud“手机授权”页面生成二维码，用新版小程序扫码。选中电脑后，可单独扫描该电脑的局域网码以启用局域网优先；详见 [小程序 v2](docs/mini-program-v2.md)。
 5. 需要远程开机时，按 [Wake Gateway v2](docs/wake-gateway.md) 在路由器上注册网关。在 Windows 点击“配置远程唤醒”，网页选择网关后自动保存电脑的唤醒信息，无需手填 MAC、广播地址或重启网关。首次配置时电脑和网关需在线并处于同一局域网；一个网关支持多台电脑。
-6. 使用 Codex Remote 时需构建并安装本地 `1.8.0`，同时更新自己的 Cloud 至 `1.8.0`。在当前 Windows 用户下安装并登录 Codex，在 LanPower 中启用远程开发并添加项目，随后在 Cloud「Codex Remote」选择电脑连接。公开 `1.6.1` 安装器尚不含此功能。
+6. 使用 Codex Remote 时，Windows 和 Cloud 均需更新至 `1.9.0`。在当前 Windows 用户下安装并登录 Codex，在 LanPower 中启用远程开发和自动发现项目，随后在 Cloud「Codex Remote」选择电脑，即可读取已登记的项目和最近会话。额外目录可手动授权；桌面占用中的会话仅同步查看。公开 `1.6.1` 安装器尚不含此功能。
 
 ## 最新版本
 

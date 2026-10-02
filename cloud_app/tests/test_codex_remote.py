@@ -81,6 +81,25 @@ def test_roundtrip_notifications_approval_interrupt_and_no_persistence(remote):
     assert any(item.event == "remote_task_started" for item in app.state.platform.audit(ADMIN_ID))
 
 
+def test_steering_roundtrip_and_required_active_turn(remote):
+    client, app, creds, _, temp = remote
+    with connected(client, creds) as (up, down, session):
+        params = {"threadId": "thread-test", "expectedTurnId": "turn-test",
+            "input": [{"type": "text", "text": "private-steer-sentinel"}]}
+        down.send_json({"type": "rpc", "payload": {"id": "steer", "method": "turn/steer", "params": params}})
+        assert up.receive_json()["payload"]["params"] == params
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": "steer", "result": {"turnId": "turn-test"}}})
+        assert down.receive_json()["payload"]["result"]["turnId"] == "turn-test"
+        for invalid in [{k: v for k, v in params.items() if k != "expectedTurnId"}, {**params, "model": "override"}]:
+            with pytest.raises(ProtocolError):
+                validate_request({"id": "invalid", "method": "turn/steer", "params": invalid})
+    assert "private-steer-sentinel" not in (temp / "platform.db").read_bytes().decode("latin1")
+
+
+def test_recent_sessions_do_not_require_workspace_filter():
+    assert validate_request({"id": "recent", "method": "thread/list", "params": {"limit": 50}}) == "thread/list"
+
+
 @pytest.mark.parametrize("method", ["command/exec", "account/login/start", "account/logout", "config/write", "fs/writeFile", "plugin/install"])
 def test_forbidden_methods(remote, method):
     client, _, creds, _, _ = remote

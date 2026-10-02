@@ -69,13 +69,19 @@ Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<开发 CA 指纹>'
 Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 ```
 
-## Codex Remote 本机验证（2026-10-02）
+## Codex Remote 1.9 本机验证（2026-10-02）
+
+本机 Cloud / Windows 更新至 `1.9.0`，开发镜像为 `lanpower-cloud:1.9.0-dev.1`。正常 Docker 构建通过，切换前使用 SQLite backup API 备份并检查完整性，原数据卷、登录配置和开发 CA 保留。Setup 就地更新三项 Windows 程序并核对哈希；LAN 配置、用户授权保留，Cloud 地址和设备身份不变，凭据正常续期轮换。
+
+真实 Service WSS Agent、用户 Host 和浏览器已自动识别项目/工作目录及近期会话，并读取桌面占用的真实会话；没有接管或中断桌面工作。独立临时目录中的官方 Runtime 实际接收引导并回复，实际中断确认通过，文件内容保持。1440/390/320px 浏览器检查覆盖自动连接、项目分组、消息详情、引导、暂停、旧缓存清除及桌面只读，交互使用受控 Runtime 响应。桌面跨 Runtime 的已运行任务控制、完整历史分页与手机 5G 仍未验收。
+
+## Codex Remote 1.8 历史本机验证（2026-10-02）
 
 本机 Cloud 镜像正常重建为 `lanpower-cloud:1.8.0-dev.1`，新增 WebSocket 运行依赖，更新前使用 SQLite 一致备份；原数据卷、`.env.dev`、开发密码与证书保留。Cloud / Caddy 均为 healthy，正常证书校验的 `/healthz` 返回 `1.8.0`，迁移仍为 `0009_automation`。
 
 真实 Chromium 与 WSS Relay 在 1440/390/320px 下通过会话、输出、文件审批、Diff、中断、刷新恢复和 XSS 文本检查；实际 Service Worker 安装成功，仅缓存六项公开静态资源。真实 Codex 任务进一步通过：当前用户已有登录、本轮 Service Agent 和 Host 管道，在独立项目修改测试文件，单次文件审批、实际 Diff 和刷新恢复正常。安装保留升级前的用户设置与设备身份，自动测试使用独立设备，不覆盖当前电脑的 Cloud 连接；未执行真实电源动作。完整记录与公网待验收项见 [Codex Remote](codex-remote.md)。
 
-开发模式包含 PWA 缓存。反复修改同一个版本的静态文件后，如浏览器仍显示旧代码，可在开发者工具中清除该站点的 Service Worker/缓存后刷新；正式更新应递增版本。不要清除 Cloud 数据卷或重建登录配置来处理浏览器缓存。
+开发模式包含 PWA 缓存。1.9.0 起，明确允许的公开静态文件优先读取网络的新版本，网络不可用时才回退缓存；页面、接口和会话正文始终不缓存。旧版已打开页面可刷新获取更新，正式发布仍应递增版本。不要清除 Cloud 数据卷或重建登录配置来处理浏览器缓存。
 
 ## 历史本机部署验证（2026-10-02，1.7.2）
 

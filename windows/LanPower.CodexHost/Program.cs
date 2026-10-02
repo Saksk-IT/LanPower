@@ -20,7 +20,7 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; lifetime.Cancel(); };
 CodexHostSettings ReadSettings()
 {
     try { return CodexHostSettings.Load(settingsPath); }
-    catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
+    catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
     { return new(false, []); }
 }
 await using var runtime = new RemoteRuntime(ReadSettings);
@@ -63,7 +63,7 @@ async Task WatchLocal()
             running = runtime.Running;
             await runtime.ExpireAsync(lifetime.Token);
         }
-        catch (IOException) { State("runtime_error"); }
+        catch (Exception error) when (error is IOException or InvalidDataException) { State("runtime_error"); }
         finally { runtimeLock.Release(); }
     }
 }
@@ -111,7 +111,7 @@ while (!lifetime.IsCancellationRequested)
                             foreach (var pending in runtime.PendingApprovals)
                                 Emit(new { type = "rpc", session, payload = pending });
                         }
-                        catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
+                        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
                         { await runtime.DisposeAsync(); State(ReadSettings().Enabled ? "runtime_error" : "disabled"); }
                     }
                     else if (session != incoming) continue;
@@ -123,11 +123,13 @@ while (!lifetime.IsCancellationRequested)
                             var result = await runtime.HandleAsync(request, connected.Token);
                             if (result is not null) Emit(new { type = "rpc", session, payload = result });
                         }
-                        catch (Exception error) when (error is IOException or InvalidOperationException or TimeoutException or ArgumentException)
+                        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException or TimeoutException or ArgumentException)
                         {
                             // Remote failures contain only fixed categories. Runtime RPC errors remain encrypted in transit.
+                            var category = error.Message is "desktop_session_busy" or "task_running" or "workspace_not_allowed" or
+                                "turn_changed" or "approval_unavailable" ? error.Message : "request_rejected";
                             Emit(new { type = "rpc", session, payload = new JsonObject { ["id"] = request["id"]?.DeepClone(),
-                                ["error"] = new JsonObject { ["code"] = -32000, ["message"] = "request_rejected" } } });
+                                ["error"] = new JsonObject { ["code"] = -32000, ["message"] = category } } });
                         }
                     }
                     else throw new IOException("invalid_frame");
@@ -141,11 +143,11 @@ while (!lifetime.IsCancellationRequested)
         {
             connected.Cancel();
             try { await Task.WhenAll(tasks); }
-            catch (Exception error) when (error is OperationCanceledException or IOException or InvalidOperationException) { }
+            catch (Exception error) when (error is OperationCanceledException or IOException or InvalidDataException or InvalidOperationException) { }
             output = null; connection = null;
         }
     }
-    catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or UnauthorizedAccessException) { }
+    catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or UnauthorizedAccessException) { }
     if (!lifetime.IsCancellationRequested) await Task.Delay(2000, lifetime.Token);
 }
 try { await localWatch; } catch (OperationCanceledException) { }

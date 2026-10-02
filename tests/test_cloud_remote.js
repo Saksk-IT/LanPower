@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const {RemoteClient} = require('../cloud_app/static/remote.js');
+const {RemoteClient, taskLabel} = require('../cloud_app/static/remote.js');
 
 async function run() {
   const sockets = [], events = [], states = [], timers = new Map(); let nextTimer = 0, nextId = 0;
@@ -33,6 +33,16 @@ async function run() {
   const last = sockets.at(-1); last.onclose({code: 4409});
   assert.equal(states.at(-1), 'controller_busy'); assert.equal(timers.size, 0, 'controller conflict does not reconnect forever');
   client.stop(); assert.equal(client.pending.size, 0);
+  let nativeSocket;
+  const native = new RemoteClient({socketFactory: () => (nativeSocket = {readyState:1, send(raw) { this.last = JSON.parse(raw); }, close(){}}),
+    event(){}, state(){}});
+  native.connect('native-defaults');
+  const nativeResponse = native.request('lanpower/status');
+  assert.match(nativeSocket.last.payload.id, /^[0-9a-f-]{36}$/);
+  nativeSocket.onmessage({data:JSON.stringify({type:'rpc',payload:{id:nativeSocket.last.payload.id,result:{projects:[]}}})});
+  assert.deepEqual(await nativeResponse,{projects:[]}); native.stop();
+  assert.equal(taskLabel({id:'desktop',control:'desktop'},'another','turn'), '桌面占用');
+  assert.equal(taskLabel({id:'current',control:'remote'},'current','turn'),'运行中');
   console.log('Codex Remote client: response routing, approval IDs, reconnect, task deduplication and stale-device isolation passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

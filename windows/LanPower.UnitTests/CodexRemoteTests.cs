@@ -36,7 +36,7 @@ public sealed class CodexRemoteTests
         Directory.CreateDirectory(path);
         try
         {
-            var config = new CodexHostSettings(false, [path], FakeExecutable());
+            var config = new CodexHostSettings(false, [path], FakeExecutable(), AutoDiscover: false);
             Assert.IsFalse(config.Allows(path));
             await using var runtime = new RemoteRuntime(() => config);
             await Assert.ThrowsAsync<InvalidDataException>(() => runtime.OpenAsync(CancellationToken.None));
@@ -64,7 +64,7 @@ public sealed class CodexRemoteTests
         Directory.CreateDirectory(path);
         try
         {
-            var config = new CodexHostSettings(true, [path], FakeExecutable());
+            var config = new CodexHostSettings(true, [path], FakeExecutable(), AutoDiscover: false);
             await using var runtime = new RemoteRuntime(() => config);
             await runtime.OpenAsync(CancellationToken.None);
             var approval = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -78,6 +78,12 @@ public sealed class CodexRemoteTests
             var task = Request("turn/start", new() { ["threadId"] = id, ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "中文任务：检查文件" }) });
             await runtime.HandleAsync(task, CancellationToken.None);
             var pending = await approval.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var steer = Request("turn/steer", new() { ["threadId"] = id, ["expectedTurnId"] = "turn-test",
+                ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "只处理当前文件" }) });
+            var steered = await runtime.HandleAsync(steer, CancellationToken.None);
+            Assert.AreEqual("turn-test", steered!["result"]!["turnId"]!.GetValue<string>());
+            steer["params"]!["expectedTurnId"] = "stale-turn";
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(steer, CancellationToken.None));
             await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(new JsonObject { ["id"] = pending["id"]!.DeepClone(),
                 ["result"] = new JsonObject { ["decision"] = "acceptForSession" } }, CancellationToken.None));
             await runtime.HandleAsync(new JsonObject { ["id"] = pending["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "accept" } }, CancellationToken.None);
@@ -112,6 +118,52 @@ public sealed class CodexRemoteTests
     }
 
     [TestMethod]
+    public async Task AutoDiscoveryReadsNativeProjectsAndListsWithoutChoosingDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(path, "second-project"));
+        try
+        {
+            var config = new CodexHostSettings(true, [path], FakeExecutable());
+            await using var runtime = new RemoteRuntime(() => config);
+            await runtime.OpenAsync(CancellationToken.None);
+            var status = await runtime.HandleAsync(Request("lanpower/status"), CancellationToken.None);
+            Assert.IsTrue(status!["result"]!["projects"]!.AsArray().Any(project =>
+                project?["path"]?.GetValue<string>() == Path.Combine(path, "second-project")));
+            var list = await runtime.HandleAsync(Request("thread/list"), CancellationToken.None);
+            Assert.AreEqual("thread-test", list!["result"]!["data"]![0]!["id"]!.GetValue<string>());
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(Request("thread/start",
+                new() { ["cwd"] = Path.GetTempPath() }), CancellationToken.None));
+            var read = await runtime.HandleAsync(Request("thread/read", new() {
+                ["threadId"] = "thread-test", ["includeTurns"] = true }), CancellationToken.None);
+            Assert.AreEqual("available", read!["result"]!["thread"]!["control"]!.GetValue<string>());
+        }
+        finally { Directory.Delete(path, true); }
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public void DesktopOwnershipUsesLiveLockRatherThanStaleFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
+        var previous = Environment.GetEnvironmentVariable("CODEX_HOME");
+        Directory.CreateDirectory(Path.Combine(path, "thread-writer-locks"));
+        var id = Guid.NewGuid().ToString("D");
+        try
+        {
+            Environment.SetEnvironmentVariable("CODEX_HOME", path);
+            var file = Path.Combine(path, "thread-writer-locks", id + ".lock");
+            File.WriteAllText(file, "");
+            Assert.IsFalse(CodexProjects.DesktopOwns(id));
+            using (var owner = new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+            { owner.Lock(0, 1); Assert.IsTrue(CodexProjects.DesktopOwns(id)); owner.Unlock(0, 1); }
+            Assert.IsFalse(CodexProjects.DesktopOwns(id));
+            Assert.IsFalse(CodexProjects.DesktopOwns("../../outside"));
+        }
+        finally { Environment.SetEnvironmentVariable("CODEX_HOME", previous); Directory.Delete(path, true); }
+    }
+
+    [TestMethod]
     public async Task ServiceBridgeAndUserHostPipeRoundtrip()
     {
         var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
@@ -138,6 +190,11 @@ public sealed class CodexRemoteTests
             var session = Guid.NewGuid().ToString("D");
             await bridge.ForwardAsync(new() { ["type"] = "open", ["session"] = session }, timeout.Token);
             await Until(frame => frame["state"]?.GetValue<string>() == "runtime_ready");
+            var rejected = Request("thread/start", new() { ["cwd"] = Path.GetTempPath() });
+            await bridge.ForwardAsync(new() { ["type"] = "rpc", ["session"] = session, ["payload"] = rejected }, timeout.Token);
+            var failure = await Until(frame => frame["payload"]?["id"]?.GetValue<string>() == rejected["id"]!.GetValue<string>());
+            Assert.AreEqual("workspace_not_allowed", failure["payload"]!["error"]!["message"]!.GetValue<string>());
+            Assert.IsFalse(host!.HasExited, "A rejected operation must not stop the user Host.");
             await bridge.ForwardAsync(new() { ["type"] = "rpc", ["session"] = session, ["payload"] = Request("model/list") }, timeout.Token);
             var response = await Until(frame => frame["payload"]?["result"]?["data"] is JsonArray);
             Assert.AreEqual("fixture", response["payload"]!["result"]!["data"]![0]!["model"]!.GetValue<string>());

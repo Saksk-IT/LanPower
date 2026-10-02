@@ -17,6 +17,8 @@ public sealed class RuntimeClient : IAsyncDisposable
     private bool _aggregatedDiff;
     private readonly Task _reader;
     private readonly Task _stderr;
+    // Local history may be larger than a Relay frame; RemoteRuntime returns a bounded recent view.
+    private const int LocalFrameLimit = 8 * 1024 * 1024;
     public event Action<JsonObject>? Message;
     public string? ActiveThread { get; private set; }
     public string? ActiveTurn { get; private set; }
@@ -74,7 +76,8 @@ public sealed class RuntimeClient : IAsyncDisposable
     public async Task InitializeAsync(CancellationToken token)
     {
         var response = await CallAsync("initialize", new JsonObject { ["clientInfo"] = new JsonObject {
-            ["name"] = "lanpower_remote", ["title"] = "LanPower Remote", ["version"] = LanProtocol.Version } }, token);
+            ["name"] = "lanpower_remote", ["title"] = "LanPower Remote", ["version"] = LanProtocol.Version },
+            ["capabilities"] = new JsonObject { ["experimentalApi"] = true } }, token);
         if (response["error"] is not null) throw new InvalidDataException("runtime_incompatible");
         await SendAsync(new JsonObject { ["method"] = "initialized", ["params"] = new JsonObject() }, token);
     }
@@ -97,9 +100,9 @@ public sealed class RuntimeClient : IAsyncDisposable
     {
         try
         {
-            while (await CodexRemoteProtocol.ReadLineAsync(_process.StandardOutput, _lifetime.Token) is { } raw)
+            while (await CodexRemoteProtocol.ReadLineAsync(_process.StandardOutput, _lifetime.Token, LocalFrameLimit) is { } raw)
             {
-                var message = CodexRemoteProtocol.Parse(raw);
+                var message = CodexRemoteProtocol.Parse(raw, LocalFrameLimit);
                 if (message["id"] is JsonValue id && id.TryGetValue<string>(out var value) &&
                     _calls.TryRemove(value, out var completion))
                 { completion.TrySetResult(message); continue; }
@@ -139,7 +142,7 @@ public sealed class RuntimeClient : IAsyncDisposable
                 Message?.Invoke(message);
             }
         }
-        catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException) { }
+        catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or InvalidOperationException) { }
         finally
         {
             foreach (var call in _calls.Values) call.TrySetException(new IOException("runtime_exited"));

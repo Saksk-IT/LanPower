@@ -219,13 +219,14 @@
             <Border Style="{StaticResource Section}" Margin="0,0,0,20">
               <StackPanel>
                 <TextBlock Text="Codex Remote · 远程开发" Style="{StaticResource SectionTitle}"/>
-                <TextBlock Text="让浏览器连接这台电脑的 Codex。先在电脑上登录 Codex，再选择允许远程开发的项目目录。" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                <TextBlock Text="在远程页面选择这台电脑，即可读取本机 Codex 项目、最近会话和任务进度。请先在电脑登录 Codex。" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
                 <TextBlock x:Name="CodexRemoteState" Text="等待检测" Margin="0,12,0,8" FontWeight="SemiBold"/>
-                <CheckBox x:Name="CodexRemoteEnabled" Content="允许 Codex Remote 访问已选择的项目" Margin="0,8,0,12"/>
+                <CheckBox x:Name="CodexRemoteEnabled" Content="允许 Codex Remote 连接这台电脑" Margin="0,8,0,12"/>
+                <CheckBox x:Name="CodexAutoDiscover" Content="自动识别本机 Codex 项目与最近会话" Margin="0,0,0,12" Checked="CodexDiscoveryChanged" Unchecked="CodexDiscoveryChanged"/>
                 <TextBlock x:Name="CodexWorkspaces" Text="尚未选择项目" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
                 <WrapPanel Margin="0,12,0,0">
-                  <Button Content="添加项目目录" Click="AddCodexWorkspace" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
-                  <Button Content="清空项目" Click="ClearCodexWorkspaces" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
+                  <Button Content="补充项目目录" Click="AddCodexWorkspace" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
+                  <Button Content="清空手动目录" Click="ClearCodexWorkspaces" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
                   <Button Content="保存授权" Click="SaveCodexRemote" Margin="0,0,8,8"/>
                   <Button Content="打开远程开发" Click="OpenCodexRemote" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
                 </WrapPanel>

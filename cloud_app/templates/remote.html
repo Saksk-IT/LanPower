@@ -5,30 +5,34 @@
 <script defer src="/static/remote.js?v={{ version }}"></script>
 {% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">你的电脑 · 随时开发</p><h1>Codex Remote</h1><p class="muted">任务在自己的 Windows 电脑运行。登录与代码保留在本机。</p></div><span class="badge" id="remote-state" role="status">请选择电脑</span></div>
+<div class="page-heading remote-heading"><div><p class="eyebrow">你的电脑 · 随时开发</p><h1>Codex Remote</h1><p class="muted">选择电脑，继续你的本机 Codex 会话。</p></div><span class="badge" id="remote-state" role="status">请选择电脑</span></div>
 <section class="card remote-connect">
   <label for="remote-device">开发电脑</label><select id="remote-device"><option value="">选择一台电脑</option>{% for device in devices %}<option value="{{ device.id }}">{{ device.name }}</option>{% endfor %}</select>
-  <button id="remote-connect" type="button" class="primary">连接</button><button id="remote-wake" type="button" class="secondary" disabled>唤醒电脑</button><a href="/dashboard">电源管理</a>
+  <button id="remote-connect" type="button" class="secondary">重新连接</button><button id="remote-wake" type="button" class="secondary" disabled>唤醒电脑</button><a href="/dashboard">电源管理</a>
   <p id="remote-power-state" class="muted" role="status">电脑状态未知</p>
-  <p id="remote-hint" class="muted">先在电脑的 LanPower「远程连接」中启用 Codex Remote，并选择项目目录。</p>
+  <p id="remote-hint" class="muted" role="status">选择电脑后自动读取项目和最近会话。首次使用请在电脑启用 Codex Remote。</p>
 </section>
-<div class="remote-grid">
-  <section class="card remote-sessions"><h2>本机会话</h2>
-    <label for="remote-workspace">允许的项目</label><select id="remote-workspace" disabled><option value="">等待本机授权</option></select>
-    <button id="remote-new" type="button" class="secondary" disabled>创建会话</button>
-    <ul id="remote-threads" aria-label="Codex 会话"></ul><button id="remote-more" type="button" class="secondary" hidden>更多会话</button>
-    <p class="hint">切换或刷新页面后，可恢复保存在电脑上的会话。</p>
+<div class="remote-grid" id="remote-shell" data-view="library">
+  <section class="card remote-sessions"><div class="card-heading"><h2>本机会话</h2><button id="remote-new" type="button" class="secondary" disabled>新会话</button></div>
+    <label for="remote-search" class="sr-only">搜索已加载的会话</label><input id="remote-search" type="search" placeholder="搜索会话" autocomplete="off" maxlength="120">
+    <label for="remote-workspace" class="sr-only">按项目筛选</label><select id="remote-workspace" disabled><option value="">全部项目</option></select>
+    <div id="remote-threads" aria-label="Codex 项目和最近会话"><p class="muted">选择电脑后自动读取。</p></div><button id="remote-more" type="button" class="secondary" hidden>加载更多会话</button>
+    <p class="hint" id="remote-library-hint">项目和会话来自这台电脑上的 Codex。</p>
   </section>
   <div class="remote-main">
-    <section class="card"><div class="card-heading"><h2 id="remote-title">开发任务</h2><span id="remote-task-state" class="muted">尚未选择会话</span></div>
-      <div id="remote-transcript" role="log" aria-label="实时 AI 输出"><p class="muted">连接后，选择项目并创建或恢复会话。</p></div>
+    <section class="card remote-conversation"><div class="remote-conversation-heading"><button id="remote-back" type="button" class="secondary" aria-label="返回会话列表">← 返回</button><div><h2 id="remote-title">选择一个会话</h2><p id="remote-project-name" class="hint"></p></div><span id="remote-task-state" class="badge">尚未选择会话</span></div>
+      <p id="remote-control-hint" class="hint">查看已有会话，或在项目中创建新会话。</p>
+      <p id="remote-feedback" class="remote-feedback" role="status" hidden></p>
+      <div id="remote-progress" hidden><div class="remote-progress-heading"><span id="remote-progress-label">正在工作</span><span id="remote-elapsed"></span></div><ol id="remote-plan"></ol></div>
+      <div id="remote-transcript" role="log" aria-label="会话消息与实时进度"><div class="remote-empty"><span>⌘</span><h3>继续在你的电脑上工作</h3><p>最近会话和项目会自动出现在左侧。</p></div></div>
       <div id="remote-approvals" aria-live="polite"></div>
-      <form id="remote-task"><label for="remote-prompt">告诉 Codex 要完成什么</label><textarea id="remote-prompt" rows="4" maxlength="16000" placeholder="例如：检查这个项目的登录流程，修复问题并运行相关测试。" disabled></textarea>
-        <div class="remote-actions"><label for="remote-model">模型</label><select id="remote-model" disabled><option value="">本机默认模型</option></select><button id="remote-send" type="submit" class="primary" disabled>发送任务</button><button id="remote-interrupt" type="button" class="secondary" disabled>中断任务</button></div>
+      <form id="remote-task"><label for="remote-prompt" class="sr-only">向 Codex 发送消息或引导</label><textarea id="remote-prompt" rows="3" maxlength="16000" placeholder="向 Codex 提问，或告诉它接下来做什么…" disabled></textarea>
+        <div class="remote-actions"><label for="remote-model" class="sr-only">模型</label><select id="remote-model" disabled><option value="">本机默认模型</option></select><button id="remote-send" type="submit" class="primary" disabled>发送</button><button id="remote-interrupt" type="button" class="secondary" disabled>暂停任务</button></div>
       </form>
     </section>
-    <section class="card"><div class="card-heading"><h2>代码修改 Diff</h2><span class="hint">仅在本机与当前页面中读取</span></div><pre id="remote-diff" tabindex="0" aria-label="代码修改">暂无修改</pre></section>
+    <details class="card remote-diff-card"><summary><strong>代码修改</strong><span id="remote-diff-summary" class="hint">暂无修改</span></summary><pre id="remote-diff" tabindex="0" aria-label="代码修改">暂无修改</pre></details>
   </div>
 </div>
-<p class="hint">需要电脑已登录 Windows，且本机 Codex 已登录。审批只对本次操作生效；未处理的审批会在 5 分钟后拒绝。云端只保留操作类型和时间，不保存任务、输出或 Diff。</p>
+<dialog id="remote-project-picker"><form method="dialog"><h2>在哪个项目中开始？</h2><label for="remote-new-workspace">本机项目</label><select id="remote-new-workspace"></select><div class="remote-actions"><button value="cancel" class="secondary">取消</button><button id="remote-create" type="button" class="primary">创建会话</button></div></form></dialog>
+<p class="hint remote-footer">暂停会中断本轮任务，已有修改保留；可以继续发送消息。审批仅本次有效，5 分钟未处理会拒绝。桌面占用的会话同步展示进度；桌面结束或释放后可继续。Cloud 不保存会话正文。</p>
 {% endblock %}
