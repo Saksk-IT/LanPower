@@ -1,10 +1,10 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.12.0`，新增微信小程序专用 Codex Remote WSS 入口和独立手机开发权限，沿用已有长期授权与用户 Host。Cloud 193 项测试通过，内存 Relay 不保存正文。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.13.1`，新增微信小程序专用 Codex Remote WSS 入口和独立手机开发权限，沿用已有长期授权与用户 Host。Cloud 200 项测试通过，内存 Relay 不保存正文。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
 小程序 `2.1.0` 的首次使用及界面截图见 [第一版说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
 
-1.11 新增会话自动释放和菜单“交还桌面”，按会话隔离活动任务与审批；存在未结束任务或后台命令时保留连接。官方 Runtime 验证占用、释放和同会话恢复，原生桌面当前的活动任务仍只能同步查看。
+1.13.1 新增共享控制与原生消息队列。Windows「打开 Codex 双端控制」打开连接同一服务的官方桌面；该窗口中的活动任务可与网页双端引导、暂停。旧独立窗口仍只读观察。浏览器共享控件、队列增删和历史中断不覆盖新任务检查通过，实际官方桌面任务另行验证，见 [共享控制](../docs/codex-remote-takeover.md)。
 
 ## Codex Remote Relay
 

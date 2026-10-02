@@ -3,7 +3,7 @@ LanPower Windows 便携分发包
 1. 解压到本机目录，双击 Install.cmd，并允许 Windows 管理员授权。
 2. 安装完成后，双击 Open.cmd 打开普通用户权限的桌面端。
 3. 可以跳过 Cloud，仅配对局域网手机；Cloud 地址和短码批准流程与安装器相同。
-4. 使用 Codex Remote 时，当前 Windows 用户需自行安装并登录 Codex；在 LanPower 的“远程连接”启用自动项目识别，再打开 Cloud 1.12.0 的“Codex Remote”。微信小程序 2.1.0 也可从底部 Codex 进入，需先在 Cloud“手机授权”开启 Codex Remote 权限。
+4. 使用 Codex Remote 时，当前 Windows 用户需自行安装并登录 Codex；在 LanPower 的“远程连接”启用自动项目识别，点击“打开 Codex 双端控制”，再打开 Cloud 1.13.1 的“Codex Remote”选择同一电脑和会话。共享窗口与网页可同时引导、暂停和管理原生队列。微信小程序 2.1.1 也可从底部 Codex 进入，需先在 Cloud“手机授权”开启 Codex Remote 权限。
 
 这是无需 Setup.exe 的分发包。Windows Service 仍需管理员安装；服务、桌面程序与用户 Codex Host 会复制到 Program Files\LanPower，受保护的配置继续保存在 ProgramData\LanPower。Host 在用户登录后运行，本地远程开发授权默认关闭，按用户保存于 LocalAppData\LanPower。服务不会从可被普通用户修改的解压目录运行。
 

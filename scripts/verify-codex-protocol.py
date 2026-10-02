@@ -16,7 +16,7 @@ def verify(executable: str):
     with tempfile.TemporaryDirectory(prefix="LanPower-codex-protocol-") as temp:
         root = Path(temp).resolve()
         schema = root / "schema"
-        result = subprocess.run([executable, "app-server", "generate-json-schema", "--out", str(schema)],
+        result = subprocess.run([executable, "app-server", "generate-json-schema", "--experimental", "--out", str(schema)],
                                 capture_output=True, timeout=45)
         if result.returncode: raise RuntimeError("schema_generation_failed")
         expected = {"ThreadStartParams": {"cwd", "model", "approvalPolicy", "sandbox"},
@@ -26,6 +26,12 @@ def verify(executable: str):
             "TurnStartParams": {"threadId", "input", "approvalPolicy", "sandboxPolicy"},
             "TurnInterruptParams": {"threadId", "turnId"},
             "TurnSteerParams": {"threadId", "expectedTurnId", "input"},
+            "ThreadQueueAddParams": {"threadId", "clientUserMessageId", "input"},
+            "ThreadQueueListParams": {"threadId", "cursor", "limit"},
+            "ThreadQueueDeleteParams": {"threadId", "queuedSubmissionId"},
+            "ThreadQueueUpdateParams": {"threadId", "queuedSubmissionId", "input"},
+            "ThreadQueueReorderParams": {"threadId", "queuedSubmissionIds"},
+            "ThreadQueueStartParams": {"threadId", "queuedSubmissionId"},
             "CommandExecutionRequestApprovalResponse": {"decision"},
             "FileChangeRequestApprovalResponse": {"decision"},
             "PermissionsRequestApprovalResponse": {"permissions", "scope"},
@@ -50,7 +56,7 @@ def verify(executable: str):
                     if "error" in value: raise RuntimeError("runtime_rpc_failed")
                     return value["result"]
         try:
-            call("initialize", {"clientInfo": {"name": "lanpower_verify", "version": "1.11.0"}}, "init")
+            call("initialize", {"clientInfo": {"name": "lanpower_verify", "version": "1.13.1"}, "capabilities": {"experimentalApi": True}}, "init")
             process.stdin.write('{"method":"initialized","params":{}}\n'); process.stdin.flush()
             call("thread/list", {"limit": 5}, "list")
             created = call("thread/start", {"cwd": str(root), "approvalPolicy": "on-request", "sandbox": "workspace-write"}, "start")

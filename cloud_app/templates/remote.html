@@ -40,12 +40,14 @@
       <button id="remote-jump" class="remote-jump" type="button" hidden aria-label="查看最新消息">↓</button>
     </div>
     <footer class="remote-composer-footer">
+      <details id="remote-queue" class="remote-queue" hidden><summary id="remote-queue-label">待执行消息</summary><ol id="remote-queue-items"></ol></details>
       <p id="remote-control-hint" class="remote-control-hint"></p><p id="remote-feedback" class="remote-feedback" role="status" hidden></p>
       <form id="remote-task" class="remote-composer">
         <button id="remote-options-toggle" type="button" class="remote-composer-plus" aria-label="模型与输入选项" aria-expanded="false">{{ icon('plus',25) }}</button>
         <label for="remote-prompt" class="sr-only">向 Codex 发送消息或引导</label><textarea id="remote-prompt" rows="1" maxlength="16000" placeholder="向 Codex 提问" disabled></textarea>
         <button id="remote-mic" type="button" class="remote-mic" aria-label="语音输入" hidden>{{ icon('mic',24) }}</button>
         <button id="remote-send" type="submit" class="remote-send" disabled aria-label="发送消息">{{ icon('send',23) }}<span class="sr-only">发送</span></button>
+        <button id="remote-queue-send" type="button" class="remote-queue-send" hidden disabled title="将消息排队，在本轮结束后执行">排队</button>
         <button id="remote-interrupt" type="button" class="remote-send remote-stop" disabled hidden aria-label="暂停当前任务">{{ icon('stop',23) }}<span class="sr-only">暂停任务</span></button>
       </form>
       <div id="remote-options" class="remote-options" hidden><label for="remote-model">模型</label><select id="remote-model" disabled><option value="">本机默认模型</option></select><p>暂停会中断本轮任务，已有修改保留。Ctrl / ⌘ + Enter 发送。</p></div>

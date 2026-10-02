@@ -27,6 +27,12 @@ FIELDS = {
     "thread/name/set": {"threadId", "name"},
     "thread/archive": {"threadId"},
     "thread/unarchive": {"threadId"},
+    "thread/queue/add": {"threadId", "input", "clientUserMessageId"},
+    "thread/queue/list": {"threadId", "cursor", "limit"},
+    "thread/queue/update": {"threadId", "queuedSubmissionId", "input"},
+    "thread/queue/delete": {"threadId", "queuedSubmissionId"},
+    "thread/queue/start": {"threadId", "queuedSubmissionId"},
+    "thread/queue/reorder": {"threadId", "queuedSubmissionIds"},
     "turn/start": {"threadId", "input", "model", "effort"},
     "turn/interrupt": {"threadId", "turnId"},
     "turn/steer": {"threadId", "expectedTurnId", "input"},
@@ -100,7 +106,15 @@ def validate_request(payload: dict) -> str:
         if key in params and type(params[key]) is not bool: raise ProtocolError()
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
     if method == "turn/steer" and "expectedTurnId" not in params: raise ProtocolError()
-    if method in {"turn/start", "turn/steer"}:
+    for key, required in (("clientUserMessageId", method == "thread/queue/add"),
+                          ("queuedSubmissionId", method in {"thread/queue/update", "thread/queue/delete"})):
+        if required or key in params:
+            if not isinstance(params.get(key), str) or not 1 <= len(params[key]) <= 100: raise ProtocolError()
+    if method == "thread/queue/reorder":
+        ids = params.get("queuedSubmissionIds")
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 32 or any(not isinstance(i, str) or not 1 <= len(i) <= 100 for i in ids) or len(set(ids)) != len(ids):
+            raise ProtocolError()
+    if method in {"turn/start", "turn/steer", "thread/queue/add", "thread/queue/update"}:
         inputs = params.get("input")
         if (not isinstance(inputs, list) or len(inputs) != 1 or not isinstance(inputs[0], dict) or
                 set(inputs[0]) != {"type", "text"} or inputs[0]["type"] != "text" or

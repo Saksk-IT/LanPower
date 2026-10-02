@@ -1,21 +1,24 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using System.Net.WebSockets;
+using System.Text;
 using LanPower.Shared;
 
 namespace LanPower.CodexHost;
 
 public sealed class RuntimeClient : IAsyncDisposable
 {
-    private readonly Process _process;
-    private readonly RuntimeJob _job;
+    private readonly Process? _process;
+    private readonly RuntimeJob? _job;
+    private readonly ClientWebSocket? _socket;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _write = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonObject>> _calls = new();
     private readonly ConcurrentDictionary<string, (JsonObject Request, DateTimeOffset Time, JsonNode NativeId)> _approvals = new();
     private readonly ConcurrentDictionary<string, JsonObject> _resolvedApprovals = new();
-    private readonly Dictionary<string, string> _fileDiffs = new();
-    private bool _aggregatedDiff;
+    private readonly Dictionary<string, Dictionary<string, string>> _fileDiffs = new();
+    private readonly HashSet<string> _aggregatedDiffs = new();
     private readonly Task _reader;
     private readonly Task _stderr;
     // Local history may be larger than a Relay frame; RemoteRuntime returns a bounded recent view.
@@ -24,13 +27,30 @@ public sealed class RuntimeClient : IAsyncDisposable
     public string? ActiveThread { get; private set; }
     public string? ActiveTurn { get; private set; }
     public ConcurrentDictionary<string, string> ActiveTurns { get; } = new();
+    public ConcurrentDictionary<string, string> ThreadDiffs { get; } = new();
     public string Diff { get; private set; } = "";
-    public bool Running => !_process.HasExited && !_reader.IsCompleted;
+    public bool Shared => _socket is not null;
+    public bool Running => (_socket?.State == WebSocketState.Open || _process is { HasExited: false }) && !_reader.IsCompleted;
     public JsonArray PendingApprovals => new(_approvals.Values.Select(value => value.Request.DeepClone()).ToArray());
     private static readonly HashSet<string> Notifications = ["thread/started", "thread/status/changed", "turn/started",
         "turn/completed", "turn/diff/updated", "turn/plan/updated", "item/started", "item/completed",
         "item/agentMessage/delta", "item/plan/delta", "item/commandExecution/outputDelta",
-        "item/fileChange/outputDelta", "serverRequest/resolved", "error"];
+        "item/fileChange/outputDelta", "serverRequest/resolved", "thread/queue/changed", "error"];
+
+    private RuntimeClient(ClientWebSocket socket)
+    {
+        _socket = socket; _stderr = Task.CompletedTask; _reader = ReadAsync();
+    }
+
+    public static async Task<RuntimeClient> ConnectAsync(Uri endpoint, string bearer, CancellationToken token)
+    {
+        if (endpoint.Scheme != "ws" || endpoint.Host != "127.0.0.1" || !string.IsNullOrEmpty(endpoint.UserInfo) ||
+            bearer.Length != 64 || !bearer.All(Uri.IsHexDigit)) throw new InvalidDataException("invalid_shared_endpoint");
+        var socket = new ClientWebSocket(); socket.Options.SetRequestHeader("Authorization", "Bearer " + bearer);
+        try { await socket.ConnectAsync(endpoint, token); return new(socket); }
+        catch (WebSocketException error) { socket.Dispose(); throw new IOException("shared_runtime_unavailable", error); }
+        catch { socket.Dispose(); throw; }
+    }
 
     public RuntimeClient(string executable, string cwd)
     {
@@ -102,7 +122,7 @@ public sealed class RuntimeClient : IAsyncDisposable
     {
         try
         {
-            while (await CodexRemoteProtocol.ReadLineAsync(_process.StandardOutput, _lifetime.Token, LocalFrameLimit) is { } raw)
+            while (await ReadFrameAsync(_lifetime.Token) is { } raw)
             {
                 var message = CodexRemoteProtocol.Parse(raw, LocalFrameLimit);
                 if (message["id"] is JsonValue id && id.TryGetValue<string>(out var value) &&
@@ -114,6 +134,7 @@ public sealed class RuntimeClient : IAsyncDisposable
                 {
                     if (!CodexRemoteProtocol.ApprovalMethods.Contains(method) || _approvals.Count >= 64)
                     {
+                        if (Shared) continue; // Another subscribed client may handle this native request.
                         await SendAsync(new JsonObject { ["id"] = message["id"]!.DeepClone(),
                             ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "unsupported_request" } }, _lifetime.Token);
                         continue;
@@ -126,11 +147,19 @@ public sealed class RuntimeClient : IAsyncDisposable
                 }
                 else if (!Notifications.Contains(method)) continue;
                 var parameters = message["params"] as JsonObject;
+                if (parameters?["item"]?["type"]?.GetValue<string>() == "reasoning") continue;
+                var diffThread = parameters?["threadId"]?.GetValue<string>();
                 if (method == "turn/started")
                 {
                     ActiveThread = parameters?["threadId"]?.GetValue<string>(); ActiveTurn = parameters?["turn"]?["id"]?.GetValue<string>();
                     if (ActiveThread is not null && ActiveTurn is not null) ActiveTurns[ActiveThread] = ActiveTurn;
-                    Diff = ""; _fileDiffs.Clear(); _aggregatedDiff = false;
+                    Diff = "";
+                    if (ActiveThread is not null)
+                    {
+                        if (ThreadDiffs.Count >= 32 && ThreadDiffs.Keys.FirstOrDefault(key => !ActiveTurns.ContainsKey(key)) is { } old)
+                        { ThreadDiffs.TryRemove(old, out _); _fileDiffs.Remove(old); _aggregatedDiffs.Remove(old); }
+                        ThreadDiffs[ActiveThread] = ""; _fileDiffs.Remove(ActiveThread); _aggregatedDiffs.Remove(ActiveThread);
+                    }
                 }
                 if (method == "turn/completed")
                 {
@@ -143,18 +172,25 @@ public sealed class RuntimeClient : IAsyncDisposable
                     foreach (var decided in _resolvedApprovals.Where(pair => pair.Value["params"]?["threadId"]?.GetValue<string>() == threadId &&
                         pair.Value["params"]?["turnId"]?.GetValue<string>() == turnId)) _resolvedApprovals.TryRemove(decided.Key, out _);
                 }
-                if (method == "turn/diff/updated") { Diff = parameters?["diff"]?.GetValue<string>() ?? ""; _aggregatedDiff = true; }
+                if (method == "turn/diff/updated" && diffThread is not null)
+                {
+                    var diff = parameters?["diff"]?.GetValue<string>() ?? "";
+                    ThreadDiffs[diffThread] = diff.Length > 262144 ? diff[..262144] : diff;
+                    _aggregatedDiffs.Add(diffThread); if (diffThread == ActiveThread) Diff = ThreadDiffs[diffThread];
+                }
                 if (method == "item/completed" && parameters?["item"] is JsonObject item &&
                     item["type"]?.GetValue<string>() == "fileChange" && item["status"]?.GetValue<string>() == "completed" &&
-                    item["id"]?.GetValue<string>() is { } itemId && item["changes"] is JsonArray changes)
+                    item["id"]?.GetValue<string>() is { } itemId && item["changes"] is JsonArray changes && diffThread is not null)
                 {
-                    if (_fileDiffs.Count >= 32) _fileDiffs.Remove(_fileDiffs.Keys.First());
+                    if (!_fileDiffs.TryGetValue(diffThread, out var files)) _fileDiffs[diffThread] = files = new();
+                    if (files.Count >= 32) files.Remove(files.Keys.First());
                     var fileDiff = string.Join("\n", changes.OfType<JsonObject>().Select(change =>
                         $"文件：{change["path"]?.GetValue<string>()}\n{change["diff"]?.GetValue<string>()}"));
-                    _fileDiffs[itemId] = fileDiff.Length > 262144 ? fileDiff[..262144] : fileDiff;
+                    files[itemId] = fileDiff.Length > 262144 ? fileDiff[..262144] : fileDiff;
                     // Some Runtime/workspace combinations emit item diffs without an aggregate notification.
-                    var combined = string.Join("\n", _fileDiffs.Values);
-                    if (!_aggregatedDiff) Diff = combined.Length > 262144 ? combined[..262144] : combined;
+                    var combined = string.Join("\n", files.Values);
+                    if (!_aggregatedDiffs.Contains(diffThread)) ThreadDiffs[diffThread] = combined.Length > 262144 ? combined[..262144] : combined;
+                    if (diffThread == ActiveThread) Diff = ThreadDiffs.GetValueOrDefault(diffThread, "");
                 }
                 if (method == "serverRequest/resolved" && parameters?["requestId"] is { } resolved)
                 {
@@ -162,21 +198,51 @@ public sealed class RuntimeClient : IAsyncDisposable
                     if (pending.Key is not null)
                     {
                         parameters["requestId"] = pending.Value.Request["id"]!.DeepClone();
+                        parameters["threadId"] = pending.Value.Request["params"]?["threadId"]?.DeepClone();
+                        parameters["turnId"] = pending.Value.Request["params"]?["turnId"]?.DeepClone();
                         _approvals.TryRemove(pending.Key, out _);
                     }
                     else if (_resolvedApprovals.TryRemove(resolved.ToJsonString(), out var decided))
+                    {
                         parameters["requestId"] = decided["id"]!.DeepClone();
+                        parameters["threadId"] = decided["params"]?["threadId"]?.DeepClone();
+                        parameters["turnId"] = decided["params"]?["turnId"]?.DeepClone();
+                    }
                 }
                 Message?.Invoke(message);
             }
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or InvalidOperationException) { }
+        catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or InvalidOperationException or WebSocketException) { }
         finally
         {
             foreach (var call in _calls.Values) call.TrySetException(new IOException("runtime_exited"));
             _approvals.Clear();
             _resolvedApprovals.Clear();
         }
+    }
+
+    private async Task<string?> ReadFrameAsync(CancellationToken token)
+    {
+        if (_socket is null) return await CodexRemoteProtocol.ReadLineAsync(_process!.StandardOutput, token, LocalFrameLimit);
+        using var data = new MemoryStream(); var buffer = new byte[16384];
+        while (true)
+        {
+            var received = await _socket.ReceiveAsync(buffer.AsMemory(), token);
+            if (received.MessageType == WebSocketMessageType.Close) return null;
+            if (received.MessageType != WebSocketMessageType.Text || data.Length + received.Count > LocalFrameLimit)
+                throw new InvalidDataException("frame_too_large");
+            data.Write(buffer, 0, received.Count);
+            if (received.EndOfMessage) return new UTF8Encoding(false, true).GetString(data.GetBuffer(), 0, (int)data.Length);
+        }
+    }
+
+    public void ObserveThread(JsonObject thread)
+    {
+        if (thread["id"]?.GetValue<string>() is not { } id) return;
+        var active = (thread["turns"] as JsonArray)?.OfType<JsonObject>().LastOrDefault(turn =>
+            turn["status"]?.GetValue<string>() == "inProgress")?["id"]?.GetValue<string>();
+        if (active is not null) ActiveTurns[id] = active;
+        else if (thread["status"]?["type"]?.GetValue<string>() is "idle" or "notLoaded") ActiveTurns.TryRemove(id, out _);
     }
 
     public async Task DecideAsync(JsonObject response, CancellationToken token)
@@ -244,16 +310,21 @@ public sealed class RuntimeClient : IAsyncDisposable
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         await _write.WaitAsync(deadline.Token);
-        try { await _process.StandardInput.WriteLineAsync(raw.AsMemory(), deadline.Token); await _process.StandardInput.FlushAsync(deadline.Token); }
+        try
+        {
+            if (_socket is not null) await _socket.SendAsync(Encoding.UTF8.GetBytes(raw).AsMemory(), WebSocketMessageType.Text, true, deadline.Token);
+            else { await _process!.StandardInput.WriteLineAsync(raw.AsMemory(), deadline.Token); await _process.StandardInput.FlushAsync(deadline.Token); }
+        }
         finally { _write.Release(); }
     }
 
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
-        if (!_process.HasExited) _process.Kill(true);
-        _job.Dispose();
+        _socket?.Abort();
+        if (_process is { HasExited: false }) _process.Kill(true);
+        _job?.Dispose();
         try { await Task.WhenAll(_reader, _stderr); } catch (OperationCanceledException) { }
-        _process.Dispose(); _lifetime.Dispose();
+        _socket?.Dispose(); _process?.Dispose(); _lifetime.Dispose();
     }
 }

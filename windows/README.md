@@ -1,16 +1,16 @@
 # Windows 应用
 
-当前源码版本：Windows `1.12.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。小程序 `2.1.0` 通过 Cloud `1.12.0` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录、项目授权、会话交还和桌面只读边界继续适用，详见 [小程序第一版](../docs/codex-remote-mini-program.md)。本轮安装包与 71 项 Windows 测试通过；本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.13.1`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。小程序 `2.1.1` 通过 Cloud `1.13.1` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用，新增官方桌面共享控制入口，详见 [小程序第一版](../docs/codex-remote-mini-program.md)。本轮安装包与 76 项 Windows 测试通过；本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
-1.11 新增会话自动释放和菜单“交还桌面”，按会话隔离活动任务与审批；存在未结束任务或后台命令时保留连接。官方 Runtime 验证占用、释放和同会话恢复，原生桌面当前的活动任务仍只能同步查看。
+1.13.1 修复共享服务首次启动的连接重试、新会话尚无历史时的读取与继续，并明确使用官方 Codex 模式。「打开 Codex 双端控制」按钮已在安装版实际点击成功。新增共享入口，保留官方桌面 UI，由独立用户共享服务维持任务。该窗口与网页可控制同一活动任务，无需交还；旧窗口的活动任务不能在线迁移。真实双向暂停、网页引导和原生队列显示检查通过，见 [共享控制验证](../docs/codex-remote-takeover.md)。
 
 本目录是 .NET 10 Windows 服务、WPF 桌面端和安装包的源码。服务同时提供 LAN Direct 与可选的 Cloud Direct，旧版 Python 实现继续保留。局域网控制不依赖 Cloud 或 Wake Gateway。
 
 ## Codex Remote
 
-Setup 和便携包包含 `CodexHost/LanPower.CodexHost.exe`，在 Windows 用户登录后启动，也由桌面端自动补启动。Host 默认不启动 Codex；在「远程连接」开启授权并保存后，浏览器连接才启动官方 `codex app-server --listen stdio://`。可直接检测已安装 Codex 桌面程序的 Runtime 和当前用户的登录，或使用官方 CLI。默认自动识别已登记项目和近期有效工作目录；关闭自动识别后只授权手动目录。桌面占用会话同步查看，Remote 当前任务支持引导和暂停；具体边界见 [使用说明](../docs/codex-remote.md)。
+Setup 和便携包包含用户 Host 及 `CodexServer/1.13.1/LanPower.CodexServer.exe`。保存远程授权并点击「打开 Codex 双端控制」后，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 LanPower Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
 
-本地授权保存在当前用户 `%LOCALAPPDATA%\LanPower\codex-remote.json`，最多 32 个普通本机目录，拒绝 UNC、符号链接与目录联接。关闭授权会结束 Host 管理的 Runtime；浏览器断线保留任务，重连查询实际状态，任务不会自动重发。无需新增端口、防火墙规则或公网 Shell。完整步骤、进程生命周期、受限审批和验收记录见 [Codex Remote](../docs/codex-remote.md)。卸载保留 ProgramData 和用户授权配置，并移除 Host 启动项。
+本地授权保存在 `%LOCALAPPDATA%\LanPower\codex-remote.json`，最多 32 个普通本机目录，拒绝 UNC、符号链接和目录联接。关闭授权立即断开远程访问；共享模式保留桌面任务，独立模式结束自有执行进程。共享凭据仅通过当前用户管道传递，私有目录仅允许当前用户及 SYSTEM 访问。浏览器断线不重发任务，重新连接读取活动编号、历史、队列与审批。完整步骤见 [Codex Remote](../docs/codex-remote.md)。
 
 ## 构建
 

@@ -10,6 +10,24 @@ using LanPower.Shared;
 using Microsoft.Win32.SafeHandles;
 
 if (!Environment.UserInteractive || WindowsIdentity.GetCurrent().IsSystem) return;
+if (args.Contains("--open-shared-desktop"))
+{
+    try
+    {
+        await SharedCodexServer.OpenDesktopAsync(CancellationToken.None);
+        var config = CodexHostSettings.Load(); (config with { SharedControl = true }).Save();
+    }
+    catch (Exception error) when (error is IOException or UnauthorizedAccessException or TimeoutException or InvalidOperationException or System.ComponentModel.Win32Exception)
+    {
+        Environment.ExitCode = error.Message switch {
+            "native_desktop_not_installed" => 2,
+            "shared_runtime_not_installed" => 3,
+            _ when error is UnauthorizedAccessException => 5,
+            _ when error is TimeoutException || error.Message == "shared_runtime_unavailable" => 4,
+            _ => 1 };
+    }
+    return;
+}
 var pipeName = Argument("--pipe") ?? CodexRemoteProtocol.PipeName;
 var settingsPath = Argument("--settings") ?? CodexHostSettings.DefaultPath;
 var identity = WindowsIdentity.GetCurrent().User!.Value;
@@ -43,7 +61,8 @@ runtime.Message += message => { if (session is { } current) Emit(new { type = "r
 // Local revocation and approval expiry must work even while Cloud/Service is offline.
 async Task WatchLocal()
 {
-    var previous = JsonSerializer.Serialize(ReadSettings());
+    var previousConfig = ReadSettings();
+    var previous = JsonSerializer.Serialize(previousConfig);
     var running = false;
     while (!lifetime.IsCancellationRequested)
     {
@@ -51,17 +70,21 @@ async Task WatchLocal()
         await runtimeLock.WaitAsync(lifetime.Token);
         try
         {
+            await runtime.ExpireAsync(lifetime.Token);
             var config = ReadSettings();
             var current = JsonSerializer.Serialize(config);
             if (current != previous)
             {
-                await runtime.DisposeAsync(); previous = current;
+                // A mode change waits for existing independent tasks to finish. Revocation still takes effect immediately.
+                if (config.SharedControl != previousConfig.SharedControl &&
+                    JsonSerializer.Serialize(config with { SharedControl = previousConfig.SharedControl }) == previous &&
+                    !await runtime.CanSwitchModeAsync(lifetime.Token)) continue;
+                await runtime.DisposeAsync(); previous = current; previousConfig = config; running = false;
                 Emit(new { type = "hello", protocol = 1, state = config.Enabled ? "host_ready" : "disabled" });
                 if (!config.Enabled) State("disabled");
             }
             if (running && !runtime.Running) State(config.Enabled ? "runtime_error" : "disabled");
             running = runtime.Running;
-            await runtime.ExpireAsync(lifetime.Token);
         }
         catch (Exception error) when (error is IOException or InvalidDataException) { State("runtime_error"); }
         finally { runtimeLock.Release(); }
@@ -128,7 +151,7 @@ while (!lifetime.IsCancellationRequested)
                             // Remote failures contain only fixed categories. Runtime RPC errors remain encrypted in transit.
                             var category = error.Message is "desktop_session_busy" or "task_running" or "workspace_not_allowed" or
                                 "turn_changed" or "approval_unavailable" or "too_many_sessions" or "background_running" or
-                                "session_release_unavailable" ? error.Message : "request_rejected";
+                                "session_release_unavailable" or "shared_session_control" or "shared_runtime_required" ? error.Message : "request_rejected";
                             Emit(new { type = "rpc", session, payload = new JsonObject { ["id"] = request["id"]?.DeepClone(),
                                 ["error"] = new JsonObject { ["code"] = -32000, ["message"] = category } } });
                         }

@@ -166,6 +166,7 @@ public sealed class CodexRemoteTests
                     ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "隔离验证" }) }), CancellationToken.None);
             var first = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
             var second = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsFalse(await runtime.CanSwitchModeAsync(CancellationToken.None));
             Assert.AreNotEqual(CodexRemoteProtocol.Id(first), CodexRemoteProtocol.Id(second), "Native request 7 in two workers must remain distinct.");
             var release = Request("lanpower/session/release", new() { ["threadId"] = "thread-test" });
             await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(release, CancellationToken.None));
@@ -181,6 +182,7 @@ public sealed class CodexRemoteTests
             await runtime.HandleAsync(new JsonObject { ["id"] = remaining["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "decline" } }, CancellationToken.None);
             await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
             Assert.AreEqual("available", (await runtime.HandleAsync(Request("thread/read", new() { ["threadId"] = "thread-test" }), CancellationToken.None))!["result"]!["thread"]!["control"]!.GetValue<string>());
+            Assert.IsTrue(await runtime.CanSwitchModeAsync(CancellationToken.None));
             await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(Request("lanpower/session/release", new() { ["threadId"] = "outside-test" }), CancellationToken.None));
         }
         finally { Directory.Delete(path, true); }
@@ -244,6 +246,7 @@ public sealed class CodexRemoteTests
             await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
             var failure = await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(Request("lanpower/session/release", new() { ["threadId"] = "thread-test" }), CancellationToken.None));
             Assert.AreEqual("background_running", failure.Message);
+            Assert.IsFalse(await runtime.CanSwitchModeAsync(CancellationToken.None), "Switching modes must preserve background commands after a turn completes.");
             await Task.Delay(2100); await runtime.ExpireAsync(CancellationToken.None);
             Assert.AreEqual("remote", (await runtime.HandleAsync(Request("thread/read", new() { ["threadId"] = "thread-test" }), CancellationToken.None))!["result"]!["thread"]!["control"]!.GetValue<string>());
         }

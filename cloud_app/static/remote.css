@@ -87,6 +87,10 @@ body[data-page=remote] .sidebar.mobile-open { display:flex; position:fixed; inse
 .remote-dialog select { width:100%; margin:10px 0; font-size:15px; }.remote-dialog p { font-size:13px; line-height:1.7; color:#888; overflow-wrap:anywhere; }
 .remote-dialog-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:18px; }.remote-dialog-actions button { padding:10px 15px; border-radius:20px; background:#f1f1f1; min-height:42px; }.remote-dialog-actions a { font-size:13px; color:#777; }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.remote-queue { margin:0 0 8px; padding:8px 12px; border:1px solid #e8e8e8; border-radius:14px; background:#fafafa; font-size:13px; max-height:150px; overflow:auto; }
+.remote-queue summary { cursor:pointer; }.remote-queue ol { padding-left:20px; margin:8px 0 0; }
+.remote-queue li { display:flex; gap:10px; align-items:center; padding:5px 0; }.remote-queue li span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.remote-queue li button,.remote-queue-send { background:transparent!important; border:0!important; color:#555!important; padding:6px!important; font-size:13px; white-space:nowrap; }
 [hidden] { display:none!important; }
 @keyframes remote-pulse { 50% { opacity:.45; } }@media(prefers-reduced-motion:reduce) { .remote-thread-dot.running { animation:none; } }
 @media(max-width:760px) {

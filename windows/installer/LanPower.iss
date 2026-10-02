@@ -1,4 +1,4 @@
-#define AppVersion "1.12.0"
+#define AppVersion "1.13.1"
 
 [Setup]
 AppId={{8A2B40CB-05CD-4A61-8A72-CFE71A60A8B2}
@@ -18,6 +18,7 @@ WizardStyle=modern
 SetupIconFile=..\LanPower.Desktop\Assets\LanPower.ico
 UninstallDisplayIcon={app}\Desktop\LanPower.Desktop.exe
 CloseApplications=yes
+CloseApplicationsFilter=LanPower.Service.exe,LanPower.Desktop.exe,LanPower.CodexHost.exe
 SetupLogging=yes
 
 [Languages]
@@ -27,6 +28,7 @@ Name: "zh"; MessagesFile: "ChineseSimplified.isl"
 Source: "..\out\service\*"; DestDir: "{app}\Service"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\desktop\*"; DestDir: "{app}\Desktop"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\codexhost\LanPower.CodexHost.exe"; DestDir: "{app}\CodexHost"; Flags: ignoreversion
+Source: "..\out\codexserver\LanPower.CodexServer.exe"; DestDir: "{app}\CodexServer\{#AppVersion}"; Flags: ignoreversion
 Source: "..\out\setup\install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\install-diagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion

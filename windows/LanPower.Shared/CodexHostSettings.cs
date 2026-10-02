@@ -4,7 +4,7 @@ using System.Text;
 
 namespace LanPower.Shared;
 
-public sealed record CodexHostSettings(bool Enabled, string[] Workspaces, string Executable = "", bool AutoDiscover = true)
+public sealed record CodexHostSettings(bool Enabled, string[] Workspaces, string Executable = "", bool AutoDiscover = true, bool SharedControl = false)
 {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern uint GetLongPathName(string path, StringBuilder result, uint size);
     public static string Canonical(string path)

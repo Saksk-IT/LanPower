@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud 1.12.0 与小程序 2.1.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
+适用于 LanPower Windows / Cloud 1.13.1 与小程序 2.1.1。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
 
 ## 认证与连接
 
@@ -50,21 +50,37 @@
 | `thread/read` | `threadId`, `includeTurns` |
 | `thread/name/set` | `threadId`, `name` |
 | `thread/archive`, `thread/unarchive` | `threadId` |
+| `thread/queue/add` | `threadId`, `clientUserMessageId`, `input` |
+| `thread/queue/list` | `threadId`, `cursor`, `limit` |
+| `thread/queue/update` | `threadId`, `queuedSubmissionId`, `input` |
+| `thread/queue/delete` | `threadId`, `queuedSubmissionId` |
+| `thread/queue/reorder` | `threadId`, `queuedSubmissionIds`，1–32 个不重复编号 |
+| `thread/queue/start` | `threadId`, `queuedSubmissionId`（可省略） |
 | `turn/start` | `threadId`, `input`, `model`, `effort` |
 | `turn/interrupt` | `threadId`, `turnId` |
 | `turn/steer` | `threadId`, `expectedTurnId`, `input`；必须匹配本 Runtime 的当前任务 |
 
 请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。任务 input 只能是一项 `{type:"text", text:"..."}`，最多 16,000 字符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
 
-Host 为创建/恢复强制 `approvalPolicy:on-request`、`sandbox:workspace-write`；为 turn 强制当前本地允许 cwd 和 `workspaceWrite` 策略，`networkAccess:false`，排除临时目录额外写入。`thread/list` 内部追加来源筛选以包含 app-server 创建的会话。浏览器不能修改这些字段。
+独立模式 Host 为创建/恢复强制 `approvalPolicy:on-request`、`sandbox:workspace-write`；为 turn 强制当前本地允许 cwd 和 `workspaceWrite` 策略，`networkAccess:false`，排除临时目录额外写入。`thread/list` 内部追加来源筛选以包含 app-server 创建的会话。浏览器不能修改这些字段。
 
 1.11.0 的 `thread/list` 可省略 `cwd`，按更新时间读取所有已授权本机会话，跨已配置的模型提供方；客户端不能覆盖来源、提供方或项目发现规则。自动发现通过内部 `project/list`、已登记的桌面项目元数据和近期有效工作目录进行，不读取登录文件。关闭自动发现后仍只允许手动目录。
 
 桌面已保存会话的 `thread/read` / 列表摘要可带 `live`：`source=localSession`，`state=running|idle|unknown`，`turnId`、`startedAt`、`updatedAt` 和有界活动摘要。状态来自本机真实生命周期及系统写锁，浏览器每 2 秒读取选中会话。近期轮次附带真实 `startedAt` / `completedAt` / `durationMs`；工具活动只含名称和执行状态，不含原始参数、隐藏推理或登录数据。`control=desktop` 仍不允许修改、引导和中断；`live` 是只读观察，不赋予桌面控制权。
 
-`thread/read` 只读取，不恢复会话；Host 内部使用分页历史取最近 8 轮，每轮最多 80 项、文字字段最多 8,000 字符，总内容约 240,000 字符。返回 `control: desktop/available/remote`、项目名称和范围。桌面仍持有写锁时，继续、引导、中断及其他修改操作被拒绝。`turn/steer` 的输入约束与 `turn/start` 相同，不能带模型、目录或策略覆盖；`expectedTurnId` 必须匹配本 Runtime 当前任务，不能引导其他会话。
+独立模式 `thread/read` 只读取，不恢复会话；Host 内部使用分页历史取最近 8 轮，每轮最多 80 项、文字字段最多 8,000 字符，总内容约 240,000 字符。返回 `control: desktop/available/remote/shared`、项目名称和范围。桌面仍持有写锁时，继续、引导、中断及其他修改操作被拒绝。`turn/steer` 的输入约束与 `turn/start` 相同，不能带模型、目录或策略覆盖；`expectedTurnId` 必须匹配本 Runtime 当前任务，不能引导其他会话。
 
-## 通知与审批
+## 1.13.1 共享执行与原生队列
+
+`lanpower/status` 返回 `sharedControl:true`、`queueSupported:true`、`sessionHandoff:false`；会话摘要可返回 `control:shared`。旧状态与独立进程路径保持兼容。共享 `thread/read` 在授权检查后以 `thread/resume {threadId,excludeTurns:true}` 订阅当前任务，不设置权限、模型或目录覆盖；状态与活动编号从同一服务及当前轮次读取。共享会话无需释放，`lanpower/session/release` 被拒绝；旧独立桌面仍按写锁保护。
+
+`thread/queue/*` 是本机 CLI 的实验性原生接口，不是 Cloud 自建任务队列。新增/更新仍只接受单项文本；消息身份与队列编号不超过 100 字符，重排拒绝重复或空集合。原生 `thread/queue/changed` 通知触发列表重读，断线后读回队列而不重新添加。队列执行沿用该原生会话已有设置，网页新建即时任务仍强制受限权限。
+
+共享服务由独立用户进程持有，只监听 `127.0.0.1`。后端使用 32 字节随机 Bearer，凭据经 `CurrentUserOnly` 命名管道传递；Token 文件及桌面配置仅允许当前用户/SYSTEM。官方桌面的本地网关使用另一随机入口，拒绝 Origin、查询参数与畸形 Upgrade，只转发有界文本帧；转发认证不会出现在 Cloud URL。Host 退出、远程断线和撤销授权只断开其连接，不结束共享引擎。安装器将服务放入版本目录并限定自动关闭的程序，避免升级时结束共享任务。
+
+审批由同一原生服务解决一次，再映射已解决编号给网页；不覆盖已有桌面权限，不对共享审批执行独立模式的 5 分钟自动拒绝。会话通知按已授权线程过滤，隐藏 reasoning 项不转发，Diff 按会话分开维护。详细实测与边界见 [共享控制](codex-remote-takeover.md)。
+
+## 独立模式通知与审批
 
 `lanpower/status` 增加 `sessionHandoff:true` 和 `activeTurns:[{threadId,turnId}]`；旧字段保持兼容。旧 Host 缺少此能力标志时网页禁用交还按钮。
 

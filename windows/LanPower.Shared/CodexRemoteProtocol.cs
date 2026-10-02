@@ -18,6 +18,12 @@ public static class CodexRemoteProtocol
         ["thread/start"] = ["cwd", "model"], ["thread/resume"] = ["threadId"],
         ["thread/read"] = ["threadId", "includeTurns"], ["thread/name/set"] = ["threadId", "name"],
         ["thread/archive"] = ["threadId"], ["thread/unarchive"] = ["threadId"],
+        ["thread/queue/add"] = ["threadId", "input", "clientUserMessageId"],
+        ["thread/queue/list"] = ["threadId", "cursor", "limit"],
+        ["thread/queue/update"] = ["threadId", "queuedSubmissionId", "input"],
+        ["thread/queue/delete"] = ["threadId", "queuedSubmissionId"],
+        ["thread/queue/start"] = ["threadId", "queuedSubmissionId"],
+        ["thread/queue/reorder"] = ["threadId", "queuedSubmissionIds"],
         ["turn/start"] = ["threadId", "input", "model", "effort"],
         ["turn/interrupt"] = ["threadId", "turnId"],
         ["turn/steer"] = ["threadId", "expectedTurnId", "input"]
@@ -75,13 +81,18 @@ public static class CodexRemoteProtocol
         foreach (var name in new[] { "cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId" })
             ValidateString(args, name, 1000, method == "turn/interrupt" && name == "turnId" ||
                 method == "turn/steer" && name == "expectedTurnId");
+        ValidateString(args, "clientUserMessageId", 100, method == "thread/queue/add");
+        ValidateString(args, "queuedSubmissionId", 100, method is "thread/queue/delete" or "thread/queue/update");
+        if (method == "thread/queue/reorder" && (args["queuedSubmissionIds"] is not JsonArray { Count: > 0 and <= 32 } ids ||
+            ids.Any(id => id is not JsonValue value || !value.TryGetValue<string>(out var text) || text.Length is < 1 or > 100) ||
+            ids.Select(id => id!.GetValue<string>()).Distinct().Count() != ids.Count)) throw new InvalidDataException("invalid_params");
         if (args.ContainsKey("limit") && (args["limit"] is not JsonValue limit ||
             !limit.TryGetValue<int>(out var count) || count is < 1 or > 50))
             throw new InvalidDataException("invalid_params");
         foreach (var name in new[] { "includeTurns", "archived" })
             if (args.ContainsKey(name) && (args[name] is not JsonValue value || !value.TryGetValue<bool>(out _)))
                 throw new InvalidDataException("invalid_params");
-        if (method is "turn/start" or "turn/steer")
+        if (method is "turn/start" or "turn/steer" or "thread/queue/add" or "thread/queue/update")
         {
             if (args["input"] is not JsonArray { Count: 1 } input || input[0] is not JsonObject { Count: 2 } text ||
                 text["type"]?.GetValue<string>() != "text") throw new InvalidDataException("invalid_input");
