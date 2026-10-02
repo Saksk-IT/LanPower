@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-应用源码版本为 `1.8.0`，本地部署配置版本为 `1.8.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.10.0`，本地部署配置版本为 `1.10.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
 
@@ -69,7 +69,13 @@ Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<开发 CA 指纹>'
 Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 ```
 
-## Codex Remote 1.9 本机验证（2026-10-02）
+## Codex Remote 1.10 本机验证（2026-10-02）
+
+本机 Cloud / Windows 更新至 `1.10.0`，开发镜像为 `lanpower-cloud:1.10.0-dev.1`。升级前使用 SQLite backup API 保存开发库并检查完整性，保留数据卷、登录配置和开发 CA；升级后运行及分发包版本均为 1.10.0，Cloud 和 Caddy 健康，完整性检查正常且无外键错误。原 Windows 配置、用户 Codex 授权、设备身份和 Cloud 地址保留，续期凭据正常轮换；三个安装程序的二进制哈希与构建产物一致。
+
+Windows 68 项、Cloud 186 项及浏览器 1440/390/320px 检查通过。真实只读 Runtime 请求确认桌面会话的运行/结束状态和近期消息；页面控制流程使用模拟响应。另一真实网页仍持有控制连接，本轮未抢占或中断它完成实际双端网页控制验证。未部署公网服务器或推送远程仓库。
+
+## 历史 Codex Remote 1.9 本机验证（2026-10-02）
 
 本机 Cloud / Windows 更新至 `1.9.0`，开发镜像为 `lanpower-cloud:1.9.0-dev.1`。正常 Docker 构建通过，切换前使用 SQLite backup API 备份并检查完整性，原数据卷、登录配置和开发 CA 保留。Setup 就地更新三项 Windows 程序并核对哈希；LAN 配置、用户授权保留，Cloud 地址和设备身份不变，凭据正常续期轮换。
 

@@ -86,12 +86,18 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
         var id = thread["id"]!.GetValue<string>();
         var control = _owned.Contains(id) ? "remote" : CodexProjects.DesktopOwns(id) ? "desktop" : "available";
         string Short(string key, int max) { var value = thread[key]?.GetValue<string>() ?? ""; return value.Length > max ? value[..max] : value; }
-        return new JsonObject {
+        var summary = new JsonObject {
             ["id"] = id, ["name"] = Short("name", 160), ["preview"] = Short("preview", 160),
             ["cwd"] = cwd, ["createdAt"] = thread["createdAt"]?.DeepClone(), ["updatedAt"] = thread["updatedAt"]?.DeepClone(),
             ["status"] = thread["status"]?.DeepClone(), ["control"] = control,
             ["projectPath"] = project?.Path ?? cwd, ["projectName"] = project?.Name ?? Path.GetFileName(cwd),
         };
+        if (control == "desktop" && cwd is not null && NativeSessionSnapshot.Read(id, thread["path"]?.GetValue<string>(), cwd) is { } snapshot)
+        {
+            summary["live"] = snapshot["live"]?.DeepClone();
+            if (snapshot["live"]?["state"]?.GetValue<string>() == "running") summary["status"] = new JsonObject { ["type"] = "active" };
+        }
+        return summary;
     }
 
     private static JsonArray BoundedTurns(JsonArray turns)
@@ -121,6 +127,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
                 if (items.ToJsonString().Length > 100000) { items.RemoveAt(items.Count - 1); break; }
             }
             result.Add(new JsonObject { ["id"] = turn["id"]?.DeepClone(), ["status"] = turn["status"]?.DeepClone(),
+                ["startedAt"] = turn["startedAt"]?.DeepClone(), ["completedAt"] = turn["completedAt"]?.DeepClone(), ["durationMs"] = turn["durationMs"]?.DeepClone(),
                 ["items"] = items, ["error"] = turn["error"] is null ? null : new JsonObject { ["message"] = "本轮任务未完成，请查看本机状态。" } });
             if (result.ToJsonString().Length > 240000) { result.RemoveAt(result.Count - 1); break; }
         }
@@ -134,6 +141,16 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
         if (response["result"]?["thread"] is not JsonObject native) throw new IOException("thread_unavailable");
         RequireWorkspace(native["cwd"]?.GetValue<string>());
         var thread = Summary(native);
+        if (!_owned.Contains(id) && NativeSessionSnapshot.Read(id, native["path"]?.GetValue<string>(), native["cwd"]!.GetValue<string>()) is { } snapshot)
+        {
+            thread["live"] = snapshot["live"]?.DeepClone();
+            if (snapshot["live"]?["state"]?.GetValue<string>() == "running") thread["status"] = new JsonObject { ["type"] = "active" };
+            if (history && snapshot["turns"] is JsonArray { Count: > 0 })
+            {
+                thread["turns"] = snapshot["turns"]!.DeepClone(); thread["historyTruncated"] = snapshot["historyTruncated"]?.DeepClone();
+                return thread;
+            }
+        }
         if (history)
         {
             var turns = await _runtime.CallAsync("thread/turns/list", new JsonObject {

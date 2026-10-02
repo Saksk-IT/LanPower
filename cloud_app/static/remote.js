@@ -79,7 +79,8 @@
   function projectName(path) { return String(path || '').split(/[\\/]/).filter(Boolean).at(-1) || '本机项目'; }
   function taskLabel(thread, activeThread, activeTurn) {
     if (thread.id === activeThread && activeTurn) return '运行中';
-    if (thread.control === 'desktop') return '桌面占用';
+    if (thread.live?.state === 'running') return '运行中';
+    if (thread.control === 'desktop') return thread.live?.state === 'idle' ? '桌面已连接' : '桌面状态待确认';
     const status = thread.status?.type;
     return status === 'active' ? '运行中' : status === 'systemError' ? '需要处理' : '可继续';
   }
@@ -89,7 +90,8 @@
   const csrf = document.querySelector('meta[name="lp-csrf"]').content;
   let ready = false, currentState = 'idle', threadId = null, selectedThread = null, activeThread = null, activeTurn = null, sending = false;
   let cursor = null, epoch = 0, selection = 0, turnRevision = 0, aggregateDiff = false, catalog = [], sessions = [], startedAt = 0, listing = false, refreshing = false;
-  const approvals = new Map(), deltas = new Map(), fileChanges = new Map(), messageItems = new Map();
+  const approvals = new Map(), deltas = new Map(), fileChanges = new Map(), messageItems = new Map(), turnGroups = new Map();
+  let renderTurn = null, synchronizedAt = 0, lastCompletion = null, catalogPolledAt = 0;
   const rawMessages = new WeakMap();
   const client = new RemoteClient({
     socketFactory: device => new WebSocket(
@@ -133,8 +135,15 @@
         const pre = document.createElement('pre'), child = document.createElement('code'); child.textContent = code.join('\n'); pre.append(child); fragment.append(pre); continue;
       }
       const heading = line.match(/^(#{1,3})\s+(.+)$/), bullet = line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/);
-      const paragraph = document.createElement(heading ? 'h' + (heading[1].length + 2) : 'p');
-      inline(paragraph, heading ? heading[2] : bullet ? '• ' + bullet[1] : line || '\u00a0'); fragment.append(paragraph);
+      if (bullet) {
+        const ordered = /^\s*\d+\./.test(line), tag = ordered ? 'OL' : 'UL';
+        let list = fragment.lastChild;
+        if (list?.tagName !== tag) { list = document.createElement(tag.toLowerCase()); fragment.append(list); }
+        const li = document.createElement('li'); inline(li,bullet[1]); list.append(li); continue;
+      }
+      if (!line.trim()) continue;
+      const quote = line.match(/^>\s?(.*)$/), paragraph = document.createElement(heading ? 'h' + (heading[1].length + 2) : quote ? 'blockquote' : 'p');
+      inline(paragraph, heading ? heading[2] : quote ? quote[1] : line); fragment.append(paragraph);
     }
     target.replaceChildren(fragment);
   }
@@ -142,31 +151,69 @@
     el('shell').dataset.view = show ? 'thread' : 'library';
     document.body.classList.toggle('remote-in-thread', show);
   }
+  function observedActive() { return selectedThread?.live?.state === 'running'; }
+  function svg(name, size = 22) {
+    if (name === 'compose') return el('compose').querySelector('svg').cloneNode(true);
+    const node = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    for (const [key,value] of Object.entries({width:size,height:size,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true',class:'icon'})) node.setAttribute(key,value);
+    const paths = {folder:'M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v2M3 7h18l-3 13H3Z',computer:'M3 4h18v13H3ZM8 21h8m-4-4v4',copy:'M8 8h12v13H8ZM16 8V3H3v13h5'};
+    const path = document.createElementNS(node.namespaceURI,'path'); path.setAttribute('d',paths[name] || paths.copy); node.append(path); return node;
+  }
+  function elapsedLabel(seconds) { seconds = Math.max(0,Math.floor(seconds)); return (seconds >= 60 ? Math.floor(seconds/60) + ' 分 ' : '') + seconds%60 + ' 秒'; }
+  function activityTitle(text) {
+    const labels = {'functions.exec':'本机工具','exec_command':'本机命令','functions.exec_command':'本机命令','functions.apply_patch':'文件修改','apply_patch':'文件修改','web.run':'网页检索','functions.web__run':'网页检索','functions.wait':'等待操作结果'};
+    return String(text || '').replace(/ · ([A-Za-z0-9_.-]+)$/,(_,name)=>' · ' + (labels[name] || '本机工具'));
+  }
+  function group(id = renderTurn || (selectedActive() ? activeTurn : 'conversation')) {
+    if (turnGroups.has(id)) return turnGroups.get(id);
+    const root = document.createElement('section'); root.className = 'remote-turn'; root.dataset.turn = id;
+    const users = document.createElement('div'), activity = document.createElement('details'), summary = document.createElement('summary'), tools = document.createElement('div'), replies = document.createElement('div');
+    activity.className = 'remote-turn-activity'; activity.hidden = true; tools.className = 'remote-turn-tools'; summary.textContent = '执行过程'; activity.append(summary,tools); root.append(users,activity,replies);
+    el('transcript').querySelector('.remote-empty')?.remove(); el('transcript').append(root);
+    const result = {root,users,activity,summary,tools,replies}; turnGroups.set(id,result); return result;
+  }
+  function computerTabs() {
+    const tabs = el('computer-tabs'); tabs.replaceChildren();
+    const all = document.createElement('button'); all.type = 'button'; all.textContent = '全部'; all.title = '当前电脑的全部项目'; all.setAttribute('aria-pressed',String(!el('workspace').value));
+    all.onclick = () => { el('workspace').value = ''; el('search').value = ''; renderLibrary(); computerTabs(); }; tabs.append(all);
+    for (const option of Array.from(el('device').options).filter(o => o.value)) {
+      const button = document.createElement('button'), dot = document.createElement('span'); button.type = 'button'; dot.className = 'remote-computer-dot' + (option.selected && ready ? ' online' : '');
+      button.dataset.computer = option.value; button.setAttribute('aria-pressed',String(option.selected)); button.append(dot,svg('computer',18),document.createTextNode(option.textContent));
+      button.onclick = () => { if (el('device').value !== option.value) { el('device').value = option.value; chooseComputer(); } }; tabs.append(button);
+    }
+  }
   function selectedActive() { return !!activeTurn && activeThread === threadId; }
   function controls() {
-    const desktop = selectedThread?.control === 'desktop', active = selectedActive();
+    const desktop = selectedThread?.control === 'desktop', active = selectedActive(), observed = observedActive();
     el('new').disabled = !ready || sending || !catalog.length;
     el('workspace').disabled = !ready;
     el('model').disabled = !ready || !!activeTurn || desktop || sending;
     el('prompt').disabled = !ready || !threadId || desktop || sending || !!activeTurn && !active;
-    el('send').disabled = el('prompt').disabled;
-    el('send').textContent = active ? '引导' : '发送';
-    el('prompt').placeholder = desktop ? '桌面会话同步查看；桌面释放后可继续'
-      : active ? '补充要求，立即引导当前任务…' : '向 Codex 提问，或告诉它接下来做什么…';
+    el('send').disabled = el('prompt').disabled || !el('prompt').value.trim();
+    el('send').querySelector('span').textContent = active ? '引导' : '发送';
+    el('send').setAttribute('aria-label', active ? '引导当前任务' : '发送消息');
+    el('send').hidden = (active || observed) && !el('prompt').value.trim();
+    el('interrupt').hidden = !(active || observed) || !!el('prompt').value.trim();
+    el('prompt').placeholder = desktop ? '桌面会话 · 当前仅支持查看' : active ? '跟进' : '向 Codex 提问';
     el('interrupt').disabled = !ready || !active || sending || desktop;
-    el('task-state').textContent = !ready ? (STATES[currentState]?.[0] || '连接已断开') : !threadId ? '尚未选择会话' : desktop ? '桌面占用 · 同步查看' : active ? '正在工作' : sending ? '正在发送' : '会话已就绪';
-    el('task-state').className = 'badge' + (active ? ' good' : '');
+    el('compose').disabled = !ready || sending || !catalog.length;
+    el('task-state').textContent = !ready ? (STATES[currentState]?.[0] || '连接已断开') : !threadId ? '尚未选择会话' : desktop ? (observed ? '桌面正在运行 · 同步查看' : selectedThread.live?.state === 'idle' ? '桌面已连接 · 本轮已结束' : '桌面已连接 · 状态待确认') : active ? '正在运行' : sending ? '正在发送' : '可以继续';
+    el('task-state').className = active || observed ? 'running' : '';
     el('control-hint').textContent = !ready ? (STATES[currentState]?.[1] || '正在重新连接电脑。') : desktop
-      ? '实时同步这条桌面会话。桌面 Codex 使用独立连接，需在桌面释放会话后才能在这里继续或控制。'
-      : active ? '可发送引导调整方向，也可暂停本轮任务。已有修改会保留。'
-      : threadId ? '继续发送消息，Codex 会保留这条本机会话的上下文。' : '查看已有会话，或在项目中创建新会话。';
-    el('progress').hidden = !active;
+      ? '每 2 秒同步桌面已保存的进度；当前连接无法向桌面任务发送引导或暂停。'
+      : active ? '输入消息可引导当前任务，点击方块可暂停。' : '';
+    el('progress').hidden = !(active || observed);
+    if (observed && !active) { el('progress-label').textContent = '正在运行'; el('live-action').textContent = activityTitle(selectedThread.live?.action) || '等待桌面保存下一条进度'; }
+    else if (!active) el('live-action').textContent = '';
+    if (observed && selectedThread.live?.startedAt) startedAt = selectedThread.live.startedAt * 1000;
+    el('sync-state').textContent = synchronizedAt && ready ? '已同步 ' + new Date(synchronizedAt).toLocaleTimeString('zh-CN',{hour12:false}) : '';
   }
   function setState(state) {
     currentState = state;
     const previous = ready; ready = state === 'runtime_ready';
     const labels = STATES[state] || ['状态更新中', '请稍候。'];
     el('state').textContent = labels[0]; el('hint').textContent = labels[1];
+    el('library-state').textContent = ready ? '' : labels[1]; computerTabs();
     el('connect').textContent = client.socket ? '断开连接' : '重新连接';
     el('state').className = 'badge' + (ready ? ' good' : '');
     if (!ready) {
@@ -176,40 +223,50 @@
     controls();
     if (ready && !previous) initialize().catch(showError);
   }
-  function append(text, kind = '', id = null) {
+  function append(text, kind = '', id = null, phase = null) {
     el('transcript').querySelector('.remote-empty')?.remove();
     const p = document.createElement('div'); p.className = 'remote-message ' + kind; paintMessage(p, String(text || '').slice(-262144));
-    el('transcript').append(p); if (id) messageItems.set(id, p); trim(true); return p;
+    const turn = group(); (kind === 'remote-user' ? turn.users : phase === 'commentary' ? turn.tools : turn.replies).append(p);
+    if (phase === 'commentary') turn.activity.hidden = false;
+    if (id) messageItems.set(id, p); trim(); return p;
   }
   function trim(scroll = false) {
-    const log = el('transcript'), atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 100;
+    const log = el('transcript'), scrollBox = el('chat-scroll'), atEnd = scrollBox.scrollHeight - scrollBox.scrollTop - scrollBox.clientHeight < 100;
     while ((log.childNodes.length > 180 || log.textContent.length > 262144) && log.childNodes.length > 1) log.firstChild.remove();
     for (const [key, item] of deltas) if (!item.isConnected) deltas.delete(key);
     for (const [key, item] of messageItems) if (!item.isConnected) messageItems.delete(key);
-    if (scroll || atEnd) log.scrollTop = log.scrollHeight;
+    for (const [key, item] of turnGroups) if (!item.root.isConnected) turnGroups.delete(key);
+    if (scroll || atEnd) scrollBox.scrollTop = scrollBox.scrollHeight;
+    el('jump').hidden = scroll || atEnd;
   }
   function tool(item) {
     let target = messageItems.get(item.id);
     if (!target) {
       target = document.createElement('details'); target.className = 'remote-message remote-tool';
       target.append(document.createElement('summary'), document.createElement('pre'));
-      el('transcript').querySelector('.remote-empty')?.remove(); el('transcript').append(target); messageItems.set(item.id, target);
+      const turn = group(); turn.activity.hidden = false; turn.tools.append(target); messageItems.set(item.id, target);
     }
-    target.querySelector('summary').textContent = (item.status === 'inProgress' ? '正在执行 · ' : '工具 · ') + String(item.command || '本机操作').slice(0, 100);
+    target.querySelector('summary').textContent = item.type === 'toolActivity' ? (item.status === 'inProgress' ? '正在' : '已') + activityTitle(item.text) : (item.status === 'inProgress' ? '正在执行 · ' : '工具 · ') + String(item.command || '本机操作').slice(0, 100);
     target.querySelector('pre').textContent = String(item.aggregatedOutput || '').slice(-32000); trim();
     return target.querySelector('pre');
   }
   function renderItem(item) {
-    if (item.type === 'commandExecution') { tool(item); return; }
+    if (['commandExecution','toolActivity'].includes(item.type)) { tool(item); return; }
     if (item.type === 'fileChange') {
       if (fileChanges.size >= 32) fileChanges.delete(fileChanges.keys().next().value);
       fileChanges.set(item.id, item.changes || []); if (!aggregateDiff) renderDiff(itemDiff()); return;
     }
     if (!['agentMessage', 'userMessage', 'plan'].includes(item.type)) return;
-    const text = item.type === 'userMessage' ? (item.content || []).map(c => c.text || '').join('\n') : item.text || '';
+    const text = item.type === 'userMessage' ? cleanUserMessage((item.content || []).map(c => c.text || '').join('\n')) : item.text || '';
     const target = messageItems.get(item.id);
     if (target) { paintMessage(target, text); trim(); }
-    else append(text, item.type === 'userMessage' ? 'remote-user' : '', item.id);
+    else append(text, item.type === 'userMessage' ? 'remote-user' : '', item.id, item.type === 'plan' ? 'commentary' : item.phase);
+  }
+  function cleanUserMessage(text) {
+    const marker = text.indexOf('## My request:');
+    if (marker < 0 || !text.slice(0,marker).includes('Files mentioned by the user')) return text;
+    const attachments = [...text.slice(0,marker).matchAll(/^## ([^\n:]+\.(?:png|jpe?g|webp|pdf|txt|docx|xlsx|html)):/gmi)].map(m => '附件：' + m[1]);
+    return attachments.join('\n') + (attachments.length ? '\n\n' : '') + text.slice(marker + '## My request:'.length).trim();
   }
   function renderDiff(diff) {
     el('diff').replaceChildren();
@@ -223,6 +280,16 @@
       el('diff').append(span);
     }
     el('diff-summary').textContent = add || remove ? '+' + add + ' −' + remove : '暂无修改';
+    el('diff-card').hidden = !add && !remove && !fileChanges.size;
+    const files = Array.from(fileChanges.values()).flat(), byPath = new Map();
+    for (const file of files) byPath.set(file.path,file.diff || '');
+    if (!byPath.size) for (const match of text.matchAll(/^\+\+\+ (?:b\/)?(.+)$/gm)) if (match[1] !== '/dev/null') byPath.set(match[1],'');
+    el('diff-count').textContent = '已更改 ' + byPath.size + ' 个文件'; el('diff-files').replaceChildren();
+    for (const [path,patch] of byPath) {
+      const row = document.createElement('div'), name = document.createElement('span'), count = document.createElement('span'); row.className = 'remote-diff-file'; name.textContent = path;
+      const additions = patch.split('\n').filter(l=>l.startsWith('+')&&!l.startsWith('+++')).length, deletions = patch.split('\n').filter(l=>l.startsWith('-')&&!l.startsWith('---')).length;
+      count.textContent = '+' + additions + ' −' + deletions; row.append(name,count); el('diff-files').append(row);
+    }
   }
   function itemDiff() {
     return Array.from(fileChanges.values()).flat().map(change => '文件：' + (change.path || '') + '\n' + (change.diff || '')).join('\n').slice(0, 262144);
@@ -231,7 +298,8 @@
     const button = document.createElement('button'); button.type = 'button'; button.className = 'remote-thread' + (thread.id === threadId ? ' selected' : '');
     button.dataset.thread = thread.id; if (thread.id === threadId) button.setAttribute('aria-current', 'true');
     const label = taskLabel(thread, activeThread, activeTurn), dot = document.createElement('span');
-    dot.className = 'remote-thread-dot' + (label === '运行中' ? ' running' : thread.control === 'desktop' ? ' desktop' : '');
+    dot.className = 'remote-thread-dot' + (label === '运行中' ? ' running' : label === '需要处理' ? ' error' : '');
+    button.title = (thread.name || thread.preview || '未命名会话') + ' · ' + label;
     const copy = document.createElement('span'); copy.className = 'remote-thread-copy';
     const title = document.createElement('span'); title.className = 'remote-thread-title'; title.textContent = thread.name || thread.preview || '未命名会话';
     const meta = document.createElement('span'); meta.className = 'remote-thread-meta';
@@ -246,27 +314,31 @@
   }
   function renderLibrary() {
     const container = el('threads'), query = el('search').value.trim().toLowerCase(), filter = el('workspace').value;
+    const scrollBox = container.parentElement, oldScroll = scrollBox.scrollTop;
+    const expanded = new Map(Array.from(container.querySelectorAll('.remote-project-group')).map(g => [g.dataset.project,g.open]));
     const visible = sessions.filter(t => (!filter || t.projectPath === filter || t.cwd === filter) &&
       (!query || (t.name + ' ' + t.preview + ' ' + (t.projectName || '')).toLowerCase().includes(query)));
     container.replaceChildren();
     const heading = document.createElement('div'); heading.className = 'remote-list-heading';
-    const title = document.createElement('h3'); title.textContent = query ? '搜索结果' : '最近'; heading.append(title); container.append(heading);
+    const title = document.createElement('h3'); title.textContent = query ? '搜索结果' : '最近'; heading.append(title);
+    const compose = document.createElement('button'); compose.type = 'button'; compose.setAttribute('aria-label','新会话'); compose.append(svg('compose')); compose.disabled = !ready || sending; compose.onclick = () => el('new').click(); heading.append(compose); container.append(heading);
     if (visible.length) container.append(threadList(visible.slice(0, query || filter ? 50 : 12)));
     else { const empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = !ready ? '等待电脑连接。' : query ? '已加载的会话中没有匹配项。' : '暂无会话，可在项目中开始新会话。'; container.append(empty); }
     if (!query) {
       const h = document.createElement('div'); h.className = 'remote-list-heading'; const text = document.createElement('h3'); text.textContent = '项目'; h.append(text); container.append(h);
       for (const project of catalog.filter(p => !filter || p.path === filter)) {
         const threads = visible.filter(t => (t.projectPath || t.cwd) === project.path), group = document.createElement('details');
-        group.className = 'remote-project-group'; group.open = threads.some(t => t.id === threadId) || !!filter;
-        const summary = document.createElement('summary'), name = document.createElement('span'), count = document.createElement('small');
-        name.textContent = project.name; count.textContent = threads.length ? String(threads.length) : '新项目'; summary.append(name,count); group.append(summary);
+        group.className = 'remote-project-group'; group.dataset.project = project.path; group.open = expanded.get(project.path) ?? true;
+        const summary = document.createElement('summary'), name = document.createElement('span'), start = document.createElement('button');
+        name.textContent = project.name; start.type = 'button'; start.setAttribute('aria-label','在 ' + project.name + ' 新建会话'); start.append(svg('compose')); start.disabled = !ready || sending;
+        start.onclick = event => { event.preventDefault(); event.stopPropagation(); createThread(project.path).catch(showError); };
+        summary.append(svg('folder'),name,start); group.append(summary);
         if (threads.length) group.append(threadList(threads));
-        const start = document.createElement('button'); start.type = 'button'; start.className = 'remote-thread';
-        start.textContent = '+ 在此项目开始新会话'; start.disabled = !ready || sending;
-        start.onclick = () => createThread(project.path).catch(showError); group.append(start); container.append(group);
+        container.append(group);
       }
     }
     el('more').hidden = !cursor; el('library-hint').textContent = sessions.length ? '已读取 ' + sessions.length + ' 条本机会话' : '项目和会话来自这台电脑上的 Codex。';
+    scrollBox.scrollTop = oldScroll;
   }
   function installCatalog(status) {
     const selected = el('workspace').value;
@@ -284,9 +356,9 @@
     if (current !== epoch || !ready) return;
     if (!Array.isArray(status.projects)) {
       ready = false; currentState = 'runtime_error'; controls(); el('state').textContent = '请更新 Windows 应用';
-      showError(new Error('请将这台电脑的 LanPower 更新至 1.9.0 后重新连接。')); return;
+      showError(new Error('请将这台电脑的 LanPower 更新至 1.10.0 后重新连接。')); return;
     }
-    installCatalog(status); activeThread = status.activeThread; activeTurn = status.activeTurn;
+    installCatalog(status); catalogPolledAt = Date.now(); activeThread = status.activeThread; activeTurn = status.activeTurn;
     if (activeTurn && !startedAt) startedAt = Date.now();
     if (!status.loggedIn) el('hint').textContent = '本机 Codex 尚未登录，请在电脑完成登录。';
     for (const request of status.pendingApprovals || []) approval(request);
@@ -305,6 +377,13 @@
     if (!ready || listing) return;
     const current = epoch, filter = el('workspace').value; listing = true;
     try {
+      if (!more && Date.now()-catalogPolledAt>30000) {
+        const revision = turnRevision, status = await client.request('lanpower/status');
+        if (current!==epoch || !ready) return;
+        installCatalog(status); catalogPolledAt = Date.now();
+        if (revision===turnRevision) { activeThread = status.activeThread; activeTurn = status.activeTurn; }
+        for (const request of status.pendingApprovals || []) approval(request); controls();
+      }
       const params = {limit:50}; if (more && cursor) params.cursor = cursor;
       const result = await client.request('thread/list', params);
       if (current !== epoch || !ready) return;
@@ -316,17 +395,31 @@
     } finally { listing = false; }
   }
   function history(thread, preserve = false) {
-    const log = el('transcript'), oldScroll = log.scrollTop, atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 100;
-    log.replaceChildren(); deltas.clear(); messageItems.clear(); fileChanges.clear(); aggregateDiff = false; el('plan').replaceChildren();
+    const log = el('transcript'), scrollBox = el('chat-scroll'), oldScroll = scrollBox.scrollTop, atEnd = scrollBox.scrollHeight - scrollBox.scrollTop - scrollBox.clientHeight < 100;
+    const expanded = new Map(Array.from(log.querySelectorAll('.remote-turn')).map(t=>[t.dataset.turn,t.querySelector('details')?.open]));
+    log.replaceChildren(); deltas.clear(); messageItems.clear(); turnGroups.clear(); fileChanges.clear(); aggregateDiff = false; el('plan').replaceChildren();
     if (thread.historyTruncated) append('显示最近消息；完整历史保留在电脑上的 Codex。', 'remote-notice');
     for (const turn of thread.turns || []) {
+      renderTurn = turn.id; fileChanges.clear();
       for (const item of turn.items || []) renderItem(item);
-      if (['interrupted','failed'].includes(turn.status)) append(turn.status === 'interrupted' ? '本轮任务已暂停，可继续发送消息。' : '本轮任务未完成，请查看电脑上的状态。','remote-notice');
+      const activity = group(turn.id); activity.activity.open = expanded.get(turn.id) || false;
+      const duration = turn.durationMs != null ? turn.durationMs/1000 : turn.startedAt && turn.completedAt ? turn.completedAt-turn.startedAt : null;
+      activity.summary.textContent = turn.status === 'inProgress' ? '正在运行' : turn.status === 'interrupted' ? '该轮已暂停' : turn.status === 'failed' ? '该轮执行失败' : duration !== null ? '用时 ' + elapsedLabel(duration) : '执行过程';
+      activity.activity.hidden = duration === null && !activity.tools.childNodes.length && !['interrupted','failed'].includes(turn.status);
+      const reply = activity.replies.querySelector('.remote-message');
+      if (reply) {
+        const actions = document.createElement('div'), copy = document.createElement('button'); actions.className = 'remote-reply-actions'; copy.type = 'button'; copy.setAttribute('aria-label','复制此回复'); copy.append(svg('copy',18));
+        copy.onclick = () => copyText(rawMessages.get(reply) || reply.textContent); actions.append(copy);
+        if (turn.completedAt) actions.append(document.createTextNode(new Date(turn.completedAt*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false})));
+        activity.replies.append(actions);
+      }
     }
+    renderTurn = null;
     if (!log.childNodes.length) append('会话已就绪。发送第一条消息开始。', 'remote-notice');
-    if (fileChanges.size) renderDiff(itemDiff());
-    if (preserve && !atEnd) log.scrollTop = oldScroll;
-    else log.scrollTop = log.scrollHeight;
+    renderDiff(fileChanges.size ? itemDiff() : '');
+    if (preserve && !atEnd) scrollBox.scrollTop = oldScroll;
+    else scrollBox.scrollTop = scrollBox.scrollHeight;
+    el('jump').hidden = !preserve || atEnd;
   }
   async function readSelection(id, navigate = true) {
     const current = epoch, chosen = ++selection;
@@ -334,6 +427,7 @@
     if (current !== epoch || chosen !== selection || !ready) return;
     const changed = id !== threadId; if (changed) { renderDiff(''); el('prompt').value = ''; feedback(''); }
     threadId = id; selectedThread = result.thread;
+    synchronizedAt = Date.now();
     el('title').textContent = selectedThread.name || selectedThread.preview || '开发会话';
     el('project-name').textContent = (selectedThread.projectName || projectName(selectedThread.cwd)) + ' · ' + el('device').selectedOptions[0].textContent;
     history(selectedThread, !changed);
@@ -367,10 +461,13 @@
     }
     if (method === 'turn/completed') {
       turnRevision++;
+      lastCompletion = {thread:p.threadId,turn:p.turn?.id,status:p.turn?.status};
+      const duration = p.turn?.durationMs != null ? p.turn.durationMs/1000 : startedAt ? (Date.now()-startedAt)/1000 : null;
       if (p.threadId === activeThread && p.turn?.id === activeTurn) { activeTurn = null; activeThread = null; sending = false; startedAt = 0; }
       if (p.threadId === threadId) {
         const labels = {completed:'任务已完成',failed:'任务执行失败',interrupted:'本轮任务已暂停，可继续发送消息。'};
-        append(labels[p.turn?.status] || '任务状态已更新','remote-notice');
+        renderTurn = p.turn?.id;
+        const activity = group(); activity.activity.hidden = false; activity.summary.textContent = p.turn?.status === 'interrupted' ? '该轮已暂停' : duration !== null ? '用时 ' + elapsedLabel(duration) : '执行过程'; renderTurn = null;
         feedback(labels[p.turn?.status] || '任务状态已更新', p.turn?.status === 'failed');
       }
       for (const [key,card] of approvals) if (card.dataset.thread === p.threadId) { card.remove(); approvals.delete(key); }
@@ -432,12 +529,13 @@
   }
   function reset() {
     epoch++; selection++; threadId = activeThread = activeTurn = selectedThread = null; sending = ready = false; cursor = null; sessions = []; catalog = []; startedAt = 0;
-    approvals.clear(); deltas.clear(); fileChanges.clear(); messageItems.clear(); el('approvals').replaceChildren(); el('threads').replaceChildren();
+    approvals.clear(); deltas.clear(); fileChanges.clear(); messageItems.clear(); turnGroups.clear(); renderTurn = null; synchronizedAt = catalogPolledAt = 0; lastCompletion = null; el('approvals').replaceChildren(); el('threads').replaceChildren();
     el('transcript').replaceChildren(); el('workspace').replaceChildren(); el('prompt').value = ''; feedback(''); renderDiff(''); controls(); viewThread(false);
   }
   function chooseComputer() {
     client.stop(); reset(); setState('idle'); el('wake').disabled = true; updatePower();
     if (el('device').value) client.connect(el('device').value);
+    computerTabs();
   }
   el('connect').onclick = () => {
     if (!el('device').value) return;
@@ -445,7 +543,7 @@
     client.connect(el('device').value);
   };
   el('device').onchange = chooseComputer;
-  el('workspace').onchange = renderLibrary; el('search').oninput = renderLibrary;
+  el('workspace').onchange = () => { renderLibrary(); computerTabs(); }; el('search').oninput = renderLibrary;
   el('more').onclick = () => listThreads(true).catch(showError);
   el('back').onclick = () => { viewThread(false); window.scrollTo({top:0}); };
   el('new').onclick = () => {
@@ -472,6 +570,7 @@
       const lastUser = Array.from(el('transcript').querySelectorAll('.remote-user')).at(-1);
       if (turn || lastUser?.textContent !== text) append(text,'remote-user');
       el('prompt').value = '';
+      resizePrompt();
       if (turn) { el('hint').textContent = '引导已由本机接收，将应用到当前任务。'; feedback('引导已由本机接收。'); }
       else if (revision === turnRevision && !activeTurn && result.turn?.status === 'inProgress') {
         activeThread = chosen; activeTurn = result.turn.id; startedAt = Date.now();
@@ -486,7 +585,7 @@
     try {
       await client.request('turn/interrupt',{threadId:activeThread,turnId:activeTurn});
       if (current === epoch) {
-        const text = interrupted === activeTurn ? '暂停请求已发送，等待本机确认。' : '本轮任务已暂停，可继续发送消息。';
+        const text = interrupted === activeTurn ? '暂停请求已发送，等待本机确认。' : lastCompletion?.turn === interrupted && lastCompletion.status === 'interrupted' ? '本轮任务已暂停，可继续发送消息。' : '本轮任务已结束，请确认最新状态。';
         el('hint').textContent = text; feedback(text);
       }
     }
@@ -524,23 +623,60 @@
     try {
       const result = await client.request('thread/read',{threadId:chosen,includeTurns:true});
       if (current !== epoch || chosen !== threadId || version !== selection || !ready) return;
-      if (JSON.stringify(result.thread.turns) !== JSON.stringify(selectedThread?.turns)) { history(result.thread,true); }
-      selectedThread = result.thread; controls();
+      const changed = JSON.stringify(result.thread.turns) !== JSON.stringify(selectedThread?.turns);
+      selectedThread = result.thread; synchronizedAt = Date.now(); if (changed) history(result.thread,true);
+      const index = sessions.findIndex(t=>t.id===chosen); if (index>=0) sessions[index] = {...sessions[index],...selectedThread,turns:undefined};
+      controls(); if (changed) renderLibrary();
     } catch (error) { if (current === epoch && chosen === threadId) showError(error); }
     finally { refreshing = false; }
   }
+  function togglePanel(name, button) { const target = el(name); target.hidden = !target.hidden; el(button).setAttribute('aria-expanded',String(!target.hidden)); }
+  async function copyText(text) { try { await navigator.clipboard.writeText(text); feedback('已复制。'); } catch { feedback('浏览器未允许复制，可使用导出会话文本。',true); } }
+  function resizePrompt() { el('prompt').style.height = 'auto'; el('prompt').style.height = Math.min(140,el('prompt').scrollHeight) + 'px'; controls(); }
+  el('prompt').oninput = resizePrompt;
+  el('options-toggle').onclick = () => togglePanel('options','options-toggle');
+  el('menu-toggle').onclick = () => togglePanel('menu','menu-toggle');
+  el('search-toggle').onclick = () => { togglePanel('filters','search-toggle'); if (!el('filters').hidden) el('search').focus(); };
+  el('computers').onclick = el('connection').onclick = () => { el('menu').hidden = true; el('device-picker').showModal(); };
+  el('device').addEventListener('change',()=>el('device-picker').close());
+  el('compose').onclick = () => { const path = selectedThread?.projectPath || selectedThread?.cwd; if (path && catalog.some(p=>p.path===path)) createThread(path).catch(showError); else el('new').click(); };
+  el('refresh').onclick = () => { el('menu').hidden = true; refreshSelected(); };
+  el('copy').onclick = () => { el('menu').hidden = true; const replies = Array.from(el('transcript').querySelectorAll('.remote-message:not(.remote-user):not(.remote-notice)')); const last = replies.at(-1); if (last) copyText(rawMessages.get(last) || last.textContent); else feedback('当前还没有回复可复制。'); };
+  el('export').onclick = () => {
+    el('menu').hidden = true; const texts = Array.from(el('transcript').querySelectorAll('.remote-message')).map(n=>(n.classList.contains('remote-user')?'你：':'Codex：') + '\n' + (rawMessages.get(n)||n.textContent));
+    const blob = new Blob([el('title').textContent + '\n' + el('project-name').textContent + '\n\n' + texts.join('\n\n')],{type:'text/plain;charset=utf-8'}), url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = 'codex-conversation.txt'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  el('chat-scroll').addEventListener('scroll',()=>{ const box=el('chat-scroll'); el('jump').hidden = box.scrollHeight-box.scrollTop-box.clientHeight<100; },{passive:true});
+  el('jump').onclick = () => { el('chat-scroll').scrollTop = el('chat-scroll').scrollHeight; };
+  document.addEventListener('click',event=>{ if (!event.target.closest('.remote-header-actions') && !event.target.closest('#remote-menu')) { el('menu').hidden=true; el('menu-toggle').setAttribute('aria-expanded','false'); } if (!event.target.closest('.sidebar') && !event.target.closest('[data-nav-toggle]')) { document.querySelector('.sidebar').classList.remove('mobile-open'); document.querySelector('[data-nav-toggle]').setAttribute('aria-expanded','false'); } });
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (Recognition) {
+    el('mic').hidden = false; let recognition = null;
+    el('mic').onclick = () => {
+      if (recognition) { recognition.stop(); return; } if (el('prompt').disabled) return;
+      recognition = new Recognition(); recognition.lang = 'zh-CN'; recognition.interimResults = false;
+      recognition.onresult = event => { el('prompt').value = (el('prompt').value + ' ' + event.results[0][0].transcript).trim().slice(0,16000); resizePrompt(); };
+      recognition.onend = () => { recognition = null; el('mic').setAttribute('aria-label','语音输入'); };
+      recognition.onerror = () => feedback('语音输入不可用，请直接输入文字。',true);
+      recognition.start(); el('mic').setAttribute('aria-label','停止语音输入');
+    };
+  }
+  // Keep the composer above the mobile browser keyboard without scrolling the page chrome away.
+  function viewport() { if (window.visualViewport && innerWidth<=760) document.querySelector('.workspace').style.height = Math.round(window.visualViewport.height) + 'px'; else document.querySelector('.workspace').style.height = ''; }
+  window.visualViewport?.addEventListener('resize',viewport); window.addEventListener('resize',viewport); viewport();
   window.addEventListener('beforeunload',()=>client.stop());
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(()=>{});
   const computer = new URLSearchParams(location.search).get('computer'), options = Array.from(el('device').options).filter(o=>o.value);
   if (computer && options.some(o=>o.value===computer)) el('device').value = computer;
   else if (options.length === 1) el('device').value = options[0].value;
   chooseComputer();
-  setInterval(()=>{ if (document.visibilityState === 'visible') { updatePower(); refreshSelected(); } },3000);
+  setInterval(()=>{ if (document.visibilityState === 'visible') { updatePower(); refreshSelected(); } },2000);
   setInterval(()=>{ if (document.visibilityState === 'visible' && ready) listThreads(false).catch(showError); },15000);
   setInterval(()=>{
-    if (!selectedActive() || !startedAt) return;
+    if ((!selectedActive() && !observedActive()) || !startedAt) return;
     const seconds = Math.floor((Date.now()-startedAt)/1000);
-    el('elapsed').textContent = Math.floor(seconds/60) + ' 分 ' + seconds%60 + ' 秒';
+    el('elapsed').textContent = '已运行 ' + elapsedLabel(seconds);
   },1000);
   document.addEventListener('visibilitychange',()=>{ if (document.visibilityState === 'visible') { updatePower(); refreshSelected(); } });
 })();

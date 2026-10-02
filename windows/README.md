@@ -1,6 +1,6 @@
 # Windows 应用
 
-当前源码版本：Windows `1.9.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增用户会话 Codex Host、出站 WSS Relay 和桌面端本地项目授权。本轮已在本机就地升级，保留 LAN 配对和 Cloud 设备身份，未发布。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.10.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增用户会话 Codex Host、出站 WSS Relay 和桌面端本地项目授权。本轮已在本机就地升级，保留 LAN 配对和 Cloud 设备身份，未发布。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
 本目录是 .NET 10 Windows 服务、WPF 桌面端和安装包的源码。服务同时提供 LAN Direct 与可选的 Cloud Direct，旧版 Python 实现继续保留。局域网控制不依赖 Cloud 或 Wake Gateway。
 
@@ -58,7 +58,9 @@ Setup 在文件复制后、创建快捷方式前验证后台服务，使用原�
 
 ## 验证边界
 
-2026-10-02 Codex Remote 1.9.0：63 项单元测试、42 项桌面检查及隔离 LAN/IPC dry-run 通过。浏览器经真实 WSS / 用户 Host 自动读取本机项目、最近会话与桌面占用会话；独立目录上的官方 Runtime 实际引导与中断通过。自包含 Setup 已构建并就地安装，服务正常，程序文件匹配；原 LAN 配置、用户授权、Cloud 地址和设备身份保留。桌面正在运行的任务仍不能跨 Runtime 接管，公网 5G 待人工验收，见 [Codex Remote](../docs/codex-remote.md)。
+2026-10-02 Codex Remote 1.10.0：68 项 Windows 单元测试通过，包括原生已保存会话观察、长任务真实耗时、Windows 扩展路径、历史暂停与新轮状态、写锁释放和项目范围。实际只读 Runtime 确认桌面运行/结束状态和近期消息。Setup 已就地安装，三项程序与构建产物匹配；原 LAN 配置、用户授权、Cloud 地址和设备身份保留。原生桌面任务仍不可从当前网页引导或暂停，详见 [Codex Remote](../docs/codex-remote.md)。
+
+历史 1.9.0 验证包括 63 项单元测试、42 项桌面检查、隔离 LAN/IPC dry-run 和独立项目的实际 Runtime 引导与中断；这些检查不等于原生桌面任务的双端控制验收。
 
 2026-10-02 Codex Remote 1.8.0 历史验证：Release 构建 0 警告/错误，61 项单元测试、42 项桌面检查、隔离 LAN/IPC dry-run 以及安装配置/诊断/失败恢复/真实 Inno Setup 模拟流程通过。模拟 Runtime 覆盖中文 UTF-8、审批范围、无汇总通知的文件 Diff 和中断；当前用户真实 Codex 经 Service WSS Agent、用户 Host 与浏览器完成独立文件修改、单次审批、Diff 和刷新恢复。已重建自包含 Setup 与便携包，23 个包内文件、18 个安装组件哈希通过；本机就地升级后服务运行、安装组件匹配，原 LAN 与 Cloud 身份及用户项目授权保留。未重新执行物理电源动作。
 

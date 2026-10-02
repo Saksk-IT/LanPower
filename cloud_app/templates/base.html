@@ -38,7 +38,7 @@
       </div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><button type="button" class="secondary mobile-menu" data-nav-toggle aria-controls="main-navigation" aria-expanded="false" aria-label="展开导航">☰ 菜单</button><div class="breadcrumb">个人控制台 <span>/</span> <strong>{{ page_names.get(nav_page, '控制台') }}</strong></div><div class="account"><span class="avatar">管</span><span>管理员</span></div></header>
+      <header class="topbar"><button type="button" class="secondary mobile-menu" {% if page != 'remote' %}data-nav-toggle{% endif %} aria-controls="main-navigation" aria-expanded="false" aria-label="展开导航">☰ 菜单</button><div class="breadcrumb">个人控制台 <span>/</span> <strong>{{ page_names.get(nav_page, '控制台') }}</strong></div><div class="account"><span class="avatar">管</span><span>管理员</span></div></header>
       <main class="content" id="main-content" tabindex="-1">
         {% block content %}{% endblock %}
         <footer class="workspace-footer"><span>LanPower · 连接你的每一台电脑</span><span>Cloud {{ version }}</span></footer>

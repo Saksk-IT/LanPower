@@ -41,7 +41,9 @@ async function run() {
   assert.match(nativeSocket.last.payload.id, /^[0-9a-f-]{36}$/);
   nativeSocket.onmessage({data:JSON.stringify({type:'rpc',payload:{id:nativeSocket.last.payload.id,result:{projects:[]}}})});
   assert.deepEqual(await nativeResponse,{projects:[]}); native.stop();
-  assert.equal(taskLabel({id:'desktop',control:'desktop'},'another','turn'), '桌面占用');
+  assert.equal(taskLabel({id:'desktop',control:'desktop'},'another','turn'), '桌面状态待确认');
+  assert.equal(taskLabel({id:'desktop',control:'desktop',live:{state:'running'}},'another','turn'), '运行中');
+  assert.equal(taskLabel({id:'desktop',control:'desktop',live:{state:'idle'}},'another','turn'), '桌面已连接');
   assert.equal(taskLabel({id:'current',control:'remote'},'current','turn'),'运行中');
   console.log('Codex Remote client: response routing, approval IDs, reconnect, task deduplication and stale-device isolation passed.');
 }

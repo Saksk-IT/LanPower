@@ -5,34 +5,57 @@
 <script defer src="/static/remote.js?v={{ version }}"></script>
 {% endblock %}
 {% block content %}
-<div class="page-heading remote-heading"><div><p class="eyebrow">你的电脑 · 随时开发</p><h1>Codex Remote</h1><p class="muted">选择电脑，继续你的本机 Codex 会话。</p></div><span class="badge" id="remote-state" role="status">请选择电脑</span></div>
-<section class="card remote-connect">
-  <label for="remote-device">开发电脑</label><select id="remote-device"><option value="">选择一台电脑</option>{% for device in devices %}<option value="{{ device.id }}">{{ device.name }}</option>{% endfor %}</select>
-  <button id="remote-connect" type="button" class="secondary">重新连接</button><button id="remote-wake" type="button" class="secondary" disabled>唤醒电脑</button><a href="/dashboard">电源管理</a>
-  <p id="remote-power-state" class="muted" role="status">电脑状态未知</p>
-  <p id="remote-hint" class="muted" role="status">选择电脑后自动读取项目和最近会话。首次使用请在电脑启用 Codex Remote。</p>
-</section>
-<div class="remote-grid" id="remote-shell" data-view="library">
-  <section class="card remote-sessions"><div class="card-heading"><h2>本机会话</h2><button id="remote-new" type="button" class="secondary" disabled>新会话</button></div>
-    <label for="remote-search" class="sr-only">搜索已加载的会话</label><input id="remote-search" type="search" placeholder="搜索会话" autocomplete="off" maxlength="120">
-    <label for="remote-workspace" class="sr-only">按项目筛选</label><select id="remote-workspace" disabled><option value="">全部项目</option></select>
-    <div id="remote-threads" aria-label="Codex 项目和最近会话"><p class="muted">选择电脑后自动读取。</p></div><button id="remote-more" type="button" class="secondary" hidden>加载更多会话</button>
-    <p class="hint" id="remote-library-hint">项目和会话来自这台电脑上的 Codex。</p>
+<div id="remote-shell" class="remote-grid" data-view="library">
+  <section class="remote-sessions" aria-label="本机项目和最近会话">
+    <header class="remote-library-header">
+      <button type="button" class="remote-circle" data-nav-toggle aria-controls="main-navigation" aria-expanded="false" aria-label="打开 LanPower 导航">{{ icon('menu',26) }}</button>
+      <button id="remote-computers" class="remote-heading-button" type="button" aria-label="选择电脑与连接设置">Codex {{ icon('chevron',17) }}</button>
+      <button id="remote-search-toggle" type="button" class="remote-circle" aria-label="搜索会话" aria-expanded="false">{{ icon('search',25) }}</button>
+    </header>
+    <div id="remote-computer-tabs" class="remote-computer-tabs" aria-label="选择开发电脑"></div>
+    <div class="remote-library-filters" hidden id="remote-filters">
+      <label for="remote-search" class="sr-only">搜索会话</label><input id="remote-search" type="search" placeholder="搜索会话或项目" autocomplete="off" maxlength="120">
+      <label for="remote-workspace" class="sr-only">按项目筛选</label><select id="remote-workspace" disabled><option value="">全部项目</option></select>
+    </div>
+    <p id="remote-library-state" class="remote-library-state" role="status">选择电脑后，读取本机项目和最近会话。</p>
+    <div class="remote-library-scroll"><div id="remote-threads" aria-label="Codex 项目和最近会话"></div>
+      <button id="remote-more" type="button" class="remote-more" hidden>加载更早的会话</button>
+      <p id="remote-library-hint" class="remote-library-hint"></p>
+    </div>
+    <button id="remote-new" type="button" class="remote-home-compose" disabled aria-label="新会话">{{ icon('compose',22) }}<span>开始新会话</span></button>
   </section>
-  <div class="remote-main">
-    <section class="card remote-conversation"><div class="remote-conversation-heading"><button id="remote-back" type="button" class="secondary" aria-label="返回会话列表">← 返回</button><div><h2 id="remote-title">选择一个会话</h2><p id="remote-project-name" class="hint"></p></div><span id="remote-task-state" class="badge">尚未选择会话</span></div>
-      <p id="remote-control-hint" class="hint">查看已有会话，或在项目中创建新会话。</p>
-      <p id="remote-feedback" class="remote-feedback" role="status" hidden></p>
-      <div id="remote-progress" hidden><div class="remote-progress-heading"><span id="remote-progress-label">正在工作</span><span id="remote-elapsed"></span></div><ol id="remote-plan"></ol></div>
-      <div id="remote-transcript" role="log" aria-label="会话消息与实时进度"><div class="remote-empty"><span>⌘</span><h3>继续在你的电脑上工作</h3><p>最近会话和项目会自动出现在左侧。</p></div></div>
+  <section class="remote-main" aria-label="会话详情">
+    <header class="remote-conversation-heading">
+      <button id="remote-back" type="button" class="remote-circle" aria-label="返回会话列表">{{ icon('back',27) }}</button>
+      <div class="remote-conversation-title"><h1 id="remote-title">选择一个会话</h1><p id="remote-project-name"></p></div>
+      <div class="remote-header-actions"><button id="remote-compose" type="button" aria-label="在当前项目新建会话">{{ icon('compose',24) }}</button><button id="remote-menu-toggle" type="button" aria-label="会话菜单" aria-expanded="false">{{ icon('more',24) }}</button></div>
+      <div id="remote-menu" class="remote-menu" hidden><button id="remote-refresh" type="button">刷新当前会话</button><button id="remote-copy" type="button">复制最新回复</button><button id="remote-export" type="button">导出会话文本</button><button id="remote-connection" type="button">电脑与连接状态</button><a href="/dashboard">返回 LanPower</a></div>
+    </header>
+    <div class="remote-status-line"><span id="remote-task-state" role="status">尚未选择会话</span><span id="remote-sync-state"></span></div>
+    <div class="remote-chat-scroll" id="remote-chat-scroll">
+      <div id="remote-transcript" role="log" aria-label="会话消息与任务进度"><div class="remote-empty"><h2>继续在你的电脑上工作</h2><p>选择最近会话，或在项目中开始。</p></div></div>
+      <details id="remote-progress" class="remote-live-progress" hidden><summary><span id="remote-progress-label">正在工作</span><span id="remote-elapsed"></span>{{ icon('chevron',14) }}</summary><ol id="remote-plan"></ol><p id="remote-live-action"></p></details>
       <div id="remote-approvals" aria-live="polite"></div>
-      <form id="remote-task"><label for="remote-prompt" class="sr-only">向 Codex 发送消息或引导</label><textarea id="remote-prompt" rows="3" maxlength="16000" placeholder="向 Codex 提问，或告诉它接下来做什么…" disabled></textarea>
-        <div class="remote-actions"><label for="remote-model" class="sr-only">模型</label><select id="remote-model" disabled><option value="">本机默认模型</option></select><button id="remote-send" type="submit" class="primary" disabled>发送</button><button id="remote-interrupt" type="button" class="secondary" disabled>暂停任务</button></div>
+      <details id="remote-diff-card" class="remote-diff-card" hidden><summary><span id="remote-diff-count">已更改文件</span><span id="remote-diff-summary"></span>{{ icon('chevron',16) }}</summary><div id="remote-diff-files"></div><pre id="remote-diff" tabindex="0" aria-label="代码修改"></pre></details>
+      <button id="remote-jump" class="remote-jump" type="button" hidden aria-label="查看最新消息">↓</button>
+    </div>
+    <footer class="remote-composer-footer">
+      <p id="remote-control-hint" class="remote-control-hint"></p><p id="remote-feedback" class="remote-feedback" role="status" hidden></p>
+      <form id="remote-task" class="remote-composer">
+        <button id="remote-options-toggle" type="button" class="remote-composer-plus" aria-label="模型与输入选项" aria-expanded="false">{{ icon('plus',25) }}</button>
+        <label for="remote-prompt" class="sr-only">向 Codex 发送消息或引导</label><textarea id="remote-prompt" rows="1" maxlength="16000" placeholder="向 Codex 提问" disabled></textarea>
+        <button id="remote-mic" type="button" class="remote-mic" aria-label="语音输入" hidden>{{ icon('mic',24) }}</button>
+        <button id="remote-send" type="submit" class="remote-send" disabled aria-label="发送消息">{{ icon('send',23) }}<span class="sr-only">发送</span></button>
+        <button id="remote-interrupt" type="button" class="remote-send remote-stop" disabled hidden aria-label="暂停当前任务">{{ icon('stop',23) }}<span class="sr-only">暂停任务</span></button>
       </form>
-    </section>
-    <details class="card remote-diff-card"><summary><strong>代码修改</strong><span id="remote-diff-summary" class="hint">暂无修改</span></summary><pre id="remote-diff" tabindex="0" aria-label="代码修改">暂无修改</pre></details>
-  </div>
+      <div id="remote-options" class="remote-options" hidden><label for="remote-model">模型</label><select id="remote-model" disabled><option value="">本机默认模型</option></select><p>暂停会中断本轮任务，已有修改保留。Ctrl / ⌘ + Enter 发送。</p></div>
+    </footer>
+  </section>
 </div>
-<dialog id="remote-project-picker"><form method="dialog"><h2>在哪个项目中开始？</h2><label for="remote-new-workspace">本机项目</label><select id="remote-new-workspace"></select><div class="remote-actions"><button value="cancel" class="secondary">取消</button><button id="remote-create" type="button" class="primary">创建会话</button></div></form></dialog>
-<p class="hint remote-footer">暂停会中断本轮任务，已有修改保留；可以继续发送消息。审批仅本次有效，5 分钟未处理会拒绝。桌面占用的会话同步展示进度；桌面结束或释放后可继续。Cloud 不保存会话正文。</p>
+<dialog id="remote-device-picker" class="remote-dialog"><form method="dialog"><div class="remote-dialog-heading"><h2>开发电脑</h2><button value="cancel" class="remote-circle" aria-label="关闭">×</button></div>
+  <label for="remote-device">选择电脑</label><select id="remote-device"><option value="">选择一台电脑</option>{% for device in devices %}<option value="{{ device.id }}">{{ device.name }}</option>{% endfor %}</select>
+  <p id="remote-state" role="status">请选择电脑</p><p id="remote-power-state"></p><p id="remote-hint" role="status">选择电脑后自动读取项目和最近会话。</p>
+  <div class="remote-dialog-actions"><button id="remote-connect" type="button">重新连接</button><button id="remote-wake" type="button" disabled>唤醒电脑</button><a href="/dashboard">电源管理</a></div>
+</form></dialog>
+<dialog id="remote-project-picker" class="remote-dialog"><form method="dialog"><div class="remote-dialog-heading"><h2>在哪个项目中开始？</h2><button value="cancel" class="remote-circle" aria-label="关闭">×</button></div><label for="remote-new-workspace">本机项目</label><select id="remote-new-workspace"></select><div class="remote-dialog-actions"><button value="cancel">取消</button><button id="remote-create" type="button">创建会话</button></div></form></dialog>
 {% endblock %}

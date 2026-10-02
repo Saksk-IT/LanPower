@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
   const loginFile = process.env.LANPOWER_DEV_LOGIN_FILE || path.resolve(__dirname, '../deploy/docker/private/dev-login.txt');
   const password = fs.readFileSync(loginFile, 'utf8').match(/^Password: (.+)$/m)[1].trim();
-  const output = path.resolve(__dirname, '../private/codex-remote-1.9');
+  const output = path.resolve(__dirname, '../private/codex-remote-1.10');
   fs.mkdirSync(output, {recursive:true});
   const browser = await chromium.launch({headless:true});
   try {
@@ -21,7 +21,7 @@ const assert = require('node:assert/strict');
     await page.evaluate(async () => { const cache=await caches.open('lanpower-static-1.8.0'); await cache.put('/static/remote.js?v=1.8.0',new Response('stale-script')); });
     await page.addInitScript(() => {
       const root = 'C:\\RemoteFixture\\LanPower', other = 'C:\\RemoteFixture\\Ti';
-      const turns = [{id:'history-turn',status:'completed',items:[
+      const turns = [{id:'history-turn',status:'completed',startedAt:1790928000,completedAt:1790928050,durationMs:50000,items:[
         {id:'history-user',type:'userMessage',content:[{type:'text',text:'检查登录流程'}]},
         {id:'history-ai',type:'agentMessage',text:'已检查登录流程。<img src=x onerror=window.remoteXss=true>\n**验证完成**\n[安全链接](https://example.com/)\n[不可执行](javascript:alert(1))\n```\n示例代码\n```'},
         {id:'history-file',type:'fileChange',status:'completed',changes:[{path:'login.js',diff:'-old\n+new'}]}
@@ -41,7 +41,11 @@ const assert = require('node:assert/strict');
           if(method==='lanpower/status') result={loggedIn:true,projects:[{name:'LanPower',path:root},{name:'Ti',path:other}],activeTurn,activeThread:activeTurn?'session-a':null};
           if(method==='thread/list') result={data:threads,nextCursor:null};
           if(method==='model/list') result={data:[]};
-          if(method==='thread/read' || method==='thread/resume') result={thread:{...threads.find(t=>t.id===params.threadId),turns}};
+          if(method==='thread/read' || method==='thread/resume') {
+            const desktop = params.threadId==='session-b', finished = window.remoteFixtureDesktopDone;
+            const desktopTurns = [{id:'previous-paused-turn',status:'interrupted',items:[]},{id:'desktop-current',startedAt:Math.floor(Date.now()/1000)-180,status:finished?'completed':'inProgress',items:[{id:'desktop-progress',type:'agentMessage',text:window.remoteFixtureDesktopProgress?'这是桌面新增的实时进度。':'这是桌面正在进行的任务。'}]}];
+            result={thread:{...threads.find(t=>t.id===params.threadId),turns:desktop?desktopTurns:turns,...(desktop?{live:{state:finished?'idle':'running',turnId:'desktop-current',startedAt:Math.floor(Date.now()/1000)-180}}:{})}};
+          }
           if(method==='thread/start') result={thread:{id:'new-session',name:'新会话',cwd:params.cwd,projectPath:params.cwd,control:'remote',turns:[]}};
           if(method==='turn/start') { activeTurn='active-turn'; result={turn:{id:activeTurn,status:'inProgress'}}; }
           if(method==='turn/steer') result={turnId:activeTurn};
@@ -74,41 +78,62 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#remote-transcript strong').innerText(),'验证完成');
     assert.equal(await page.locator('#remote-transcript a[href^="javascript:"]').count(),0);
     await page.locator('#remote-prompt').fill('继续修复登录'); await page.locator('#remote-send').click();
-    await page.waitForFunction(()=>document.querySelector('#remote-send').textContent==='引导');
+    await page.waitForFunction(()=>document.querySelector('#remote-send').getAttribute('aria-label')==='引导当前任务');
     assert.equal(await page.locator('#remote-interrupt').isEnabled(),true);
     await page.locator('#remote-prompt').fill('只处理登录页面'); await page.locator('#remote-send').click();
     await page.waitForFunction(()=>document.querySelector('#remote-transcript').textContent.includes('已收到引导'));
     const calls=await page.evaluate(()=>window.remoteFixtureCalls);
     const steer=calls.find(c=>c.method==='turn/steer'); assert.equal(steer.params.expectedTurnId,'active-turn');
     assert.equal(calls.filter(c=>c.method==='turn/start').length,1);
-    assert.ok((await page.locator('#remote-plan').innerText()).includes('修复并验证'));
+    assert.ok((await page.locator('#remote-plan').textContent()).includes('修复并验证'));
     assert.equal(await page.locator('#remote-diff-summary').innerText(),'+1 −1');
     await page.locator('#remote-interrupt').click();
-    await page.waitForFunction(()=>document.querySelector('#remote-send').textContent==='发送');
-    assert.ok((await page.locator('#remote-transcript').innerText()).includes('已暂停'));
+    await page.waitForFunction(()=>document.querySelector('#remote-send').getAttribute('aria-label')==='发送消息');
+    assert.ok((await page.locator('#remote-transcript').innerText()).includes('该轮已暂停'));
     assert.ok((await page.locator('#remote-feedback').innerText()).includes('已暂停'));
     await page.locator('#remote-back').click();
     assert.equal(await page.locator('.remote-sessions').isVisible(),true);
     await page.locator('[data-thread=session-b]').first().click();
-    await page.waitForFunction(()=>document.querySelector('#remote-task-state').textContent.includes('桌面占用'));
+    await page.waitForFunction(()=>document.querySelector('#remote-task-state').textContent.includes('桌面正在运行'));
     assert.equal(await page.locator('#remote-send').isDisabled(),true);
-    assert.ok((await page.locator('#remote-control-hint').innerText()).includes('桌面释放'));
+    assert.ok((await page.locator('#remote-control-hint').innerText()).includes('无法向桌面任务发送'));
+    assert.ok(!(await page.locator('#remote-feedback').textContent()).includes('已暂停'));
+    await page.evaluate(()=>{window.remoteFixtureDesktopProgress=true;});
+    await page.waitForFunction(()=>document.querySelector('#remote-transcript').textContent.includes('桌面新增的实时进度'));
+    assert.ok((await page.locator('#remote-task-state').innerText()).includes('桌面正在运行'));
+    await page.screenshot({path:path.join(output,'desktop-running-390.png'),fullPage:true});
+    await page.evaluate(()=>{window.remoteFixtureDesktopDone=true;});
+    await page.waitForFunction(()=>document.querySelector('#remote-task-state').textContent.includes('本轮已结束'));
     for(const width of [1440,390,320]) {
       await page.setViewportSize({width,height:960});
       if(width<760) await page.locator('#remote-back').click();
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'library overflow at '+width);
       await page.screenshot({path:path.join(output,'library-'+width+'.png'),fullPage:true});
       await page.locator('[data-thread=session-a]').first().click();
+      await page.waitForFunction(()=>document.querySelector('#remote-shell').dataset.view==='thread');
       await page.waitForFunction(()=>document.querySelector('#remote-title').textContent==='检查登录流程');
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'thread overflow at '+width);
+      const geometry=await page.evaluate(()=>{const composer=document.querySelector('#remote-task').getBoundingClientRect(),header=document.querySelector('.remote-conversation-heading').getBoundingClientRect();return {bottom:composer.bottom,top:header.top,height:innerHeight,scroll:document.documentElement.scrollHeight};});
+      assert.ok(geometry.bottom<=geometry.height && geometry.bottom>geometry.height-90,'fixed composer at '+width+' '+JSON.stringify(geometry));
+      assert.ok(geometry.top<=25,'fixed header at '+width); assert.ok(geometry.scroll<=geometry.height+1,'page scroll at '+width);
       await page.screenshot({path:path.join(output,'thread-'+width+'.png'),fullPage:true});
     }
     await page.waitForFunction(async()=>!(await caches.keys()).includes('lanpower-static-1.8.0'));
     assert.equal(await page.evaluate(()=>!!window.remoteXss),false);
     assert.deepEqual(errors,[]);
     const result={autoConnect:true,nativeBrowserDefaults:true,projectGroups:2,history:true,steer:true,interrupt:true,
-      desktopReadOnly:true,oldCacheRemoved:true,widths:[1440,390,320],browserErrors:errors.length};
+      desktopReadOnly:true,desktopLiveProgress:true,historicalPauseIsNotCurrentStatus:true,fixedComposer:true,oldCacheRemoved:true,widths:[1440,390,320],browserErrors:errors.length};
     fs.writeFileSync(path.join(output,'browser-result.json'),JSON.stringify(result,null,2)); console.log(JSON.stringify(result));
+    // A separate, clearly named layout example for review; it does not represent a real task result.
+    await page.setViewportSize({width:390,height:900});
+    await page.evaluate(()=>{
+      document.querySelector('#remote-title').textContent='重做 Codex Remote 交互'; document.querySelector('#remote-project-name').textContent='LanPower · 开发电脑';
+      const user=document.querySelector('.remote-user'); if(user)user.textContent='继续向原生 Remote 靠近，页面也要像原生一样简洁。';
+      const reply=document.querySelector('.remote-turn .remote-message:not(.remote-user):not(.remote-notice)');
+      if(reply){reply.replaceChildren(); const p=document.createElement('p');p.textContent='现在可以选择电脑，浏览最近会话和项目，继续在你的电脑上工作。';const list=document.createElement('ul');for(const text of ['查看会话消息与实时进度','展开执行过程和文件修改','发送引导，或暂停远程任务']){const li=document.createElement('li');li.textContent=text;list.append(li);}reply.append(p,list);}
+      document.querySelector('#remote-chat-scroll').scrollTop=0;
+    });
+    await page.screenshot({path:path.join(output,'native-style-example-390.png'),fullPage:true});
   } finally {
     for (const context of browser.contexts()) for (const page of context.pages()) {
       try { await page.locator('form[action="/logout"]').evaluate(async form => {

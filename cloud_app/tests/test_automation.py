@@ -247,6 +247,11 @@ def test_notifications_threshold_cooldown_failure_isolation_and_claim(setup, mon
 
 
 def test_wechat_disabled_token_cache_and_expiry_retry(setup, monkeypatch):
+    # Windows' monotonic clock may return the same tick; float subtraction can exceed
+    # the exact 7000-second boundary by a rounding bit. Verify expiry with a fixed clock.
+    clock = Mock(wraps=time)
+    clock.monotonic.return_value = 1000.0
+    monkeypatch.setattr('cloud_app.app.notify.time', clock)
     _, app, _, _ = setup
     platform = app.state.platform
     request = Mock()
@@ -266,7 +271,7 @@ def test_wechat_disabled_token_cache_and_expiry_retry(setup, monkeypatch):
     assert request.call_count == 5
     payload = request.call_args.args[1]
     assert payload['data'] == {'thing1': {'value': '测试电脑'}, 'time2': {'value': '2026-10-01 08:30'}}
-    assert 6900 < notifier._expires_at - time.monotonic() <= 7000
+    assert notifier._expires_at == 8000.0
 
 
 def test_sse_changes_keepalive_reauthentication_and_disconnect():

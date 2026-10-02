@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud 1.9.0。电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
+适用于 LanPower Windows / Cloud 1.10.0。电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
 
 ## 认证与连接
 
@@ -52,7 +52,9 @@
 
 Host 为创建/恢复强制 `approvalPolicy:on-request`、`sandbox:workspace-write`；为 turn 强制当前本地允许 cwd 和 `workspaceWrite` 策略，`networkAccess:false`，排除临时目录额外写入。`thread/list` 内部追加来源筛选以包含 app-server 创建的会话。浏览器不能修改这些字段。
 
-1.9.0 的 `thread/list` 可省略 `cwd`，按更新时间读取所有已授权本机会话，跨已配置的模型提供方；客户端不能覆盖来源、提供方或项目发现规则。自动发现通过内部 `project/list`、已登记的桌面项目元数据和近期有效工作目录进行，不读取登录文件。关闭自动发现后仍只允许手动目录。
+1.10.0 的 `thread/list` 可省略 `cwd`，按更新时间读取所有已授权本机会话，跨已配置的模型提供方；客户端不能覆盖来源、提供方或项目发现规则。自动发现通过内部 `project/list`、已登记的桌面项目元数据和近期有效工作目录进行，不读取登录文件。关闭自动发现后仍只允许手动目录。
+
+桌面已保存会话的 `thread/read` / 列表摘要可带 `live`：`source=localSession`，`state=running|idle|unknown`，`turnId`、`startedAt`、`updatedAt` 和有界活动摘要。状态来自本机真实生命周期及系统写锁，浏览器每 2 秒读取选中会话。近期轮次附带真实 `startedAt` / `completedAt` / `durationMs`；工具活动只含名称和执行状态，不含原始参数、隐藏推理或登录数据。`control=desktop` 仍不允许修改、引导和中断；`live` 是只读观察，不赋予桌面控制权。
 
 `thread/read` 只读取，不恢复会话；Host 内部使用分页历史取最近 8 轮，每轮最多 80 项、文字字段最多 8,000 字符，总内容约 240,000 字符。返回 `control: desktop/available/remote`、项目名称和范围。桌面仍持有写锁时，继续、引导、中断及其他修改操作被拒绝。`turn/steer` 的输入约束与 `turn/start` 相同，不能带模型、目录或策略覆盖；`expectedTurnId` 必须匹配本 Runtime 当前任务，不能引导其他会话。
 

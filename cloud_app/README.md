@@ -1,6 +1,6 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.9.0`，新增 Codex Remote 内存 Relay 与 Web/PWA 页面。本轮仅更新本机 Docker，正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.10.0`，Codex Remote 提供接近原生的项目会话列表、消息详情、执行过程与底部输入栏；桌面已保存的进度每 2 秒更新。内存 Relay 不保存正文。Cloud 186 项测试及浏览器 1440/390/320px 检查通过。本轮仅更新本机 Docker，正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
 ## Codex Remote Relay
 
