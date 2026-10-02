@@ -93,6 +93,8 @@ jobs:
         run: node tests/test_mini_program.js
       - name: Mini program v2 tests
         run: node tests/test_mini_program_v2.js
+      - name: Mini program Codex Remote tests
+        run: node tests/test_mini_program_codex.js
       - name: Cloud live status UI tests
         run: node tests/test_cloud_status.js
       - name: Cloud wake feedback tests

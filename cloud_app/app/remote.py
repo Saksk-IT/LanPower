@@ -183,7 +183,7 @@ class CodexRelay:
     async def shutdown(self):
         for device in list(set(self.agents) | set(self.clients)): await self.revoke(device)
 
-    async def serve(self, socket: WebSocket, agent: bool, device: str = ""):
+    async def serve(self, socket: WebSocket, agent: bool, device: str = "", *, mobile: bool = False):
         # No tokens in query strings, no cross-site cookies, no protocol downgrade.
         if socket.query_params or socket.headers.get("sec-websocket-protocol") != "lanpower.codex.v1":
             await socket.close(4400); return
@@ -195,6 +195,19 @@ class CodexRelay:
                 if not auth.startswith("Bearer "): raise PermissionError()
                 owner, device = self.platform.tokens.authorize(auth[7:], expected_type="windows")
                 valid = lambda: self.platform.tokens.authorize(auth[7:], expected_type="windows") == (owner, device)
+            elif mobile:
+                # Native mini-program sockets use an explicit bearer credential;
+                # browser cookies and Origin never grant access to this endpoint.
+                auth = socket.headers.get("authorization", "")
+                if not auth.startswith("Bearer "): raise PermissionError()
+                owner, client_id = self.platform.mobile.authorize(auth[7:])
+                def mobile_valid():
+                    return (self.platform.mobile.authorize(auth[7:]) == (owner, client_id) and
+                            self.platform.mobile.permits(client_id, "codex") and
+                            (target := self.platform.device(owner, device)) is not None and
+                            target.device_type == "windows")
+                valid = mobile_valid
+                if not valid(): raise PermissionError()
             else:
                 if socket.headers.get("origin") != self.platform.settings.public_url: raise PermissionError()
                 def session():

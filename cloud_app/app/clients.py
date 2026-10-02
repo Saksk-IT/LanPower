@@ -14,7 +14,7 @@ from cloud_app.app.auth import digest
 from cloud_app.app.device_auth import ACCESS_SECONDS
 from cloud_app.app.models import AuditLog, ClientEnrollment, ClientSession, UsedClientRefreshToken, User
 
-CLIENT_ACTIONS = ("status", "sleep", "hibernate", "restart", "shutdown", "wake")
+CLIENT_ACTIONS = ("status", "sleep", "hibernate", "restart", "shutdown", "wake", "codex")
 
 
 def normalize_actions(actions: list[str] | None) -> str:
@@ -25,7 +25,7 @@ def normalize_actions(actions: list[str] | None) -> str:
     if (not isinstance(actions, list) or not actions or
             any(not isinstance(action, str) or action not in CLIENT_ACTIONS for action in actions)):
         raise ValueError("请至少选择一项有效的客户端权限")
-    return ",".join(action for action in CLIENT_ACTIONS if action in actions)
+    return ",".join(action for action in CLIENT_ACTIONS if action in actions or action == "status" and "codex" in actions)
 
 
 class Clients:
@@ -108,7 +108,18 @@ class Clients:
         with self.sessions() as db:
             client = db.get(ClientSession, client_id)
             return bool(client and client.revoked_at is None and
-                        (not client.allowed_actions or action in client.allowed_actions.split(",")))
+                        (action in client.allowed_actions.split(",") or
+                         not client.allowed_actions and action in CLIENT_ACTIONS and action != "codex"))
+
+    def set_permissions(self, owner_id: str, client_id: str, actions: list[str]) -> None:
+        scopes = normalize_actions(actions)
+        with self.sessions.begin() as db:
+            changed = db.execute(update(ClientSession).where(
+                ClientSession.id == client_id, ClientSession.owner_id == owner_id,
+                ClientSession.revoked_at.is_(None)).values(allowed_actions=scopes))
+            if changed.rowcount != 1:
+                raise ValueError("client unavailable")
+            self.audit(db, owner_id, "client_permissions_updated")
 
     def revoke_reuse(self, db: Session, token_hash: str, client_id: str) -> None:
         used = db.get(UsedClientRefreshToken, token_hash)

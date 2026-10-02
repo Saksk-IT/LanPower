@@ -136,6 +136,7 @@
 
   <view class="tabbar">
     <button class="tab-item {{activeTab == 'home' ? 'active' : ''}}" data-tab="home" bindtap="switchTab"><view class="tab-icon"><view class="icon-computer"></view></view><view>我的电脑</view></button>
+    <button class="tab-item" bindtap="openCodex"><view class="tab-icon"><view class="icon-codex">···</view></view><view>Codex</view></button>
     <button class="tab-item {{activeTab == 'connect' ? 'active' : ''}}" data-tab="connect" bindtap="switchTab"><view class="tab-icon"><view class="icon-connect"></view></view><view>连接</view></button>
     <button class="tab-item {{activeTab == 'help' ? 'active' : ''}}" data-tab="help" bindtap="switchTab"><view class="tab-icon"><view class="icon-help">?</view></view><view>帮助</view></button>
   </view>

@@ -24,7 +24,7 @@ Page({
     canControl: false, canWake: false, busy: false, feedback: '', feedbackKind: 'info', wakeDirty: false,
     mac: '', broadcast: '255.255.255.255', version: VERSION},
 
-  onLoad() {
+  onLoad(options = {}) {
     this.client = CloudClient.load(wx);
     this.local = wx.getStorageSync(LOCAL_KEY) || {};
     this.wakeDrafts = {};
@@ -40,6 +40,7 @@ Page({
     };
     if (wx.onNetworkStatusChange) wx.onNetworkStatusChange(this.networkChanged);
     this.setData({connected: !!this.client, cloudHost, cloudStatusText: this.client ? '已保存授权' : '未授权'});
+    if (['home', 'connect', 'help'].includes(options.tab)) this.setData({activeTab: options.tab});
     const cache = wx.getStorageSync(CACHE_KEY);
     if (this.client && cache && cache.url === this.client.session.url && cache.client_id === this.client.session.client_id && Array.isArray(cache.devices)) {
       const device = cache.devices.find(d => d.device_id === cache.selectedId);
@@ -82,6 +83,9 @@ Page({
     this.setData({activeTab: tab});
     if (wx.pageScrollTo) wx.pageScrollTo({scrollTop: 0, duration: 0});
     if (tab === 'home' && this.client) this.refresh();
+  },
+  openCodex() {
+    wx.redirectTo({url: '/pages/codex/codex' + (this.data.selectedId ? '?computer=' + encodeURIComponent(this.data.selectedId) : '')});
   },
   selectHelpTopic(event) {
     const topic = event.currentTarget.dataset.topic;

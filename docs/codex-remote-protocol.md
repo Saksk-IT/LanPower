@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud 1.11.0。电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
+适用于 LanPower Windows / Cloud 1.12.0 与小程序 2.1.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。
 
 ## 认证与连接
 
@@ -8,9 +8,14 @@
 |---|---|---|
 | `wss://<Cloud>/api/v2/remote/agent` | `Authorization: Bearer <Windows Access Token>` | 只接受 Windows 类型，不允许 Origin 或查询参数 |
 | `wss://<Cloud>/api/v2/remote/client/<device_id>` | 现有 `lp_session` Cookie | Origin 精确匹配配置的 Cloud URL；校验账户和 Windows 归属 |
-| `GET /api/v2/remote/status/<device_id>` | 同一浏览器会话 | 只返回 `state`、`connected`、`busy` 元数据 |
+| `wss://<Cloud>/api/v2/remote/mobile/<device_id>` | `Authorization: Bearer <Mobile Access Token>` | 显式 `codex` 权限、账户和 Windows 归属；不接受 Cookie 代替、查询令牌或设备令牌 |
+| `GET /api/v2/remote/status/<device_id>` | 浏览器会话，或具备 `codex` 权限的手机 Bearer | 只返回 `state`、`connected`、`busy` 元数据 |
 
 两端必须选择子协议 `lanpower.codex.v1`。设备最多一个 Agent 和一个控制页面，新 Agent 替换旧连接（4410），第二控制页面返回 `controller_busy` 并关闭（4409）。认证失败关闭 4403，外层连接参数/子协议非法关闭 4400。主动撤销设备立即关闭，其他会话/凭据失效最多 5 秒复核。
+
+网页和小程序共享同一控制连接限制，手机不需要 Cookie 或 Origin。旧手机的空权限列表只兼容既有电源操作，不赋予 Codex；新增/修改授权时勾选 `codex`，同时保留读取状态所需的 `status`。修改权限需要所属账户的浏览器 CSRF 表单，不轮换手机凭据。权限关闭或授权撤销在连接复核时生效。
+
+小程序沿用 CloudClient 的长期凭据续期，在短期访问凭据到期前重新连接；切后台关闭 SocketTask，前台重新读取状态、历史及待审批。退避 1–30 秒，旧连接回调按代次隔离；任务和决定均不自动重发。正文不进入手机本地存储，富文本仅生成固定节点，不解释 HTML。
 
 ## 外层消息
 

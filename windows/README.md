@@ -1,6 +1,6 @@
 # Windows 应用
 
-当前源码版本：Windows `1.11.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增用户会话 Codex Host、出站 WSS Relay 和桌面端本地项目授权。本轮已在本机就地升级，保留 LAN 配对和 Cloud 设备身份，未发布。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.12.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。小程序 `2.1.0` 通过 Cloud `1.12.0` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录、项目授权、会话交还和桌面只读边界继续适用，详见 [小程序第一版](../docs/codex-remote-mini-program.md)。本轮安装包与 71 项 Windows 测试通过；本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
 1.11 新增会话自动释放和菜单“交还桌面”，按会话隔离活动任务与审批；存在未结束任务或后台命令时保留连接。官方 Runtime 验证占用、释放和同会话恢复，原生桌面当前的活动任务仍只能同步查看。
 

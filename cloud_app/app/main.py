@@ -39,11 +39,12 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 ACTION_LABELS = {"status": "查看状态", "sleep": "睡眠", "hibernate": "休眠", "restart": "重启", "shutdown": "关机", "wake": "开机"}
+CLIENT_ACTION_LABELS = {**ACTION_LABELS, "codex": "Codex Remote 远程开发"}
 ROUTE_LABELS = {"gateway_relay": "网关连接", "wake_gateway": "唤醒网关", "windows_direct": "云端直连"}
 STATE_LABELS = {"accepted": "已接收", "transitioning": "正在执行", "completed": "已完成", "failed": "未完成"}
 EVENT_LABELS = {"login": "登录", "login_failed": "登录失败", "logout": "退出登录", "setup_completed": "完成初始化", "device_renamed": "设备改名", "command_issued": "已发送命令", "enrollment_created": "创建配对码", "device_enrolled": "设备已连接", "device_revoked": "设备已移除", "refresh_rotated": "设备凭据已更新", "refresh_reuse": "设备凭据异常", "passkey_registered": "添加 Passkey", "passkey_login": "Passkey 登录", "recovery_created": "生成恢复码", "recovery_used": "使用恢复码"}
@@ -51,6 +52,7 @@ EVENT_LABELS.update({"enrollment_approved": "允许设备连接", "enrollment_de
 EVENT_LABELS.update({"client_enrollment_created": "创建客户端二维码", "client_enrolled": "客户端已授权",
                      "client_revoked": "客户端已移除", "client_refresh_rotated": "客户端凭据已更新",
                      "client_refresh_reuse": "客户端凭据异常"})
+EVENT_LABELS["client_permissions_updated"] = "修改手机权限"
 EVENT_LABELS.update({"gateway_linked": "关联唤醒网关", "gateway_unlinked": "移除网关关联"})
 EVENT_LABELS.update({"remote_connected": "Codex Remote 已连接", "remote_disconnected": "Codex Remote 已断开",
     "remote_task_started": "发送 Codex 开发任务", "remote_approval_decided": "处理 Codex 审批",
@@ -61,7 +63,7 @@ EVENT_LABELS.update({"schedule_created": "创建计划任务", "schedule_deleted
                      "schedule_toggled": "切换计划任务状态", "device_grouped": "修改设备分组",
                      "notification_saved": "保存离线通知", "notification_deleted": "删除离线通知",
                      "notification_toggled": "切换离线通知状态"})
-templates.env.filters["action_label"] = lambda value: ACTION_LABELS.get(value, value)
+templates.env.filters["action_label"] = lambda value: CLIENT_ACTION_LABELS.get(value, value)
 templates.env.filters["route_label"] = lambda value: ROUTE_LABELS.get(value, value)
 templates.env.filters["state_label"] = lambda value: STATE_LABELS.get(value, value)
 templates.env.filters["event_label"] = lambda value: EVENT_LABELS.get(value, value)
@@ -179,7 +181,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def page(request: Request, name: str, session, **context):
         status = context.pop("status", 200)
         base = {"request": request, "page": name, "csrf": request.cookies.get("lp_csrf", ""),
-                "version": VERSION, "public_url": settings.public_url, "action_labels": ACTION_LABELS}
+                "version": VERSION, "public_url": settings.public_url, "action_labels": ACTION_LABELS,
+                "client_action_labels": CLIENT_ACTION_LABELS}
         base.update(context)
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
 
@@ -213,6 +216,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def codex_client(socket: WebSocket, device_id: str):
         await codex_relay.serve(socket, False, device_id)
 
+    @app.websocket("/api/v2/remote/mobile/{device_id}")
+    async def codex_mobile(socket: WebSocket, device_id: str):
+        await codex_relay.serve(socket, False, device_id, mobile=True)
+
     @app.get("/remote")
     def codex_page(request: Request):
         session, redirect = browser_guard(request)
@@ -222,8 +229,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v2/remote/status/{device_id}")
     def codex_status(request: Request, device_id: str):
-        session = session_owner(request)
-        device = platform.device(session.owner_id, device_id)
+        owner_id = client_owner(request, action="codex")
+        device = platform.device(owner_id, device_id)
         if device is None or device.device_type != "windows": raise HTTPException(404, "device unavailable")
         return codex_relay.status(device_id)
 
@@ -684,6 +691,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             platform.mobile.revoke(session.owner_id, client_id)
         except ValueError as error:
             raise HTTPException(404, str(error)) from error
+        return RedirectResponse("/clients", status_code=303)
+
+    @app.post("/clients/{client_id}/permissions")
+    async def client_permissions(request: Request, client_id: str):
+        session = session_owner(request)
+        form = await parse_form(request)
+        require_csrf(request, session, form)
+        try:
+            platform.mobile.set_permissions(session.owner_id, client_id,
+                [action for action in CLIENT_ACTIONS if form.get("allow_" + action) == "on"])
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
         return RedirectResponse("/clients", status_code=303)
 
     @app.post("/api/v2/clients/enroll")

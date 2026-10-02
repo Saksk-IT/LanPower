@@ -1,16 +1,18 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.11.0`，Codex Remote 提供接近原生的项目会话列表、消息详情、执行过程与底部输入栏；桌面已保存的进度每 2 秒更新。内存 Relay 不保存正文。Cloud 187 项测试及浏览器 1440/390/320px 检查通过。本轮仅更新本机 Docker，正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.12.0`，新增微信小程序专用 Codex Remote WSS 入口和独立手机开发权限，沿用已有长期授权与用户 Host。Cloud 193 项测试通过，内存 Relay 不保存正文。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+
+小程序 `2.1.0` 的首次使用及界面截图见 [第一版说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
 
 1.11 新增会话自动释放和菜单“交还桌面”，按会话隔离活动任务与审批；存在未结束任务或后台命令时保留连接。官方 Runtime 验证占用、释放和同会话恢复，原生桌面当前的活动任务仍只能同步查看。
 
 ## Codex Remote Relay
 
-登录后在 `/remote` 选择本账户的 Windows。浏览器沿用安全会话 Cookie，连接必须来自配置的同一 Origin；Agent 使用独立 Windows Bearer 凭据，不能借用手机或网关凭据。连接使用 `lanpower.codex.v1` WSS 子协议，令牌不得放在 URL。每台设备仅一个控制页面，撤销设备或登录会话后关闭连接。复用既有唤醒接口，不改变电源路由。
+登录后在 `/remote` 选择本账户的 Windows。浏览器沿用安全会话 Cookie，连接必须来自配置的同一 Origin；小程序连接 `/api/v2/remote/mobile/<device_id>`，使用手机 Bearer Header 并校验显式 `codex` 权限、账户和 Windows 归属。Agent 使用独立 Windows Bearer 凭据，不能借用手机或网关凭据。连接使用 `lanpower.codex.v1` WSS 子协议，令牌不得放在 URL。网页与小程序共享每台设备一个控制连接的限制；撤销或权限关闭后断开。复用既有唤醒接口，不改变电源路由。
 
 Relay 只在限额内存队列中转发 JSON-RPC；任务、代码、Diff、审批内容和 OpenAI 登录信息不写数据库、日志或 PWA 缓存。审计仅记录账户/设备编号、事件类型和时间。TLS 在 Cloud 终止，服务会短暂看到转发正文，当前 MVP 不提供端到端加密。使用自己的可信 Cloud；详见 [安全边界](../docs/security-model.md)、[使用说明](../docs/codex-remote.md) 和 [协议](../docs/codex-remote-protocol.md)。
 
-当前 Relay 为进程内路由，部署保持 **单个 Uvicorn worker / 单个 Cloud 副本**。Caddy 支持现有 HTTPS 入口的 WebSocket 升级；其他代理也必须转发 Upgrade，保留 `Origin` 和 Cookie，禁用正文采样并允许长连接。多副本共享路由、外部消息总线和移动端专用授权留待后续阶段。
+当前 Relay 为进程内路由，部署保持 **单个 Uvicorn worker / 单个 Cloud 副本**。Caddy 支持现有 HTTPS 入口的 WebSocket 升级；其他代理也必须转发 Upgrade，保留网页的 `Origin` / Cookie 与小程序的 `Authorization` Header，禁用正文采样并允许长连接。多副本共享路由和外部消息总线留待后续阶段。
 
 Cloud“手机授权”支持为每部手机生成一次性二维码，并逐个撤销。Cloud `1.7.2` 配合小程序 `2.0.5` 支持一次扫码长期授权：访问凭据每 15 分钟续期，手机长期凭据不因断网、响应丢失、重启或长期闲置过期；Gateway 续期也通过不消费长期凭据的重试接口恢复。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。升级顺序和旧凭据恢复边界见 [小程序 v2](../docs/mini-program-v2.md#长期授权升级)。
 

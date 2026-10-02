@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "Codex Remote",
+  "navigationBarBackgroundColor": "@codexBackground",
+  "navigationBarTextStyle": "@codexTextStyle",
+  "backgroundColor": "@codexBackground",
+  "disableScroll": true
+}

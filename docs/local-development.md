@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-应用源码版本为 `1.11.0`，本地部署配置版本为 `1.11.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.12.0`，小程序 `2.1.0`，本地部署配置版本为 `1.12.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
 
@@ -69,7 +69,19 @@ Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<开发 CA 指纹>'
 Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 ```
 
-## 本机 1.11.0 会话交接更新（2026-10-02）
+## 本机 1.12.0 小程序第一版（2026-10-03）
+
+新增原生 Codex 页面、手机 Bearer WSS 入口和显式开发权限。Cloud **193 项**、Windows **71 项**、小程序旧版/v2/Codex 交互、WCC/WCSC 三页面编译、320/390/430px 浅色/深色/审批/键盘布局检查通过。布局由微信编译结果在浏览器 DOM 适配器中渲染，包含微信 v2 默认按钮规则；不是微信真机验证。
+
+本机 Docker 已切换为 `lanpower-cloud:1.12.0-dev.1`，运行和分发包版本均为 1.12.0，Cloud/Caddy 健康。切换前使用 SQLite backup API 一致备份并检查完整性；升级后完整性及外键检查通过，九张身份/配置表的主键与引用摘要一致。原数据卷、登录配置、开发 CA 保留，无数据库迁移变更。
+
+Windows Setup 从本轮独立构建目录就地安装至现有目录，三个安装程序版本 1.12.0.0，二进制哈希与构建产物一致，服务 Running。原 LAN 配置和用户 Codex 授权逐字节保留，Cloud 地址与设备身份一致。升级前确认 Host 只有只读目录查询进程，无远程执行会话；原生 Codex 桌面程序未重启。
+
+通过正常证书验证的实际 HTTPS 登录创建临时手机授权，使用小程序的 CloudClient 与 CodexConnection 实现经原生 API 适配器访问本机 Cloud。确认电源手机不能开发、网页修改 Codex 权限后原凭据直接可用、WSS Bearer Header 与子协议握手通过，安装 Host 已就绪。另一真实控制页面仍占用电脑，服务返回 controller_busy，本轮未抢占它读取真实项目或执行任务。临时手机已撤销、测试浏览器已退出。
+
+第一版截图和导入说明见 [小程序 Codex Remote](codex-remote-mini-program.md)。尚未进行实际微信、5G 或真实手机任务验收；远程服务器未更新、未推送或发布。工作区同时存在其他开发中的改动，本轮构建与提交仅纳入小程序、手机鉴权和相关版本/文档，未将其他桌面共享控制改动纳入安装包。
+
+## 历史本机 1.11.0 会话交接更新（2026-10-02）
 
 开发镜像为 `lanpower-cloud:1.11.0-dev.1`，Cloud 与 Caddy 健康，正常 HTTPS、登录和运行/分发包版本通过。更新前用 SQLite backup API 保存一致备份，升级后完整性为 ok；九张身份及授权配置表的主键/引用摘要与备份一致，原数据卷、登录设置与 CA 保留。
 

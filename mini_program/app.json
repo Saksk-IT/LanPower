@@ -1,5 +1,7 @@
 {
-  "pages": ["pages/cloud/cloud", "pages/index/index"],
+  "pages": ["pages/cloud/cloud", "pages/index/index", "pages/codex/codex"],
+  "darkmode": true,
+  "themeLocation": "theme.json",
   "window": {
     "navigationBarTitleText": "LanPower",
     "navigationBarBackgroundColor": "#ffffff",

@@ -7,6 +7,7 @@ page {
 }
 
 button::after { border: none; }
+.icon-codex { width: 38rpx; height: 32rpx; border: 3rpx solid currentColor; border-radius: 16rpx; line-height: 20rpx; text-align: center; font-size: 26rpx; font-weight: 700; }
 
 /* style: v2 的 button:not([size=mini]) 默认固定为 184px。
    使用元素 + 类选择器覆盖其宽度和水平外边距，保留页面各自的视觉样式。 */

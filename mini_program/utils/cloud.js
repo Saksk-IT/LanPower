@@ -114,6 +114,14 @@ class CloudClient {
     }
     if (response.statusCode !== 200) {
       if (response.statusCode === 401) throw authorizationError();
+      if (response.statusCode === 403 && path.startsWith('/api/v2/remote/')) {
+        const error = new Error('请在 Cloud 的手机授权中，为这部手机开启 Codex Remote 权限');
+        error.code = 'FORBIDDEN'; throw error;
+      }
+      if (response.statusCode === 404 && path.startsWith('/api/v2/remote/')) {
+        const error = new Error('请先将 Cloud 更新至 1.12.0，再使用小程序远程开发');
+        error.code = 'UPDATE_REQUIRED'; throw error;
+      }
       throw new Error(response.statusCode === 429 ? '操作过于频繁，请稍后重试' : '操作不可用，请刷新设备状态');
     }
     return response.data;

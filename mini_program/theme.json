@@ -1,0 +1,4 @@
+{
+  "light": {"codexBackground": "#ffffff", "codexTextStyle": "black"},
+  "dark": {"codexBackground": "#181818", "codexTextStyle": "white"}
+}

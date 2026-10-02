@@ -205,3 +205,86 @@ def test_sizes_backpressure_and_policy_overrides():
         with pytest.raises(ProtocolError): validate_request({"id": 1, "method": "thread/start", "params": params})
     with pytest.raises(ProtocolError): validate_request({"id": True, "method": "model/list", "params": {}})
     with pytest.raises(ProtocolError): validate_decision("item/permissions/requestApproval", {"permissions": {"fileSystem": {}}, "scope": "session"})
+
+
+def phone_credentials(client, app, actions=None):
+    code = app.state.platform.mobile.create_enrollment(ADMIN_ID, "Remote phone", actions)
+    return client.post("/api/v2/clients/enroll", json={"code": code}).json()
+
+
+def phone_socket(client, device, phone, **kwargs):
+    return client.websocket_connect("/api/v2/remote/mobile/" + device, subprotocols=PROTOCOL,
+        headers={"Authorization": "Bearer " + phone["access_token"], **kwargs})
+
+
+@pytest.mark.parametrize("actions", [None, ["status"], ["status", "sleep", "wake"]])
+def test_old_and_power_only_phones_do_not_gain_remote_development(remote, actions):
+    client, app, creds, _, _ = remote
+    phone = phone_credentials(client, app, actions)
+    header = {"Authorization": "Bearer " + phone["access_token"]}
+    assert client.get("/api/v2/remote/status/" + creds["device_id"], headers=header).status_code == 403
+    with pytest.raises(WebSocketDisconnect):
+        with phone_socket(client, creds["device_id"], phone): pass
+    assert app.state.platform.mobile.permits(phone["client_id"], "status")
+
+
+def test_mobile_roundtrip_approval_and_shared_controller_limit(remote):
+    client, app, creds, _, _ = remote
+    phone = phone_credentials(client, app, ["codex"])
+    assert app.state.platform.mobile.permits(phone["client_id"], "status")
+    header = {"Authorization": "Bearer " + phone["access_token"]}
+    assert client.get("/api/v2/remote/status/" + creds["device_id"], headers=header).status_code == 200
+    with agent(client, creds) as up:
+        up.send_json({"type": "hello", "protocol": 1, "state": "host_ready"})
+        up.send_json({"type": "ping"}); up.receive_json()
+        with phone_socket(client, creds["device_id"], phone, Origin="https://servicewechat.com") as down:
+            assert down.receive_json()["state"] == "host_ready"
+            session = up.receive_json()["session"]
+            up.send_json({"type": "state", "session": session, "state": "runtime_ready"})
+            assert down.receive_json()["state"] == "runtime_ready"
+            request = {"id": "phone-task", "method": "turn/start", "params": {
+                "threadId": "phone-thread", "input": [{"type": "text", "text": "phone-private-sentinel"}]}}
+            down.send_json({"type": "rpc", "payload": request})
+            assert up.receive_json()["payload"] == request
+            up.send_json({"type": "rpc", "session": session, "payload": {"id": "phone-task", "result": {"ok": True}}})
+            assert down.receive_json()["payload"]["result"] == {"ok": True}
+            approval = {"id": "phone-approve", "method": "item/fileChange/requestApproval", "params": {"threadId": "phone-thread"}}
+            up.send_json({"type": "rpc", "session": session, "payload": approval})
+            assert down.receive_json()["payload"] == approval
+            down.send_json({"type": "rpc", "payload": {"id": "phone-approve", "result": {"decision": "accept"}}})
+            assert up.receive_json()["payload"]["result"] == {"decision": "accept"}
+            with browser(client, creds) as other:
+                assert other.receive_json()["code"] == "controller_busy"
+    assert not app.state.codex_relay.clients
+    assert "phone-private-sentinel" not in client.get("/activity").text
+
+
+def test_phone_permissions_edit_keeps_credentials_and_revokes_active_access(remote):
+    client, app, creds, csrf, _ = remote
+    phone = phone_credentials(client, app)
+    route = "/clients/" + phone["client_id"] + "/permissions"
+    assert client.post(route, data={"allow_codex": "on"}).status_code == 403
+    assert client.post(route, data={"csrf": csrf, "allow_codex": "on"}).status_code == 200
+    assert app.state.platform.mobile.authorize(phone["access_token"])[1] == phone["client_id"]
+    with phone_socket(client, creds["device_id"], phone) as down:
+        assert down.receive_json()["state"] == "cloud_offline"
+        assert client.post(route, data={"csrf": csrf, "allow_status": "on"}).status_code == 200
+        down.send_json({"type": "rpc", "payload": {"id": 1, "method": "lanpower/status", "params": {}}})
+        assert down.receive_json()["code"] == "remote_revoked"
+        with pytest.raises(WebSocketDisconnect): down.receive_json()
+
+
+def test_phone_socket_rejects_cookie_device_token_query_and_foreign_device(remote):
+    from cloud_app.app.models import Device, User
+    client, app, creds, _, _ = remote
+    phone = phone_credentials(client, app, ["codex"])
+    route = "/api/v2/remote/mobile/" + creds["device_id"]
+    for path, headers in [(route, {}), (route, {"Authorization": "Bearer " + creds["access_token"]}),
+                          (route + "?token=forbidden", {"Authorization": "Bearer " + phone["access_token"]})]:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(path, subprotocols=PROTOCOL, headers=headers): pass
+    with app.state.platform.sessions.begin() as db:
+        db.add(User(id="phone-other-owner", username="phone-other", password_hash="disabled", created_at=1)); db.flush()
+        db.get(Device, creds["device_id"]).owner_id = "phone-other-owner"
+    with pytest.raises(WebSocketDisconnect):
+        with phone_socket(client, creds["device_id"], phone): pass
