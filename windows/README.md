@@ -1,8 +1,14 @@
 # Windows 应用
 
-当前源码版本：Windows `1.7.2`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。v1.7 新增三色托盘：绿表示最近 90 秒内 Cloud 命令轮询成功，黄表示服务运行但云端未连接，灰表示本机服务不可达；每 30 秒刷新，关闭到托盘后仍生效。升级方式和验证见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。本轮 Windows 仅更新版本并保留本机配对、Cloud 凭据和 LAN 配置。
+当前源码版本：Windows `1.8.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增用户会话 Codex Host、出站 WSS Relay 和桌面端本地项目授权。本轮已在本机就地升级，保留 LAN 配对和 Cloud 设备身份，未发布。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
 本目录是 .NET 10 Windows 服务、WPF 桌面端和安装包的源码。服务同时提供 LAN Direct 与可选的 Cloud Direct，旧版 Python 实现继续保留。局域网控制不依赖 Cloud 或 Wake Gateway。
+
+## Codex Remote
+
+Setup 和便携包新增 `CodexHost/LanPower.CodexHost.exe`，在 Windows 用户登录后启动，也由桌面端自动补启动。Host 默认不启动 Codex；在「远程连接」启用远程开发并保存项目后，浏览器连接才启动官方 `codex app-server --listen stdio://`。Codex CLI 本身不捆绑在安装器中，需要当前用户预先安装并登录；服务不会以 SYSTEM 运行 Codex 或复制用户的登录文件。
+
+本地授权保存在当前用户 `%LOCALAPPDATA%\LanPower\codex-remote.json`，最多 32 个普通本机目录，拒绝 UNC、符号链接与目录联接。关闭授权会结束 Host 管理的 Runtime；浏览器断线保留任务，重连查询实际状态，任务不会自动重发。无需新增端口、防火墙规则或公网 Shell。完整步骤、进程生命周期、受限审批和验收记录见 [Codex Remote](../docs/codex-remote.md)。卸载保留 ProgramData 和用户授权配置，并移除 Host 启动项。
 
 ## 构建
 
@@ -51,6 +57,8 @@ Setup 在文件复制后、创建快捷方式前验证后台服务，使用原�
 - 卸载新应用会移除服务和防火墙规则，并保留 ProgramData 配对配置，供重装沿用。旧版 `source/`、`LanPower/` 与 `Install.cmd` 仍保留。
 
 ## 验证边界
+
+2026-10-02 Codex Remote 1.8.0：Release 构建 0 警告/错误，61 项单元测试、42 项桌面检查、隔离 LAN/IPC dry-run 以及安装配置/诊断/失败恢复/真实 Inno Setup 模拟流程通过。模拟 Runtime 覆盖中文 UTF-8、审批范围、无汇总通知的文件 Diff 和中断；当前用户真实 Codex 经 Service WSS Agent、用户 Host 与浏览器完成独立文件修改、单次审批、Diff 和刷新恢复。已重建自包含 Setup 与便携包，23 个包内文件、18 个安装组件哈希通过；本机就地升级后服务运行、安装组件匹配，原 LAN 与 Cloud 身份及用户项目授权保留。未重新执行物理电源动作，公网 5G 与用户真实项目待人工验收，见 [Codex Remote](../docs/codex-remote.md)。
 
 2026-09-30 安装失败专项检查：用户反馈部分完整版 Windows 11 使用 Setup 时在末尾出现服务错误；用户在本机 Windows 沙盒安装两次均成功，故障机尚未复现，不能认定为普遍缺少运行库或已确认代理故障。本次改进安装检查、失败提示与诊断，不改动桌面端内存实现。Windows PowerShell 5.1 的直连检查、异常响应拒绝、诊断编码/隐私、服务清理及旧任务恢复回归通过；使用真实 Inno Setup 编译的隔离安装器验证成功、服务失败和无诊断文件三条路径，失败均返回非零、无新快捷方式/自动启动，完成页提示已验证。上述安装测试使用模拟服务，未停止或替换本机运行中的服务，也不替代故障机验证。
 

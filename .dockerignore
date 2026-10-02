@@ -18,6 +18,11 @@ tests
 **/cloud.json
 **/gateway.json
 **/config.json
+**/codex-remote.json
+**/auth.json
+**/tokens.json
+**/.codex
+**/codex-home
 **/setup-code
 deploy/docker/.env
 deploy/docker/.env.*

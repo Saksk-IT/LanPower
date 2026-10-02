@@ -16,7 +16,7 @@ import qrcode
 from qrcode.image.svg import SvgPathImage
 from markupsafe import Markup
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -36,9 +36,10 @@ from cloud_app.app.notify import Notifier
 from cloud_app.app.scheduled import SCHEDULE_ZONE, Scheduler, schedule_description
 from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
+from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.7.2"
+VERSION = "1.8.0"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -51,6 +52,9 @@ EVENT_LABELS.update({"client_enrollment_created": "创建客户端二维码", "c
                      "client_revoked": "客户端已移除", "client_refresh_rotated": "客户端凭据已更新",
                      "client_refresh_reuse": "客户端凭据异常"})
 EVENT_LABELS.update({"gateway_linked": "关联唤醒网关", "gateway_unlinked": "移除网关关联"})
+EVENT_LABELS.update({"remote_connected": "Codex Remote 已连接", "remote_disconnected": "Codex Remote 已断开",
+    "remote_task_started": "发送 Codex 开发任务", "remote_approval_decided": "处理 Codex 审批",
+    "remote_interrupted": "请求中断 Codex 任务"})
 EVENT_LABELS.update({"device_credential_failed": "设备授权失败", "client_credential_failed": "客户端授权失败"})
 EVENT_LABELS.update({"schedule_created": "创建计划任务", "schedule_deleted": "删除计划任务",
                      "schedule_fired": "计划任务已执行", "schedule_failed": "计划任务执行失败",
@@ -125,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     enrollment_limiter = LoginLimiter()
     notifier = Notifier(platform)
     scheduler = Scheduler(platform, notifier)
+    codex_relay = CodexRelay(platform)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -132,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await codex_relay.shutdown()
             await run_in_threadpool(scheduler.stop)
             engine.dispose()
 
@@ -142,6 +148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.bootstrap = bootstrap
     app.state.engine = engine
     app.state.scheduler = scheduler
+    app.state.codex_relay = codex_relay
     app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
     @app.exception_handler(HTTPException)
@@ -152,7 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
-        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -197,6 +204,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if redirect:
             raise HTTPException(401, "unauthorized")
         return session
+
+    @app.websocket("/api/v2/remote/agent")
+    async def codex_agent(socket: WebSocket):
+        await codex_relay.serve(socket, True)
+
+    @app.websocket("/api/v2/remote/client/{device_id}")
+    async def codex_client(socket: WebSocket, device_id: str):
+        await codex_relay.serve(socket, False, device_id)
+
+    @app.get("/remote")
+    def codex_page(request: Request):
+        session, redirect = browser_guard(request)
+        if redirect: return redirect
+        return page(request, "remote", session,
+                    devices=[d for d in platform.devices(session.owner_id) if d.device_type == "windows"])
+
+    @app.get("/api/v2/remote/status/{device_id}")
+    def codex_status(request: Request, device_id: str):
+        session = session_owner(request)
+        device = platform.device(session.owner_id, device_id)
+        if device is None or device.device_type != "windows": raise HTTPException(404, "device unavailable")
+        return codex_relay.status(device_id)
+
+    @app.get("/manifest.webmanifest")
+    def pwa_manifest():
+        return Response(json.dumps({"name": "LanPower Codex Remote", "short_name": "LanPower",
+            "start_url": "/remote", "scope": "/", "display": "standalone", "lang": "zh-CN",
+            "background_color": "#f5f7f9", "theme_color": "#147d6a",
+            "icons": [{"src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]}),
+            media_type="application/manifest+json")
+
+    @app.get("/sw.js")
+    def pwa_worker():
+        return Response((ROOT / "static" / "sw.js").read_text(encoding="utf-8"),
+                        media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
 
     def client_owner(request: Request, *, mutation: bool = False, action: str | None = None) -> str:
         authorization = request.headers.get("authorization")
@@ -577,6 +619,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         destination = "/gateways" if device and device.device_type == "gateway" else "/devices"
         try:
             platform.windows.revoke_device(session.owner_id, device_id)
+            await codex_relay.revoke(device_id)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return RedirectResponse(destination, status_code=303)
@@ -770,12 +813,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, str(error)) from error
 
     @app.post("/api/v2/devices/revoke")
-    def device_disconnect(request: Request):
+    async def device_disconnect(request: Request):
         # A device may only remove its own identity. Browser/client credentials
         # cannot call this endpoint and no caller-supplied target is accepted.
         owner_id, device_id = device_identity(request, None)
         try:
             platform.windows.revoke_device(owner_id, device_id)
+            await codex_relay.revoke(device_id)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return {"ok": True}

@@ -218,6 +218,22 @@
           <StackPanel x:Name="CloudView" Visibility="Collapsed">
             <Border Style="{StaticResource Section}" Margin="0,0,0,20">
               <StackPanel>
+                <TextBlock Text="Codex Remote · 远程开发" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="让浏览器连接这台电脑的 Codex。先在电脑上登录 Codex，再选择允许远程开发的项目目录。" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                <TextBlock x:Name="CodexRemoteState" Text="等待检测" Margin="0,12,0,8" FontWeight="SemiBold"/>
+                <CheckBox x:Name="CodexRemoteEnabled" Content="允许 Codex Remote 访问已选择的项目" Margin="0,8,0,12"/>
+                <TextBlock x:Name="CodexWorkspaces" Text="尚未选择项目" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                <WrapPanel Margin="0,12,0,0">
+                  <Button Content="添加项目目录" Click="AddCodexWorkspace" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
+                  <Button Content="清空项目" Click="ClearCodexWorkspaces" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
+                  <Button Content="保存授权" Click="SaveCodexRemote" Margin="0,0,8,8"/>
+                  <Button Content="打开远程开发" Click="OpenCodexRemote" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
+                </WrapPanel>
+                <TextBlock Text="Windows 用户未登录时 Runtime 不可用；唤醒、电源与 Cloud Direct 继续独立运行。关闭授权会停止远程 Runtime。" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Section}" Margin="0,0,0,20">
+              <StackPanel>
                 <TextBlock Text="在外也能连接这台电脑" FontSize="20" FontWeight="SemiBold"/>
                 <TextBlock Text="连接自己的 Cloud 后，可通过浏览器或已授权的小程序控制在线电脑。" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,20"/>
                 <TextBlock Text="Cloud 地址" FontWeight="SemiBold" Margin="0,0,0,8"/>

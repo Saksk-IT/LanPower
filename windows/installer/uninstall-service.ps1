@@ -1,4 +1,10 @@
 $ErrorActionPreference = 'Stop'
+$installedHost = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'CodexHost\LanPower.CodexHost.exe'))
+Get-CimInstance Win32_Process -Filter "Name='LanPower.CodexHost.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $installedHost } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('CommonStartup')) 'LanPower Codex Host.lnk'
+if (Test-Path -LiteralPath $shortcutPath) { Remove-Item -LiteralPath $shortcutPath -Force }
 $service = Get-Service -Name 'LanPowerService' -ErrorAction SilentlyContinue
 if ($service) {
     if ($service.Status -ne 'Stopped') { Stop-Service -Name 'LanPowerService' -Force }

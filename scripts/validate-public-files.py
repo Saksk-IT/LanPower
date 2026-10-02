@@ -10,7 +10,7 @@ PRIVATE_NAMES = {
     "agents.md", "project.private.config.json", "config.json", "gateway.json",
     "cloud.json", "device-credentials.json", "credentials.dat",
     "command-receipts.json", "cloud-replay.jsonl", "gateway.lock", "seen.json",
-    "setup-code", "auto-targets.json",
+    "setup-code", "auto-targets.json", "codex-remote.json", "auth.json", "tokens.json",
 }
 LOCAL_DOCUMENTS = {
     "router-gateway-implementation.md",
@@ -32,7 +32,8 @@ CONTENT_PATTERNS = {
     "private key": re.compile(r"-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----"),
     "GitHub credential": re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
 }
-MAC_PATTERN = re.compile(r"(?i)(?<![\w])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![\w])")
+# A MAC is a complete token, not six numbers within a longer SVG coordinate run.
+MAC_PATTERN = re.compile(r"(?i)(?<![\w-])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![\w-])")
 PUBLIC_MACS = {"00-00-00-00-00-00", "FF-FF-FF-FF-FF-FF", "00-11-22-33-44-55"}
 
 
@@ -40,7 +41,7 @@ def private_path(path: str) -> bool:
     parts = PurePosixPath(path.lower())
     name = parts.name
     return ((name in PRIVATE_NAMES and path != "mini_program/pages/cloud/cloud.json")
-            or "private" in parts.parts or name == ".env"
+            or any(part in parts.parts for part in ("private", ".codex", "codex-home")) or name == ".env"
             or name.startswith(".env.") and name != ".env.example"
             or name.endswith((".db", ".sqlite", ".sqlite3", ".log", ".pem", ".key", ".pfx", ".p12",
                               ".db-wal", ".db-shm", ".sqlite-wal", ".sqlite-shm"))

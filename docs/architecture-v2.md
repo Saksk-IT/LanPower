@@ -1,6 +1,6 @@
 # LanPower 架构与实现状态
 
-Cloud 是设备与账户平台；Windows 是可直接连接 Cloud 的设备；Wake Gateway 用于远程开机和可选备用控制。所有远程动作按目标 Windows 编号请求，由 Cloud 选择路径。
+Cloud 是设备与账户平台；Windows 是可直接连接 Cloud 的设备；Wake Gateway 用于远程开机和可选备用控制。电源动作按目标 Windows 编号请求，由 Cloud 选择路径。1.8.0 新增独立 Codex Remote 链路，继续沿用现有身份和设备归属。
 
 ```mermaid
 flowchart LR
@@ -14,6 +14,19 @@ flowchart LR
 ```
 
 ## 正式模式
+
+Codex Remote 连接关系如下；Host 在当前交互用户下运行，Service 负责出站连接，两个进程都不新增 TCP 监听。Cloud 只转发正文，Codex 登录、会话历史与代码留在 Windows。
+
+```mermaid
+flowchart LR
+    PWA[Web / PWA] -->|同源会话 WSS| Relay[Cloud 内存 Relay]
+    Agent[Windows Service Agent] -->|主动出站 WSS| Relay
+    Agent <-->|ACL 命名管道| Host[Windows 用户 Codex Host]
+    Host <-->|本机 stdio JSONL| Runtime[官方 Codex app-server]
+    Runtime --> Project[本机项目与 Codex 历史]
+```
+
+第一阶段每台电脑只有一个远程控制页面、一个用户 Host 和一个 Runtime。已发送任务在浏览器断线后继续运行；重连读取本机状态和历史，Relay 不回放任务正文。Cloud 使用单个 worker，重启丢弃转发队列。项目只能在电脑端授权，Runtime 按 `workspace-write` / `on-request` 启动；远端不能修改 Codex 配置、登录或调用任意 Shell RPC。具体能力与验收见 [Codex Remote](codex-remote.md)。
 
 | 模式 | 组件 | 能力 |
 |---|---|---|
@@ -29,6 +42,7 @@ Windows 直连在线时优先 `windows_direct`。`wake` 只能显式选择，走
 | 组件 | 实现 | 主要职责 |
 |---|---|---|
 | Windows | `windows/`，.NET 10、WPF、Windows Service | LAN API、Cloud Agent、DPAPI 凭据、命名管道、安装包 |
+| Codex Host | `windows/LanPower.CodexHost/`，当前 Windows 用户 | 本地授权、app-server 生命周期、白名单 RPC、任务快照与受限审批 |
 | Cloud | `cloud_app/`，FastAPI、SQLAlchemy、Alembic、Jinja2 | Passkey、恢复码、设备/客户端授权、命令路由、网页、审计 |
 | 小程序 | `mini_program/pages/cloud/` | 独立客户端授权、多电脑选择、LAN First、Cloud Fallback |
 | Gateway | `router_gateway/`，Go | 设备注册、多电脑配置、WOL、备用控制、防重复执行 |
@@ -65,4 +79,4 @@ Router Plugin、LAN 自动发现、其他操作系统设备、公开多用户和
 
 ## 文档入口
 
-[Windows 应用](windows-app.md) · [Cloud Direct](cloud-direct.md) · [Cloud 部署](cloud-deployment.md) · [Wake Gateway](wake-gateway.md) · [认证](authentication-v2.md) · [小程序](mini-program-v2.md) · [旧版迁移](migration-v1.md) · [安全边界](security-model.md) · [故障排查](troubleshooting.md)
+[Windows 应用](windows-app.md) · [Cloud Direct](cloud-direct.md) · [Codex Remote](codex-remote.md) · [Cloud 部署](cloud-deployment.md) · [Wake Gateway](wake-gateway.md) · [认证](authentication-v2.md) · [小程序](mini-program-v2.md) · [旧版迁移](migration-v1.md) · [安全边界](security-model.md) · [故障排查](troubleshooting.md)

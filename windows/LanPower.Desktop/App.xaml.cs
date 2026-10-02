@@ -50,6 +50,7 @@ public partial class App : Application
             (_, _) => Dispatcher.BeginInvoke(() => RestoreWindow()), null, Timeout.Infinite, false);
         var window = new MainWindow();
         MainWindow = window;
+        try { LanPower.Desktop.MainWindow.StartCodexHost(); } catch { }
         CreateTray();
         window.Show();
     }

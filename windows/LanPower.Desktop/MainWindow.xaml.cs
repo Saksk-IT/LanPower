@@ -51,6 +51,7 @@ public partial class MainWindow : Window
         }
         catch { }
         _loaded = true;
+        LoadCodexRemoteSettings();
         SidebarVersion.Text = $"Windows {_version}";
         VersionNotice.Text = $"当前桌面版本 {_version}";
         DeviceName.Text = Environment.MachineName;

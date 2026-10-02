@@ -13,7 +13,7 @@ if (-not $IsccPath) {
 }
 if (-not (Test-Path -LiteralPath $IsccPath)) { throw '找不到 Inno Setup 6 的 ISCC.exe。' }
 $resolvedOutput = [System.IO.Path]::GetFullPath($outputDir).TrimEnd('\')
-foreach ($name in @('service', 'desktop')) {
+foreach ($name in @('service', 'desktop', 'codexhost')) {
     $target = [System.IO.Path]::GetFullPath((Join-Path $resolvedOutput $name))
     if (-not $target.StartsWith($resolvedOutput + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
         throw '发布目录校验失败。'
@@ -24,6 +24,8 @@ foreach ($name in @('service', 'desktop')) {
 if ($LASTEXITCODE -ne 0) { throw 'Service 发布失败。' }
 & $DotnetPath publish (Join-Path $windowsDir 'LanPower.Desktop\LanPower.Desktop.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o (Join-Path $outputDir 'desktop')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop 发布失败。' }
+& $DotnetPath publish (Join-Path $windowsDir 'LanPower.CodexHost\LanPower.CodexHost.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o (Join-Path $outputDir 'codexhost')
+if ($LASTEXITCODE -ne 0) { throw 'Codex Host 发布失败。' }
 # Windows PowerShell 5.1 reads non-BOM files using the system ANSI code page.
 # Package UTF-8 BOM scripts so Chinese error messages survive installation.
 $setupDir = Join-Path $outputDir 'setup'

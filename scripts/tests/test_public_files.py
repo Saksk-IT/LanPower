@@ -15,7 +15,8 @@ spec.loader.exec_module(validator)
 class PublicationChecks(unittest.TestCase):
     def test_private_paths_and_public_page_configuration(self):
         for path in ("nested/AGENTS.md", ".env.production", "nested/key.pem", "private/notes.md",
-                     "data/platform.db-wal", "mini_program/project.private.config.json"):
+                     "data/platform.db-wal", "mini_program/project.private.config.json",
+                     "user/codex-remote.json", "user/auth.json", ".codex/config.toml", "codex-home/sessions/rollout.jsonl"):
             self.assertTrue(validator.private_path(path), path)
         for path in ("deploy/docker/.env.example", "mini_program/pages/cloud/cloud.json", "README.md"):
             self.assertFalse(validator.private_path(path), path)
@@ -32,6 +33,20 @@ class PublicationChecks(unittest.TestCase):
         errors = []
         validator.check_content("02-11-22-33-44-55 00:11:22:33:44:55 ff:ff:ff:ff:ff:ff", "test.txt", errors)
         self.assertEqual([], errors)
+
+    def test_svg_coordinates_are_not_partial_mac_addresses(self):
+        errors = []
+        validator.check_content(
+            '<path d="M551 386c30-18 75-9 101 15-8 35-32 59-68 61-23-10-34-35-33-76z"/>'
+            '<path d="M607 250c14-16 37-23 59-17-12-19-37-24-60-13-13 7-22 19-26 34z"/>',
+            "drawing.html", errors)
+        self.assertEqual([], errors)
+        for separator in ("-", ":"):
+            value = separator.join(("10", "11", "22", "33", "44", "55"))
+            errors = []
+            validator.check_content('mac:"' + value + '"', "device.json", errors)
+            self.assertTrue(errors)
+            self.assertNotIn(value, "\n".join(errors))
 
     def test_staged_secret_cannot_be_hidden_by_clean_working_copy(self):
         with tempfile.TemporaryDirectory() as folder:

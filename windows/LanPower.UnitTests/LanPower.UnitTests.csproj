@@ -8,6 +8,8 @@
     <PackageReference Include="MSTest" Version="4.0.2" />
     <ProjectReference Include="..\LanPower.Shared\LanPower.Shared.csproj" />
     <ProjectReference Include="..\LanPower.Service\LanPower.Service.csproj" />
+    <ProjectReference Include="..\LanPower.CodexHost\LanPower.CodexHost.csproj" />
+    <ProjectReference Include="..\LanPower.FakeCodex\LanPower.FakeCodex.csproj" ReferenceOutputAssembly="false" />
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
   </ItemGroup>
 </Project>

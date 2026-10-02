@@ -2,7 +2,7 @@ name: lanpower-dev
 
 services:
   cloud:
-    image: lanpower-cloud:1.7.2-dev.1
+    image: lanpower-cloud:1.8.0-dev.1
     build:
       context: ../..
       dockerfile: cloud_app/Dockerfile

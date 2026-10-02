@@ -21,6 +21,7 @@ try {
         'Service/static/index.html', 'Service/static/app.js', 'Service/static/app.css', 'Service/static/icon.svg',
         'Desktop/LanPower.Desktop.exe', 'Desktop/D3DCompiler_47_cor3.dll', 'Desktop/PenImc_cor3.dll',
         'Desktop/PresentationNative_cor3.dll', 'Desktop/vcruntime140_cor3.dll', 'Desktop/wpfgfx_cor3.dll',
+        'CodexHost/LanPower.CodexHost.exe',
         'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'uninstall-service.ps1', 'Install.cmd', 'Open.cmd',
         'Install-Portable.ps1', 'README.txt', 'FILES.sha256'
     )
@@ -29,13 +30,13 @@ try {
     $manifestEntry = $zip.GetEntry('FILES.sha256')
     $reader = [IO.StreamReader]::new($manifestEntry.Open(), [Text.Encoding]::UTF8)
     try { $manifest = $reader.ReadToEnd() -split '\r?\n' | Where-Object { $_ } } finally { $reader.Dispose() }
-    if ($manifest.Count -ne 17) { throw '便携组件清单不完整。' }
+    if ($manifest.Count -ne 18) { throw '便携组件清单不完整。' }
     $manifestPaths = @()
     foreach ($line in $manifest) {
         if ($line -notmatch '^([0-9a-f]{64})  ([A-Za-z0-9._/-]+)$') { throw '便携组件清单无效。' }
         $hash = $Matches[1]
         $path = $Matches[2]
-        if ($path -cnotin $expected[0..16] -or $path -cin $manifestPaths) { throw '便携组件清单含重复或未允许的文件。' }
+        if ($path -cnotin $expected[0..17] -or $path -cin $manifestPaths) { throw '便携组件清单含重复或未允许的文件。' }
         $manifestPaths += $path
         $entry = $zip.GetEntry($path)
         if (-not $entry) { throw '便携组件缺失。' }

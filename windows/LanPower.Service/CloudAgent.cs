@@ -10,9 +10,9 @@ public sealed class CloudAgent(
     LanConfig lanConfig, CloudCredentialStore credentials, ReplayStore replay,
     HttpClient client, PowerGate gate, PowerExecutor power, ServiceLog log,
     Func<LocalNetworkSnapshot>? networkStatus = null, WakeProfileService? wakeProfiles = null,
-    Func<LanConfig>? currentConfig = null) : BackgroundService
+    Func<LanConfig>? currentConfig = null, CloudTokenSession? tokenSession = null) : BackgroundService
 {
-    private readonly CloudTokenSession _tokens = new(client, credentials);
+    private readonly CloudTokenSession _tokens = tokenSession ?? new(client, credentials);
     public CloudConnectionStatus ConnectionStatus { get; } = new();
     public bool CloudConnected => ConnectionStatus.Connected;
     public long CloudLastSeen => ConnectionStatus.LastSeen;

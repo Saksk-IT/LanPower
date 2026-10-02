@@ -13,6 +13,11 @@
 **/gateway.json
 **/device-credentials.json
 **/credentials.dat
+**/codex-remote.json
+**/auth.json
+**/tokens.json
+**/.codex/
+**/codex-home/
 **/command-receipts.json
 **/auto-targets.json
 **/cloud-replay.jsonl

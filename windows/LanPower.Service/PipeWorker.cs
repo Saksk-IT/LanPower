@@ -8,7 +8,8 @@ using LanPower.Shared;
 namespace LanPower.Service;
 
 public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManager network, bool dryRun = false,
-    LocalStatusAccess? statusAccess = null) : BackgroundService
+    LocalStatusAccess? statusAccess = null, CodexHostBridge? codexHost = null,
+    CodexRemoteAgent? codexRemote = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -157,6 +158,7 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
     {
         var status = network.ReadStatus();
         return new ServiceStatus(Environment.MachineName, status.LanIp, status.Mac,
-            status.WolState, status.LanState, cloud.State, cloud.GatewayState, LanProtocol.Version, cloud.CloudUrl, cloud.DeviceId, cloud.GatewayHint);
+            status.WolState, status.LanState, cloud.State, cloud.GatewayState, LanProtocol.Version, cloud.CloudUrl, cloud.DeviceId, cloud.GatewayHint,
+            codexRemote?.State == "connected" ? codexHost?.State ?? "host_offline" : "cloud_offline");
     }
 }

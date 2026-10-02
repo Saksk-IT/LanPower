@@ -29,6 +29,7 @@ public partial class MainWindow
     private bool _cloudBusy;
     private bool _loadingLogs;
     private Uri? _gatewaySetupUri;
+    private Uri? _codexRemoteUri;
     public bool CloseToTray => CloseToTrayBox.IsChecked == true;
 
     private Task<JsonDocument> RequestAsync(string command) => _request(command, _lifetime.Token);
@@ -77,6 +78,15 @@ public partial class MainWindow
 
     private void ApplyStatusDisplay(ServiceStatus status)
     {
+        _codexRemoteUri = GatewaySetupUri(status.CloudUrl, status.CloudDeviceId) is { } gatewayUri
+            ? new Uri(gatewayUri, "/remote" + (Guid.TryParse(status.CloudDeviceId, out var codexId) ? "?computer=" + codexId : "")) : null;
+        CodexRemoteState.Text = status.CodexRemote switch
+        {
+            "runtime_ready" => "Codex Runtime 已连接", "runtime_starting" => "正在启动 Codex",
+            "host_ready" => "用户 Host 已就绪", "disabled" => "尚未启用远程开发",
+            "host_offline" => "用户 Host 未运行", "runtime_error" => "请检查本机 Codex 环境",
+            _ => "等待 Cloud Relay 连接"
+        };
         var lan = status.LanState == "已连接";
         var cloud = status.CloudState == "已连接";
         var wake = cloud && status.GatewayState == "已连接，远程唤醒可用";
@@ -111,6 +121,8 @@ public partial class MainWindow
     {
         _serviceAvailable = false;
         _gatewaySetupUri = null;
+        _codexRemoteUri = null;
+        CodexRemoteState.Text = "后台服务未连接，Codex 状态未知";
         GatewaySetupButton.IsEnabled = GatewaySetupLink.IsEnabled = false;
         var unavailable = StateBrush("未连接", false);
         LanDot.Fill = CloudDot.Fill = GatewayDot.Fill = DeviceDot.Fill = SidebarDot.Fill = unavailable;

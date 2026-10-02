@@ -1,4 +1,4 @@
-#define AppVersion "1.7.2"
+#define AppVersion "1.8.0"
 
 [Setup]
 AppId={{8A2B40CB-05CD-4A61-8A72-CFE71A60A8B2}
@@ -26,6 +26,7 @@ Name: "zh"; MessagesFile: "ChineseSimplified.isl"
 [Files]
 Source: "..\out\service\*"; DestDir: "{app}\Service"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\desktop\*"; DestDir: "{app}\Desktop"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\out\codexhost\LanPower.CodexHost.exe"; DestDir: "{app}\CodexHost"; Flags: ignoreversion
 Source: "..\out\setup\install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\install-diagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
@@ -34,11 +35,13 @@ Source: "..\out\setup\uninstall-service.ps1"; DestDir: "{app}"; Flags: ignorever
 [Icons]
 Name: "{group}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Check: ServiceIsReady
 Name: "{autodesktop}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Tasks: desktopicon; Check: ServiceIsReady
+Name: "{commonstartup}\LanPower Codex Host"; Filename: "{app}\CodexHost\LanPower.CodexHost.exe"; Check: ServiceIsReady
 
 [Tasks]
 Name: desktopicon; Description: "创建桌面快捷方式"
 
 [Run]
+Filename: "{app}\CodexHost\LanPower.CodexHost.exe"; Description: "启动当前用户 Codex Host"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: ServiceIsReady
 Filename: "{app}\Desktop\LanPower.Desktop.exe"; Description: "打开 LanPower"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: ServiceIsReady
 
 [UninstallRun]

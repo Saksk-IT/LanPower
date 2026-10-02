@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-应用源码版本为 `1.7.2`，本地部署配置版本为 `1.7.2-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.8.0`，本地部署配置版本为 `1.8.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
 
@@ -18,7 +18,7 @@
 
 ## 连接本机 Windows 应用
 
-Windows 后台服务以 `LocalSystem` 运行，不使用浏览器当前用户的证书存储。只给当前用户信任开发 CA 时，会出现“浏览器能打开，但 Windows 端连接 Cloud 失败”，服务日志包含 `SecureConnectionError -> AuthenticationException`。开发配置 `1.7.2-dev.1` 默认同时配置计算机级信任；已部署环境可只运行以下命令修复证书，无需重装应用或重建账户：
+Windows 后台服务以 `LocalSystem` 运行，不使用浏览器当前用户的证书存储。只给当前用户信任开发 CA 时，会出现“浏览器能打开，但 Windows 端连接 Cloud 失败”，服务日志包含 `SecureConnectionError -> AuthenticationException`。开发配置 `1.8.0-dev.1` 默认同时配置计算机级信任；已部署环境可只运行以下命令修复证书，无需重装应用或重建账户：
 
 ```powershell
 ./deploy/docker/trust-dev-certificate.ps1
@@ -69,7 +69,15 @@ Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<开发 CA 指纹>'
 Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 ```
 
-## 本机部署验证（2026-10-02）
+## Codex Remote 本机验证（2026-10-02）
+
+本机 Cloud 镜像正常重建为 `lanpower-cloud:1.8.0-dev.1`，新增 WebSocket 运行依赖，更新前使用 SQLite 一致备份；原数据卷、`.env.dev`、开发密码与证书保留。Cloud / Caddy 均为 healthy，正常证书校验的 `/healthz` 返回 `1.8.0`，迁移仍为 `0009_automation`。
+
+真实 Chromium 与 WSS Relay 在 1440/390/320px 下通过会话、输出、文件审批、Diff、中断、刷新恢复和 XSS 文本检查；实际 Service Worker 安装成功，仅缓存六项公开静态资源。真实 Codex 任务进一步通过：当前用户已有登录、本轮 Service Agent 和 Host 管道，在独立项目修改测试文件，单次文件审批、实际 Diff 和刷新恢复正常。安装保留升级前的用户设置与设备身份，自动测试使用独立设备，不覆盖当前电脑的 Cloud 连接；未执行真实电源动作。完整记录与公网待验收项见 [Codex Remote](codex-remote.md)。
+
+开发模式包含 PWA 缓存。反复修改同一个版本的静态文件后，如浏览器仍显示旧代码，可在开发者工具中清除该站点的 Service Worker/缓存后刷新；正式更新应递增版本。不要清除 Cloud 数据卷或重建登录配置来处理浏览器缓存。
+
+## 历史本机部署验证（2026-10-02，1.7.2）
 
 本轮更新前先备份开发 SQLite 数据库并通过完整性检查；本机 Docker 使用 Cloud `1.7.2`、开发配置 `1.7.2-dev.1`，保留原数据卷、`.env.dev`、登录身份和开发证书。更新后 `/healthz` 返回 `1.7.2`，Cloud 和 Caddy 均为 healthy。数据库完整性、外键及 10 张身份/配置表与升级前备份一致。
 

@@ -37,11 +37,18 @@ builder.Services.AddSingleton(new ReplayStore(dataDirectory));
 builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
     { Timeout = TimeSpan.FromSeconds(35) });
 builder.Services.AddSingleton<CloudAgent>();
+builder.Services.AddSingleton(provider => new CloudTokenSession(provider.GetRequiredService<HttpClient>(),
+    provider.GetRequiredService<CloudCredentialStore>()));
+builder.Services.AddSingleton(new CodexHostBridge(dryRun));
+builder.Services.AddHostedService(provider => provider.GetRequiredService<CodexHostBridge>());
+builder.Services.AddSingleton<CodexRemoteAgent>();
+if (!dryRun) builder.Services.AddHostedService(provider => provider.GetRequiredService<CodexRemoteAgent>());
 builder.Services.AddSingleton<LocalStatusAccess>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<CloudAgent>());
 builder.Services.AddHostedService(provider => new PipeWorker(provider.GetRequiredService<CloudAgent>(),
     provider.GetRequiredService<ServiceLog>(), provider.GetRequiredService<LanNetworkManager>(), dryRun,
-    provider.GetRequiredService<LocalStatusAccess>()));
+    provider.GetRequiredService<LocalStatusAccess>(), provider.GetRequiredService<CodexHostBridge>(),
+    provider.GetRequiredService<CodexRemoteAgent>()));
 var app = builder.Build();
 
 app.Use(async (context, next) =>
@@ -60,11 +67,13 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-app.MapGet("/api/status", (HttpContext context, CloudAgent cloud, LocalStatusAccess desktop) =>
+app.MapGet("/api/status", (HttpContext context, CloudAgent cloud, LocalStatusAccess desktop,
+    CodexRemoteAgent remote, CodexHostBridge host) =>
     config.IsAuthorized(context.Request.Headers.Authorization) ||
     desktop.IsAuthorized(context.Connection.RemoteIpAddress, context.Request.Headers.Authorization) ?
         Results.Json(new { ok = true, device = Environment.MachineName, state = "online",
-            cloud_connected = cloud.CloudConnected, cloud_last_seen = cloud.CloudLastSeen }) :
+            cloud_connected = cloud.CloudConnected, cloud_last_seen = cloud.CloudLastSeen,
+            codex_remote = remote.State == "connected" ? host.State : "cloud_offline" }) :
         Results.Json(new { error = "not paired" }, statusCode: 401));
 
 app.MapGet("/api/wake-profile", (HttpContext context, CloudAgent cloud) =>

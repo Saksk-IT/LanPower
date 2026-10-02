@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $windowsDir = Split-Path -Parent $PSScriptRoot
 $outputDir = [IO.Path]::GetFullPath((Join-Path $windowsDir 'out')).TrimEnd('\')
 if (-not $SkipPublish) {
-    foreach ($project in @('Service', 'Desktop')) {
+    foreach ($project in @('Service', 'Desktop', 'CodexHost')) {
         & $DotnetPath publish (Join-Path $windowsDir "LanPower.$project\LanPower.$project.csproj") -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o (Join-Path $outputDir $project.ToLowerInvariant())
         if ($LASTEXITCODE -ne 0) { throw "$project 发布失败。" }
     }
@@ -26,6 +26,7 @@ $components = [ordered]@{
     'Desktop/PresentationNative_cor3.dll' = 'desktop/PresentationNative_cor3.dll'
     'Desktop/vcruntime140_cor3.dll' = 'desktop/vcruntime140_cor3.dll'
     'Desktop/wpfgfx_cor3.dll' = 'desktop/wpfgfx_cor3.dll'
+    'CodexHost/LanPower.CodexHost.exe' = 'codexhost/LanPower.CodexHost.exe'
 }
 foreach ($entry in $components.GetEnumerator()) {
     $source = Join-Path $outputDir $entry.Value

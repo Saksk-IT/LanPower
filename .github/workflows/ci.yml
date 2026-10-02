@@ -97,6 +97,8 @@ jobs:
         run: node tests/test_cloud_status.js
       - name: Cloud wake feedback tests
         run: node tests/test_cloud_dashboard.js
+      - name: Codex Remote client tests
+        run: node tests/test_cloud_remote.js
 
   router-gateway:
     runs-on: ubuntu-latest

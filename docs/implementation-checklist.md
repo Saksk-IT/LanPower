@@ -1,5 +1,7 @@
 # Cloud Direct 开发与验收清单
 
+2026-10-02 v1.8.0 Codex Remote MVP：Windows 用户 Host、出站 WSS Agent、Cloud 内存 Relay 与 Web/PWA 已实现，Cloud 184 项、Windows 61 项及桌面/LAN/小程序回归通过。真实用户 Codex 经本机完整链路完成中文任务、单次文件审批、实际修改、Diff 和刷新恢复；页面在 1440/390/320px 与仅静态 PWA 缓存验证通过。本机 Docker 和 Windows 更新，保留原配置、配对与开发数据；远程仓库、正式 Cloud 与 Release 未更新。使用步骤和公网人工验收项见 [Codex Remote](codex-remote.md)。
+
 2026-10-02 v1.7.2 界面更新：移除分组与批量操作，五个电源按钮直接显示，远程桌面下载连接文件并提供明确反馈。Cloud 164 项回归、桌面/手机浏览器交互和版本检查通过，本机 Docker 与 Windows 已更新并保留数据配置；小程序仅同步版本至 `2.0.5`。未更新正式服务器或同步远程，验证边界见 [Cloud 界面指南](cloud-ui.md)。
 
 2026-10-02 v1.7.1 修复：Cloud / Windows / 安装器为 `1.7.1`，小程序 `2.0.4`，Gateway `2.1.2`。新增 Gateway 续期中断恢复接口与并发、响应丢失、磁盘失败、凭据类型隔离测试；Cloud 全量测试、Gateway Go 测试、静态检查和 Linux ARM64 构建通过。本轮更新本机 Docker、Windows 应用和本地路由器，保留数据、配对和凭据；正式 Cloud 暂不更新，未推送远程。真实电源动作、微信送达及 5G 端到端边界仍按 [v1.7 升级说明](upgrade-v1.7.md) 记录。

@@ -33,6 +33,7 @@ $expected = @(
     'Service/static/index.html', 'Service/static/app.js', 'Service/static/app.css', 'Service/static/icon.svg',
     'Desktop/LanPower.Desktop.exe', 'Desktop/D3DCompiler_47_cor3.dll', 'Desktop/PenImc_cor3.dll',
     'Desktop/PresentationNative_cor3.dll', 'Desktop/vcruntime140_cor3.dll', 'Desktop/wpfgfx_cor3.dll',
+    'CodexHost/LanPower.CodexHost.exe',
     'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'uninstall-service.ps1'
 )
 $seen = @()
@@ -69,4 +70,8 @@ foreach ($file in $files) {
 }
 & (Join-Path $appDir 'install-service.ps1') -AppDir $appDir
 if (-not $?) { throw '服务安装失败。' }
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('CommonStartup')) 'LanPower Codex Host.lnk'
+$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+$shortcut.TargetPath = Join-Path $appDir 'CodexHost\LanPower.CodexHost.exe'
+$shortcut.Save()
 Write-Output '安装完成，请用 Open.cmd 打开 LanPower。'

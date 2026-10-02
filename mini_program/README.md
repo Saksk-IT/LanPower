@@ -1,6 +1,6 @@
 # LanPower 微信小程序
 
-当前源码版本：`2.0.5`；公开下载入口仍为 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。包内使用公开 AppID 占位符，导入后配置自己的小程序身份。
+当前源码版本：`2.0.6`；公开下载入口仍为 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。本轮随平台更新显示版本，协议仍为 `2`，现有 LAN/Cloud/唤醒功能保持兼容。Codex Remote 第一阶段入口是 Cloud 浏览器/PWA，小程序继续负责设备状态与电源。包内使用公开 AppID 占位符，导入后配置自己的小程序身份。
 
 小程序主入口是 Cloud v2，底部导航分为三个区域：
 
@@ -60,4 +60,4 @@ node tests/test_mini_program_v2.js
 
 两个测试覆盖页面配置完整性、授权码兑换、并发续期、断网/服务故障/存储失败后的恢复、重启及旧刷新标记恢复、旧 Cloud 升级提示、撤销后的失效提示、设备选择、LAN First、Cloud Fallback、网络切换、手动/下拉刷新、唤醒草稿与保存、WOL 和旧版远程入口。验证记录和真机验收边界见 [小程序 v2](../docs/mini-program-v2.md)。
 
-小程序版本为 `2.0.2`、协议版本为 `2`；本次修复手机长期授权与自动续期。项目不包含真实 Cloud 域名、LAN Token、Gateway 凭据或远程配对二维码。
+小程序版本为 `2.0.6`、协议版本为 `2`；保留手机长期授权与自动续期。项目不包含真实 Cloud 域名、LAN Token、Gateway 凭据或远程配对二维码。
