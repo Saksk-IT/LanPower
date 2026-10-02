@@ -2,6 +2,8 @@
 
 当前源码版本：**v1.7.2**，公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。总览移除设备分组与批量操作，开机、睡眠、休眠、重启、关机直接展示；远程桌面改为下载可打开的 `.rdp` 连接文件，并提供明确反馈。使用与验收边界见 [Cloud 界面指南](docs/cloud-ui.md) 和 [v1.7 升级说明](docs/upgrade-v1.7.md)。本轮未同步远程仓库或发布新 Release。
 
+Codex Remote 的技术可行性已经在本机验证：Codex `app-server` 的 stdio 初始化、Thread 列表和 Thread 创建均可用；公网 Relay、Windows 用户 Host 和 PWA 尚未实现。后续执行顺序、权限边界和验收门槛见 [Codex Remote MVP 可行性与执行计划](docs/codex-remote-mvp-plan.md)。
+
 | 组件 | 当前源码版本 |
 |---|---|
 | Windows 应用 / 安装器 | `1.7.2` |
