@@ -1,6 +1,6 @@
 # LanPower
 
-当前源码版本：**v1.7.2**，公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。总览移除设备分组与批量操作，开机、睡眠、休眠、重启、关机直接展示；远程桌面改为下载可打开的 `.rdp` 连接文件，并提供明确反馈。使用与验收边界见 [Cloud 界面指南](docs/cloud-ui.md) 和 [v1.7 升级说明](docs/upgrade-v1.7.md)。本轮未同步远程仓库或发布新 Release。
+当前源码版本：**v1.7.2**，公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。总览移除设备分组与批量操作，开机、睡眠、休眠、重启、关机直接展示；远程桌面改为下载可打开的 `.rdp` 连接文件，并提供明确反馈。使用与验收边界见 [Cloud 界面指南](docs/cloud-ui.md) 和 [v1.7 升级说明](docs/upgrade-v1.7.md)。正式 Cloud 已更新至 `1.7.2`，本轮同步主分支但未发布新 Release。
 
 Codex Remote 的技术可行性已经在本机验证：Codex `app-server` 的 stdio 初始化、Thread 列表和 Thread 创建均可用；公网 Relay、Windows 用户 Host 和 PWA 尚未实现。后续执行顺序、权限边界和验收门槛见 [Codex Remote MVP 可行性与执行计划](docs/codex-remote-mvp-plan.md)。
 
@@ -11,9 +11,9 @@ Codex Remote 的技术可行性已经在本机验证：Codex `app-server` 的 st
 | 微信小程序 | `2.0.5` |
 | Wake Gateway | `2.1.2` |
 
-2026-10-02 界面更新：Cloud 164 项测试及浏览器 1440/390/320px 检查通过；本机 Docker 与 Windows 已更新至 `1.7.2`，保留现有数据与配置。远程桌面验证覆盖文件下载、IPv4/IPv6、最新地址与错误提示；实际远程桌面登录和物理电源动作待手动验收。
+2026-10-02 界面更新与正式部署：Cloud 164 项测试及浏览器 1440/390/320px 检查通过；本机 Docker、Windows 和正式 Cloud 已更新至 `1.7.2`，保留现有数据与配置。远程桌面验证覆盖文件下载、IPv4/IPv6、最新地址与错误提示；实际远程桌面登录和物理电源动作待手动验收。
 
-2026-10-02 上轮网关修复：Cloud 增加网关可重试续期接口，正常在线时延长长期授权有效期；Gateway 兼容旧 Cloud，并在新接口可用后自动切换。续期、旧版兼容、并发检查和 Linux ARM64 构建通过。本机 Docker、Windows 和本地路由器已更新；网关在正式 Cloud `1.7.0` 上恢复连续心跳，设备身份和配置保留。续期响应丢失或重启后的完整自动恢复需正式 Cloud 后续升级 `1.7.1`。
+2026-10-02 上轮网关修复：Cloud 增加网关可重试续期接口，正常在线时延长长期授权有效期；Gateway 兼容旧 Cloud，并在新接口可用后自动切换。续期、旧版兼容、并发检查和 Linux ARM64 构建通过。本机 Docker、Windows 和本地路由器已更新；网关在正式 Cloud `1.7.2` 上恢复连续心跳，设备身份和配置保留。续期响应丢失或重启后的完整自动恢复仍待后续网关版本验证。
 
 ## v1.7 功能概要
 
@@ -29,7 +29,7 @@ Codex Remote 的技术可行性已经在本机验证：Codex `app-server` 的 st
 - 配置微信订阅消息后，可按离线阈值向多个接收人发送通知。
 - 控制台适配 375–480px 手机屏幕，提供折叠菜单和触控按钮。
 
-正式 Cloud 当前仍运行 `1.7.0`，公开下载入口仍为 `1.6.1`；本机 Docker 使用 `1.7.2-dev.1`，部署记录见 [Cloud 部署说明](docs/cloud-deployment.md)。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.0.5`，已撤销或已丢失的旧授权需重新扫码。
+正式 Cloud 当前运行 `1.7.2`，公开下载入口仍为 `1.6.1`；本机 Docker 使用 `1.7.2-dev.1`，部署记录见 [Cloud 部署说明](docs/cloud-deployment.md)。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.0.5`，已撤销或已丢失的旧授权需重新扫码。
 
 LanPower 用于管理 Windows 电脑的电源。在家可通过局域网控制电脑；在外可通过 Cloud 网页直接控制在线电脑。Wake Gateway 是可选组件，用于远程唤醒离线电脑。新架构已完成指定环境部署、Passkey 初始化和无网关只读状态验证；新版物理电源动作及多电脑硬件场景仍待手动验收。
 
