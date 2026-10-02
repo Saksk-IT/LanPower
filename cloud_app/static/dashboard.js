@@ -17,7 +17,7 @@
     return false;
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = {waitForWake};
-  if (typeof document === 'undefined' || !document.querySelector('[data-device-groups]')) return;
+  if (typeof document === 'undefined' || !document.querySelector('[data-device-events]')) return;
 
   const csrf = document.querySelector('meta[name="lp-csrf"]').content;
   const pending = new Set();
@@ -81,76 +81,43 @@
     }
   }));
 
-  document.querySelectorAll('[data-group-form]').forEach(form => form.addEventListener('submit', async event => {
+  document.querySelectorAll('[data-rdp-link]').forEach(link => link.addEventListener('click', async event => {
     event.preventDefault();
-    const card = form.closest('[data-device-id]');
-    const button = form.querySelector('button');
-    if (button.disabled) return;
-    button.disabled = true;
+    if (leaving || link.getAttribute('aria-busy') === 'true') return;
+    const message = link.closest('[data-status-rdp]').querySelector('[data-rdp-message]');
+    const controller = new AbortController();
+    pending.add(controller);
+    const timer = setTimeout(() => controller.abort(), 10000);
+    link.setAttribute('aria-busy', 'true');
+    feedback(message, '正在准备远程桌面连接文件…');
     try {
-      const {group} = await request(`/api/v2/devices/${encodeURIComponent(card.dataset.deviceId)}/group`,
-        {group: form.elements.group.value});
-      const container = document.querySelector('[data-device-groups]');
-      let destination = [...container.children].find(section => section.dataset.group === group);
-      if (!destination) {
-        destination = document.createElement('section');
-        destination.className = 'device-group';
-        destination.dataset.group = group;
-        const heading = document.createElement('h3');
-        heading.textContent = group || '未分组';
-        const grid = document.createElement('div');
-        grid.className = 'device-grid';
-        destination.append(heading, grid);
-        container.append(destination);
+      const response = await fetch(link.href, {credentials: 'same-origin', cache: 'no-store',
+        signal: controller.signal});
+      if (response.status === 401) throw new Error('登录已过期，请刷新页面并重新登录');
+      if (!response.ok || !response.headers.get('content-type')?.startsWith('application/x-rdp')) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || '连接文件下载失败，请稍后重试');
       }
-      const previous = card.closest('[data-group]');
-      destination.querySelector('.device-grid').append(card);
-      card.querySelector('[data-group-label]').textContent = group || '未分组';
-      form.elements.group.value = group;
-      if (!previous.querySelector('[data-device-id]')) previous.remove();
-      card.querySelector('.group-editor').open = false;
-      feedback(form.querySelector('[data-group-message]'), '已保存', 'success');
-    } catch (error) { feedback(form.querySelector('[data-group-message]'), error.message, 'warning'); }
-    finally { button.disabled = false; }
-  }));
-
-  const batch = document.querySelector('[data-batch-form]');
-  const selectAll = document.querySelector('[data-select-all]');
-  const checkboxes = [...document.querySelectorAll('[data-device-select]')];
-  function selection() {
-    const selected = checkboxes.filter(checkbox => checkbox.checked);
-    selectAll.checked = selected.length === checkboxes.length;
-    selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
-    document.querySelector('[data-selection-count]').textContent = `已选 ${selected.length} 台（最多 20 台）`;
-    return selected.map(checkbox => checkbox.closest('[data-device-id]'));
-  }
-  checkboxes.forEach(checkbox => checkbox.addEventListener('change', selection));
-  selectAll.addEventListener('change', () => { checkboxes.forEach(checkbox => { checkbox.checked = selectAll.checked; }); selection(); });
-  batch.addEventListener('submit', async event => {
-    // app.js dispatches the second submit only after the user confirms.
-    if (event.defaultPrevented) return;
-    event.preventDefault();
-    const cards = selection(), button = batch.querySelector('button[type="submit"]');
-    const message = batch.querySelector('[data-batch-message]');
-    if (button.disabled) return;
-    if (!cards.length || cards.length > 20) { feedback(message, '请选择 1–20 台电脑', 'warning'); return; }
-    button.disabled = true;
-    feedback(message, '正在发送批量指令…');
-    cards.forEach(card => feedback(card.querySelector('[data-batch-result]'), '正在发送…'));
-    try {
-      const {results} = await request('/api/v2/devices/batch-command',
-        {device_ids: cards.map(card => card.dataset.deviceId), action: batch.elements.action.value}, 45000);
-      results.forEach(result => {
-        const card = cards.find(item => item.dataset.deviceId === result.device_id);
-        if (card) feedback(card.querySelector('[data-batch-result]'), result.ok ? '指令已接收' :
-          `未发送成功：${result.error || '设备不可用'}`, result.ok ? 'success' : 'warning');
-      });
-      feedback(message, `处理完成：${results.filter(result => result.ok).length} 台已接收，${results.filter(result => !result.ok).length} 台未成功`);
+      const file = await response.blob();
+      if (leaving) return;
+      const url = URL.createObjectURL(file);
+      const download = document.createElement('a');
+      download.href = url;
+      download.download = link.download || 'LanPower.rdp';
+      document.body.append(download);
+      download.click();
+      download.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      feedback(message, '已开始下载。打开下载的 .rdp 文件，使用 Windows 账户连接电脑。', 'success');
     } catch (error) {
-      feedback(message, error.message, 'warning');
-      cards.forEach(card => feedback(card.querySelector('[data-batch-result]'), '结果未确认，请查看活动记录', 'warning'));
-    } finally { button.disabled = false; }
-  });
+      if (!leaving) feedback(message, error.name === 'AbortError' ? '下载超时，请重试' :
+        error instanceof TypeError ? '网络连接失败，请稍后重试' : error.message, 'warning');
+    } finally {
+      clearTimeout(timer);
+      pending.delete(controller);
+      link.removeAttribute('aria-busy');
+    }
+  }));
 
   document.querySelectorAll('[data-copy-ip]').forEach(button => button.addEventListener('click', async () => {
     const message = button.parentElement.querySelector('[data-copy-result]');

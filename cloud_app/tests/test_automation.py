@@ -152,7 +152,7 @@ def test_action_scopes_survive_enrollment_and_renewal(setup):
     assert forbidden.status_code == 403 and '关机' in forbidden.text
     assert client.post(path, headers=headers, json={'action': 'sleep'}).status_code == 200
     assert client.post('/api/v2/devices/batch-command', headers={**headers, 'X-CSRF-Token': csrf},
-        json={'device_ids': ['pc-a'], 'action': 'shutdown'}).status_code == 403
+        json={'device_ids': ['pc-a'], 'action': 'shutdown'}).status_code == 405
     assert client.post(path, headers={'X-CSRF-Token': csrf}, json={'action': 'shutdown'}).status_code == 200
     assert issue.call_count == 2
     with app.state.platform.sessions.begin() as db:
@@ -163,24 +163,23 @@ def test_action_scopes_survive_enrollment_and_renewal(setup):
     assert client.get('/api/v2/devices/foreign/online', headers=headers).status_code == 404
 
 
-def test_groups_preserve_metadata_and_batch_prevalidates_all_targets(setup):
+def test_removed_groups_and_batch_do_not_change_devices_or_dispatch_commands(setup):
     client, app, csrf, issue = setup
     headers = {'X-CSRF-Token': csrf}
-    assert client.post('/api/v2/devices/pc-a/group', json={'group': '办公室'}).status_code == 403
-    for group in ('办公室', ''):
-        assert client.post('/api/v2/devices/pc-a/group', headers=headers, json={'group': group}).json()['group'] == group
-        with app.state.platform.sessions() as db:
-            meta = db.get(Device, 'pc-a').meta
-            assert meta.get('group', '') == group and meta['lan_ip'] == '192.168.1.8'
-    assert client.post('/api/v2/devices/foreign/group', headers=headers, json={'group': '偷取'}).status_code == 404
-    for ids, expected in [(['pc-a', 'foreign'], 404), (['pc-a'] * 21, 400), ([], 400), (['pc-a'] * 2, 400)]:
-        assert client.post('/api/v2/devices/batch-command', headers=headers,
-            json={'device_ids': ids, 'action': 'sleep'}).status_code == expected
+    with app.state.platform.sessions.begin() as db:
+        device = db.get(Device, 'pc-a')
+        previous = {**device.meta, 'group': '旧分组'}
+        device.meta = previous
+    assert client.post('/api/v2/devices/pc-a/group', headers=headers, json={'group': '办公室'}).status_code == 404
+    assert client.post('/api/v2/devices/batch-command', headers=headers,
+        json={'device_ids': ['pc-a', 'pc-b'], 'action': 'sleep'}).status_code == 405
+    with app.state.platform.sessions() as db:
+        assert db.get(Device, 'pc-a').meta == previous
+    page = client.get('/dashboard')
+    assert page.status_code == 200
+    assert '旧分组' not in page.text and '批量操作' not in page.text
+    assert 'data-device-id="pc-a"' in page.text and 'data-device-id="pc-b"' in page.text
     issue.assert_not_called()
-    issue.side_effect = [ConnectionError('offline'), {'accepted': True}]
-    results = client.post('/api/v2/devices/batch-command', headers=headers,
-        json={'device_ids': ['pc-a', 'pc-b'], 'action': 'sleep'}).json()['results']
-    assert [(row['device_id'], row['ok']) for row in results] == [('pc-a', False), ('pc-b', True)]
 
 
 def test_history_filters_paginates_and_joins_device_names(setup):

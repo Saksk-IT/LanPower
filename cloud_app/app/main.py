@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime
 import hmac
+import ipaddress
 from pathlib import Path
 import secrets
 import threading
@@ -24,7 +25,7 @@ from starlette.concurrency import run_in_threadpool
 from webauthn.helpers.exceptions import WebAuthnException
 
 from cloud_app.app.auth import SESSION_SECONDS, create_session, current_session, digest, parse_form, read_limited, require_csrf
-from cloud_app.app.automation import owned_device, record, register_automation_routes
+from cloud_app.app.automation import owned_device, register_automation_routes
 from cloud_app.app.database import make_engine, migrate, session_factory
 from cloud_app.app.identity import BootstrapCode, Identity
 from cloud_app.app.enrollment import EnrollmentError
@@ -37,7 +38,7 @@ from cloud_app.app.platform import ADMIN_ID, Platform
 from cloud_app.app.settings import Settings
 from cloud_app.password import verify_password
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -485,12 +486,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session, redirect = browser_guard(request)
         if redirect: return redirect
         devices = platform.devices(session.owner_id)
-        groups: dict[str, list] = {}
-        for device in devices:
-            if device.device_type == "windows":
-                groups.setdefault(device.meta.get("group") or "", []).append(device)
         return page(request, "dashboard", session, devices=devices,
-                    groups=groups,
                     device_names={device.id: device.name for device in devices},
                     statuses={device.id: platform.device_status(session.owner_id, device.id) for device in devices},
                     presence=platform.presence(), commands=platform.recent_commands(session.owner_id))
@@ -916,52 +912,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, str(error)) from error
         return {"online": status["state"] == "online", "last_seen": status["last_seen_at"], "state": status["state"]}
 
-    @app.post("/api/v2/devices/{device_id}/group")
-    async def device_group(request: Request, device_id: str):
+    @app.get("/api/v2/devices/{device_id}/remote-desktop")
+    def remote_desktop(request: Request, device_id: str):
         session = session_owner(request)
-        json_csrf(request, session)
-        payload = await json_body(request)
-        if (set(payload) != {"group"} or not isinstance(payload["group"], str) or
-                len(payload["group"].strip()) > 50 or any(ord(c) < 32 for c in payload["group"])):
-            raise HTTPException(400, "分组名称最多 50 个字，不能包含控制字符")
-        group = payload["group"].strip()
-        with platform.sessions.begin() as db:
-            device = owned_device(db, session.owner_id, device_id, windows=True)
-            metadata = dict(device.meta)
-            if group:
-                metadata["group"] = group
-            else:
-                metadata.pop("group", None)
-            device.meta = metadata
-            record(db, session.owner_id, "device_grouped", device.id)
-        return {"ok": True, "group": group}
-
-    @app.post("/api/v2/devices/batch-command")
-    async def batch_command(request: Request):
-        # Batch management is a browser operation. Mobile tokens cannot bypass
-        # their command scopes by selecting a different endpoint.
-        session = session_owner(request)
-        if request.headers.get("authorization") is not None:
-            raise HTTPException(403, "批量操作需要浏览器登录")
-        json_csrf(request, session)
-        payload = await json_body(request)
-        ids, action = payload.get("device_ids"), payload.get("action")
-        if (set(payload) != {"device_ids", "action"} or not isinstance(ids, list) or not 1 <= len(ids) <= 20
-                or any(not isinstance(value, str) or not 1 <= len(value) <= 36 for value in ids)
-                or len(set(ids)) != len(ids) or not isinstance(action, str) or action not in ACTION_LABELS):
-            raise HTTPException(400, "请选择 1–20 台不同的电脑和有效操作")
-        # Validate the entire selection before issuing the first command.
         with platform.sessions() as db:
-            for device_id in ids:
-                owned_device(db, session.owner_id, device_id, windows=True)
-        results = []
-        for device_id in ids:
-            try:
-                result = await run_in_threadpool(platform.issue_command, session.owner_id, device_id, action)
-                results.append({"device_id": device_id, **result, "ok": bool(result.get("ok") or result.get("accepted"))})
-            except (ValueError, ConnectionError, BlockingIOError) as error:
-                results.append({"device_id": device_id, "ok": False, "error": str(error)})
-        return {"results": results}
+            owned_device(db, session.owner_id, device_id, windows=True)
+        try:
+            status = platform.device_status(session.owner_id, device_id)
+        except ValueError as error:
+            raise HTTPException(404, "设备不可用") from error
+        if status["state"] != "online":
+            raise HTTPException(409, "电脑已离线，请等待上线后重试")
+        try:
+            # Accept only an IP literal; device metadata must never inject RDP settings.
+            raw_ip = status.get("lan_ip")
+            if not isinstance(raw_ip, str) or "%" in raw_ip:
+                raise ValueError("invalid address")
+            address = ipaddress.ip_address(raw_ip)
+        except ValueError as error:
+            raise HTTPException(409, "电脑尚未上报有效的局域网 IP，请稍后重试") from error
+        host = f"[{address}]" if address.version == 6 else str(address)
+        content = (f"full address:s:{host}:3389\r\n"
+                   "prompt for credentials:i:1\r\n"
+                   "authentication level:i:2\r\n")
+        return Response(content.encode("utf-16"), media_type="application/x-rdp",
+                        headers={"Content-Disposition": 'attachment; filename="LanPower.rdp"',
+                                 "Cache-Control": "no-store"})
 
     @app.post("/api/v2/devices/{device_id}/commands")
     async def api_command(request: Request, device_id: str):

@@ -115,12 +115,12 @@ small, .small { font-size: 12px; }
 .controls form { margin: 0; }
 .card-footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; border-top: 1px solid #edf1ef; padding-top: 17px; margin-top: 22px; font-size: 10px; color: #8a999e; }
 .card-footer a { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.more-actions { position: relative; margin-left: auto; }
-.more-actions summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; user-select: none; padding-left: 11px; padding-right: 11px; }
-.more-actions summary::-webkit-details-marker { display: none; }
-.action-menu { z-index: 5; position: absolute; top: calc(100% + 7px); right: 0; min-width: 150px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: #fff; box-shadow: 0 12px 30px #223d321a; }
-.action-menu button { width: 100%; text-align: left; border: 0; background: #fff; padding: 11px 14px; border-radius: 5px; font-size: 12px; }
-.action-menu button:hover:not(:disabled) { background: #f1f6f3; }
+.power-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+.power-controls button { width: 100%; }
+.remote-desktop { border-top: 1px solid var(--line); }
+.device-card .rdp-controls { margin: 18px 0 12px; }
+.remote-desktop > .hint { margin: 0 0 18px; }
+.rdp-controls a[aria-busy="true"] { opacity: .6; cursor: wait; }
 .activity-preview { margin-top: 24px; }
 .activity-preview .card-heading { margin-bottom: 0; }
 .timeline { list-style: none; padding: 0; margin: 15px 0 0; }
@@ -340,7 +340,6 @@ td strong { font-weight: 550; }
   .device-card [data-state="transitioning"] { max-width: 96px; }
   .controls { gap: 7px; }
   .controls .primary, .controls .secondary { padding: 9px 11px; font-size: 11px; }
-  .more-actions summary { font-size: 10px !important; padding: 9px 8px !important; }
   .card-footer { font-size: 10px; gap: 8px; }
   .timeline li { gap: 12px; }
   .quiet-empty { align-items: flex-start; padding: 25px 6px; }
@@ -381,20 +380,14 @@ td strong { font-weight: 550; }
 /* New controls reuse the existing desktop palette and spacing. */
 .mobile-menu { display: none; }
 .block { display: block; }
-.device-group { margin-bottom: 24px; }
 .device-presence { display: flex; align-items: center; gap: 6px; }
 .device-presence .badge::before { display: none; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #99a5aa; transition: background-color .2s ease; }
 .status-dot.online { background: #17865b; }
 .status-dot.offline { background: #99a5aa; }
-.group-editor { margin: -5px 0 16px; color: var(--muted); font-size: 12px; }
-.group-editor form { margin-top: 12px; }
 .automation-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; align-items: end; }
 .permission-options { border: 1px solid var(--line); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 12px 18px; }
 label.checkbox-field { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-.batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
-.batch-toolbar .hint { margin: 0; }
-.batch-toolbar [data-batch-message] { flex-basis: 100%; }
 .inline-feedback { margin: 0 0 14px; font-size: 12px; overflow-wrap: anywhere; }
 .inline-feedback[data-tone="success"] { color: #137b50; }
 .inline-feedback[data-tone="warning"] { color: #a55b12; }
@@ -414,14 +407,14 @@ label.checkbox-field { display: flex; flex-direction: row; align-items: center; 
   .breadcrumb { overflow-wrap: anywhere; }
   .breadcrumb span { margin: 0 6px; }
   .content { padding: 22px 16px 16px; }
-  .page-heading, .card-heading, .card-footer, .batch-toolbar { flex-wrap: wrap; }
+  .page-heading, .card-heading, .card-footer { flex-wrap: wrap; }
   .device-identity, .device-identity h2 { overflow-wrap: anywhere; }
   .device-card .device-identity > .icon-tile { display: none; }
   .controls, .copy-field, .pagination { flex-wrap: wrap; }
   .controls > form, .controls > label, .controls > a, .controls > button,
-  .controls > details, .batch-toolbar > label, .batch-toolbar > button,
+  .controls > details,
   .page-heading > .button-link, .inline-form > label, .inline-form > button { width: 100%; max-width: none; flex-basis: 100%; }
-  .controls button, .controls summary, .action-menu button, .primary, .secondary, .danger,
+  .controls button, .controls summary, .primary, .secondary, .danger,
   .danger-quiet, .button-link, .text-button, .icon-button, .list-card > form > button,
   .page-heading > .button-link { min-height: 44px; }
   .controls button, .controls summary, .copy-field button, .automation-form > button { width: 100%; }

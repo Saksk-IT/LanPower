@@ -56,18 +56,6 @@ document.querySelectorAll('[data-copy]').forEach(button => {
   });
 });
 
-document.addEventListener('click', event => {
-  document.querySelectorAll('.more-actions[open]').forEach(menu => {
-    if (!menu.contains(event.target)) menu.open = false;
-  });
-});
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') document.querySelectorAll('.more-actions[open]').forEach(menu => {
-    menu.open = false;
-    menu.querySelector('summary').focus();
-  });
-});
-
 document.querySelectorAll('.gateway-link-form select').forEach(select => {
   const updateBackup = () => {
     select.form.querySelector('[name="backup"]').checked = select.selectedOptions[0]?.dataset.backup === 'true';

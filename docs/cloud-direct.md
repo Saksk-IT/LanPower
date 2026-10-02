@@ -7,7 +7,7 @@ LanPower Windows Service 在保留局域网接口的同时，主动通过 HTTPS 
 1. 部署 [Cloud Web](../cloud_app/README.md)，确认公网域名使用受信任的 HTTPS 证书。
 2. 在 Windows 桌面应用的“远程控制”区域输入 Cloud 地址，点击“连接 Cloud”，查看设备短配对码。
 3. 在 Cloud 网页登录，进入“连接电脑”或 `/enroll`，输入短码，核对名称后允许连接。配对十分钟内有效且只能兑换一次。Windows Service 保存独立设备凭据；Cloud 不接收局域网配对密钥。
-4. 在 Cloud 总览确认新电脑在线；网页每 5 秒自动同步状态。按需使用开机、睡眠或“更多操作”中的电源按钮。
+4. 在 Cloud 总览确认新电脑在线；网页每 5 秒自动同步状态。按需使用直接显示的开机、睡眠、休眠、重启和关机按钮。
 
 Cloud 不可用时，已配对的局域网客户端仍可调用 Windows LAN API。未配置 Cloud 也可只使用 LAN Direct。Windows 的 Cloud 连接仅使用出站 HTTPS，不需要路由器端口映射。
 

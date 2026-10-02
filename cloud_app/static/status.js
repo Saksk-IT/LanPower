@@ -67,8 +67,6 @@
     }
     card.querySelectorAll('[data-status-rdp]').forEach(element => {
       element.hidden = status.state !== 'online' || !status.lan_ip;
-      const address = status.lan_ip?.includes(':') ? `[${status.lan_ip}]` : status.lan_ip;
-      element.querySelector('[data-rdp-link]').href = `rdp://full%20address%3Ds%3A${encodeURIComponent(address || '')}%3A3389`;
       element.querySelector('[data-copy-ip]').dataset.copyIp = status.lan_ip || '';
     });
   }

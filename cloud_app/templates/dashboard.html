@@ -14,39 +14,26 @@
 </section>
 <div class="section-heading"><h2>我的设备 <span class="count">{{ computers | length }}</span></h2><p class="sync-status" data-status-sync role="status">每 5 秒自动同步状态</p></div>
 {% if computers %}
-<form class="card batch-toolbar" data-batch-form data-confirm-message="将对所选电脑执行同一个电源操作，请确认已保存工作。" data-confirm-target="批量操作">
-<label class="checkbox-field"><input type="checkbox" data-select-all>全选 / 取消全选</label><label>批量操作<select name="action"><option value="sleep">睡眠</option><option value="shutdown">关机</option><option value="restart">重启</option></select></label><button type="submit" class="primary">执行</button><span class="hint" data-selection-count>已选 0 台（最多 20 台）</span><p class="inline-feedback" data-batch-message role="status" hidden></p>
-</form>
-<div data-device-events data-device-groups>
-{% for group, grouped_devices in groups.items() %}
-<section class="device-group" data-group="{{ group }}"><h3 data-group-heading>{{ group or '未分组' }}</h3>
-<div class="device-grid">
-{% for device in grouped_devices %}{% set current = statuses[device.id] %}
+<div class="device-grid" data-device-events>
+{% for device in computers %}{% set current = statuses[device.id] %}
 <section class="card device-card" data-status-id="{{ device.id }}" data-device-id="{{ device.id }}" data-state="{{ current.state }}">
-  <div class="card-heading"><div class="device-identity"><input type="checkbox" data-device-select aria-label="选择 {{ device.name }}"><span class="icon-tile">{{ icon('computer', 25) }}</span><div><span class="device-type">Windows 电脑</span><h2 data-status-name>{{ device.name }}</h2></div></div><span class="device-presence"><span aria-hidden="true" data-status-dot class="status-dot {{ 'online' if current.state == 'online' else 'offline' }}"></span><span data-status-badge class="badge {{ 'good' if current.state == 'online' else '' }}">{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span></span></div>
-  <details class="group-editor"><summary>分组：<span data-group-label>{{ group or '未分组' }}</span> · 编辑</summary><form data-group-form class="controls"><label>分组名称<input name="group" maxlength="50" value="{{ group }}" placeholder="留空表示未分组"></label><button type="submit" class="secondary">保存</button><p class="inline-feedback" data-group-message role="status" hidden></p></form></details>
+  <div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('computer', 25) }}</span><div><span class="device-type">Windows 电脑</span><h2 data-status-name>{{ device.name }}</h2></div></div><span class="device-presence"><span aria-hidden="true" data-status-dot class="status-dot {{ 'online' if current.state == 'online' else 'offline' }}"></span><span data-status-badge class="badge {{ 'good' if current.state == 'online' else '' }}">{{ '在线' if current.state == 'online' else '正在执行电源操作' if current.state == 'transitioning' else '离线' }}</span></span></div>
   <p class="connection-copy" data-status-connection>{{ '正在执行电源操作，等待状态更新。' if current.state == 'transitioning' else 'Cloud 已连接，可直接远程控制。' if current.cloud_agent == 'online' else '通过唤醒网关连接。' if current.remote_control_available else 'Cloud 未连接。' }}</p>
   <div class="device-meta"><span>{{ icon('gateway', 16) }}远程唤醒</span><strong data-status-wake-state>{{ '已就绪' if current.wake_available else current.wake_unavailable_reason }}</strong></div>
-  <div class="controls">
-    {% for action, label, glyph in [('wake','开机','power'),('sleep','睡眠','moon')] %}
+  <div class="controls power-controls" aria-label="电源操作">
+    {% for action, label, glyph in [('wake','开机','power'),('sleep','睡眠','moon'),('hibernate','休眠','hibernate'),('restart','重启','restart'),('shutdown','关机','power')] %}
     {% set can_run = current.wake_available and current.state in ['offline', 'online'] if action == 'wake' else current.state == 'online' and current.remote_control_available %}
-    <form method="post" action="/devices/{{ device.id }}/commands" {% if action == 'wake' %}data-wake-form{% else %}data-confirm="{{ label }}" data-confirm-target="{{ device.name }}"{% endif %}><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="{{ action }}"><button type="submit" class="{{ 'primary' if (action == 'wake' and current.state == 'offline') or (action == 'sleep' and current.state != 'offline') else 'secondary' }}" {% if not can_run %}disabled{% endif %}>{{ icon(glyph, 17) }}<span data-action-text>{{ label }}</span></button></form>
+    <form method="post" action="/devices/{{ device.id }}/commands" {% if action == 'wake' %}data-wake-form{% else %}data-confirm="{{ label }}" data-confirm-target="{{ device.name }}"{% endif %}><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="{{ action }}"><button type="submit" class="{{ 'primary' if (action == 'wake' and current.state == 'offline') or (action == 'sleep' and current.state != 'offline') else 'secondary' }}{{ ' danger-text' if action == 'shutdown' else '' }}" {% if not can_run %}disabled{% endif %}>{{ icon(glyph, 17) }}<span data-action-text>{{ label }}</span></button></form>
     {% endfor %}
-    <details class="more-actions"><summary class="secondary">{{ icon('more', 18) }}更多操作</summary><div class="action-menu">
-      {% for action, label in [('hibernate','休眠'),('restart','重启'),('shutdown','关机')] %}
-      <form method="post" action="/devices/{{ device.id }}/commands" data-confirm="{{ label }}" data-confirm-target="{{ device.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="{{ action }}"><button type="submit" class="{{ 'danger-text' if action == 'shutdown' else '' }}" {% if not current.remote_control_available or current.state != 'online' %}disabled{% endif %}>{{ label }}</button></form>
-      {% endfor %}
-    </div></details>
   </div>
   <p class="inline-feedback" data-wake-message role="status" hidden></p>
-  <p class="inline-feedback" data-batch-result role="status" hidden></p>
-  {% set rdp_ip = '[' ~ current.lan_ip ~ ']' if current.lan_ip and ':' in current.lan_ip else current.lan_ip %}
-  <div class="controls rdp-controls" data-status-rdp {% if current.state != 'online' or not current.lan_ip %}hidden{% endif %}><a class="button-link secondary" data-rdp-link {% if rdp_ip %}href="rdp://full%20address%3Ds%3A{{ rdp_ip | urlencode }}%3A3389"{% endif %}>远程桌面</a><button type="button" class="secondary" data-copy-ip="{{ current.lan_ip or '' }}">复制 IP</button><span class="hint" data-copy-result role="status"></span></div>
+  <div class="remote-desktop" data-status-rdp {% if current.state != 'online' or not current.lan_ip %}hidden{% endif %}>
+    <div class="controls rdp-controls"><a class="button-link secondary" data-rdp-link href="/api/v2/devices/{{ device.id }}/remote-desktop" download="{{ device.name }}.rdp">{{ icon('computer', 17) }}远程桌面</a><button type="button" class="secondary" data-copy-ip="{{ current.lan_ip or '' }}">{{ icon('copy', 17) }}复制 IP</button><span class="hint" data-copy-result role="status"></span></div>
+    <p class="hint">下载并打开连接文件。电脑需开启远程桌面，当前网络需能访问它的局域网 IP。</p>
+    <p class="inline-feedback" data-rdp-message role="status" hidden></p>
+  </div>
   <p class="hint" data-status-control-hint {% if current.remote_control_available %}hidden{% endif %}>{{ '等待电脑完成电源操作。' if current.state == 'transitioning' else '电脑离线时，可用操作仅限已配置的远程开机。' }}</p>
   <div class="card-footer"><span>最近连接 · <span data-status-seen>{{ device.last_seen_at | relative_time }}</span></span><a href="/devices#device-{{ device.id }}">设备详情 {{ icon('arrow', 15) }}</a></div>
-</section>
-{% endfor %}
-</div>
 </section>
 {% endfor %}
 </div>
