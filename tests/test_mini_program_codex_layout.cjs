@@ -2,7 +2,7 @@
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const {execFileSync} = require('node:child_process');
-const root = path.resolve(__dirname, '..'), mini = path.join(root, 'mini_program');
+const root = path.resolve(__dirname, '..'), mini = process.env.MINI_PROGRAM_SOURCE_DIR || path.join(root, 'mini_program');
 const compiler = process.env.WECHAT_COMPILER_DIR || 'D:/Soft/微信web开发者工具/resources/app.asar.unpacked/node_modules/wcc-exec';
 const output = path.join(root, 'private/mini-codex-1.12'); fs.mkdirSync(output, {recursive: true});
 for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pages/codex/codex.wxml']],
@@ -16,7 +16,7 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/cloud.js', 'utils
     for (const width of [320, 390, 430]) {
       const context = await browser.newContext({viewport: {width, height: 780}, screen: {width, height: 780}, deviceScaleFactor: 1});
       const page = await context.newPage(), errors = []; page.on('pageerror', error => errors.push(error.message));
-      await page.setContent('<style>html,body{margin:0;height:100%;overflow:hidden}wx-page,wx-view,wx-scroll-view,wx-rich-text{display:block}wx-text{white-space:inherit}wx-button{display:block;cursor:pointer;box-sizing:border-box;border:0;font-family:inherit;text-align:center}wx-button:not([size=mini]){margin-left:auto;margin-right:auto;width:184px}wx-input,wx-textarea{display:block}input,textarea{font-family:inherit;color:inherit;border:0;outline:0;background:transparent;font-size:inherit;width:100%;box-sizing:border-box;line-height:inherit}textarea{resize:none}wx-scroll-view{overflow-y:auto}wx-picker{display:block}</style><div id="preview"></div>');
+      await page.setContent('<style>html,body{margin:0;height:100%;overflow:hidden}wx-page,wx-view,wx-scroll-view,wx-rich-text{display:block}wx-text{white-space:inherit}wx-button{display:block;cursor:pointer;box-sizing:border-box;border:0;font-family:inherit;text-align:center}wx-button:not([size=mini]){margin-left:auto;margin-right:auto;width:184px}wx-input,wx-textarea{display:block}input,textarea{font-family:inherit;color:inherit;border:0;outline:0;background:transparent;font-size:inherit;width:100%;box-sizing:border-box;line-height:inherit}textarea{resize:none}wx-scroll-view{overflow-y:auto}wx-picker{display:block}</style><wx-page><div id="preview"></div></wx-page>');
       await page.addScriptTag({content: fs.readFileSync(path.join(output, 'wxml.js'), 'utf8')});
       await page.evaluate(() => {window.__COMMON_STYLESHEETS__ = {}; window.__transformRpx__ = value => value * innerWidth / 750;});
       await page.addScriptTag({content: fs.readFileSync(path.join(output, 'app-wxss.js'), 'utf8')});
@@ -92,10 +92,12 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/cloud.js', 'utils
       }, {sources});
       async function geometry() {
         const measurements = await page.evaluate(() => ({overflow: document.documentElement.scrollWidth - innerWidth,
+          font: getComputedStyle(document.querySelector('.codex-page')).fontFamily,
           page: document.querySelector('.codex-page').getBoundingClientRect().height,
           buttons: Array.from(document.querySelectorAll('.cr-primary,.cr-send,.cr-outline')).map(e => ({class: e.className, width: e.getBoundingClientRect().width, height: e.getBoundingClientRect().height})),
           scroll: document.querySelector('.cr-chat-scroll,.cr-library-scroll').getBoundingClientRect().height}));
         assert.ok(measurements.overflow <= 1, JSON.stringify(measurements)); assert.ok(measurements.scroll > 100, JSON.stringify(measurements));
+        assert.ok(measurements.font.includes('sans-serif'), 'compiled page font must inherit through wx-page');
         for (const button of measurements.buttons) {assert.ok(button.height >= 32, JSON.stringify(measurements)); if (button.class === 'cr-primary' || button.class === 'cr-outline') assert.ok(button.width > width - 70, JSON.stringify(measurements));}
       }
       await page.screenshot({path: path.join(output, 'white-list-' + width + '.png')}); await geometry();

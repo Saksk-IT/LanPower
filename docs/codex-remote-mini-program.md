@@ -24,7 +24,7 @@
 
 ## 实现界面截图
 
-以下使用编译后的实际页面与虚构示例数据，在 390px 宽浏览器 DOM 适配器中渲染；不包含微信系统导航栏。它们是实现预览，不是微信真机截图。
+以下使用编译后的实际页面与虚构示例数据，在 390px 宽浏览器 DOM 适配器中渲染，保留页面的全局字体与样式继承；不包含微信系统导航栏。它们是实现预览，不是微信真机截图。
 
 | 白色会话列表 | 白色消息详情 |
 |---|---|
@@ -54,4 +54,4 @@ node tests/test_mini_program_codex.js
 node tests/test_mini_program_codex_layout.cjs
 ```
 
-布局脚本支持 `WECHAT_COMPILER_DIR` 和 `PLAYWRIGHT_MODULE_PATH` 环境变量，检查产物写入被忽略的 `private/mini-codex-1.12`。协议与限额见 [Relay v1](codex-remote-protocol.md)。
+布局脚本支持 `WECHAT_COMPILER_DIR` 和 `PLAYWRIGHT_MODULE_PATH` 环境变量，也可用 `MINI_PROGRAM_SOURCE_DIR` 指向已提交版本的完整小程序目录，避免并行开发影响验收。检查产物写入被忽略的 `private/mini-codex-1.12`。协议与限额见 [Relay v1](codex-remote-protocol.md)。
