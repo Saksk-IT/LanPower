@@ -8,7 +8,7 @@ const output = path.join(root, 'private/mini-codex-1.12'); fs.mkdirSync(output, 
 for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pages/codex/codex.wxml']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'app-wxss.js'), 'app.wxss']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'codex-wxss.js'), 'pages/codex/codex.wxss']]]) execFileSync(path.join(compiler, file), args, {cwd: mini});
-const sources = Object.fromEntries(['utils/version.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'pages/codex/codex.js'].map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
+const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'pages/codex/codex.js'].map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
 
 (async () => {
   const browser = await chromium.launch({headless: true});

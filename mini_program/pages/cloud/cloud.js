@@ -1,7 +1,8 @@
-const {CLIENT_KEY, CloudClient, parseCloudPairing} = require('../../utils/cloud');
+const {CloudClient, parseCloudPairing} = require('../../utils/cloud');
 const {parsePairingLink} = require('../../utils/pairing');
 const {broadcastWake, makeMagicPacket} = require('../../utils/wol');
 const {VERSION} = require('../../utils/version');
+const {environment, developmentCloud, setDevelopmentCloud, storageKey} = require('../../utils/environment');
 
 const LOCAL_KEY = 'lanpower_device_lan_v2';
 const CACHE_KEY = 'lanpower_device_cache_v2';
@@ -22,13 +23,12 @@ Page({
     cloudState: 'idle', cloudStatusText: '未授权', needsReauthorize: false, devicesLoaded: false, updatingList: false,
     networkType: 'unknown', networkText: '检测网络', statusClass: 'idle', wakeHint: '先连接并选择电脑',
     canControl: false, canWake: false, busy: false, feedback: '', feedbackKind: 'info', wakeDirty: false,
-    mac: '', broadcast: '255.255.255.255', version: VERSION},
+    mac: '', broadcast: '255.255.255.255', version: VERSION,
+    environmentLabel: '正式版', development: false, developmentCloud: '', cloudUrlDraft: ''},
 
   onLoad(options = {}) {
-    this.client = CloudClient.load(wx);
-    this.local = wx.getStorageSync(LOCAL_KEY) || {};
     this.wakeDrafts = {};
-    const cloudHost = this.client ? this.client.session.url.replace(/^https:\/\//, '') : '';
+    this.loadConnection();
     this.networkChanged = info => {
       this.networkType = info.networkType || (info.isConnected === false ? 'none' : 'unknown');
       this.serial = (this.serial || 0) + 1;
@@ -39,15 +39,49 @@ Page({
       if (this.visible) this.refresh();
     };
     if (wx.onNetworkStatusChange) wx.onNetworkStatusChange(this.networkChanged);
-    this.setData({connected: !!this.client, cloudHost, cloudStatusText: this.client ? '已保存授权' : '未授权'});
     if (['home', 'connect', 'help'].includes(options.tab)) this.setData({activeTab: options.tab});
-    const cache = wx.getStorageSync(CACHE_KEY);
+  },
+  loadConnection() {
+    const current = environment(wx), url = developmentCloud(wx);
+    this.lanStorageKey = storageKey(wx, LOCAL_KEY);
+    this.cacheKey = storageKey(wx, CACHE_KEY);
+    this.client = CloudClient.load(wx);
+    this.local = wx.getStorageSync(this.lanStorageKey) || {};
+    this.route = ''; this.wakeRoute = '';
+    this.setData({environmentLabel: current.label, development: current.development, developmentCloud: url, cloudUrlDraft: url,
+      connected: !!this.client, cloudHost: this.client ? this.client.session.url.replace(/^https?:\/\//, '') : '',
+      cloudStatusText: this.client ? '已保存授权' : '未授权', cloudState: 'idle', needsReauthorize: false,
+      devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', devicesLoaded: false,
+      paired: false, lanOpen: false, mac: '', broadcast: '255.255.255.255', wakeDirty: false,
+      canControl: false, canWake: false, statusClass: 'idle', stateText: '尚未连接', modeText: '未连接',
+      detail: '先授权这部手机，再选择电脑', routeHint: '等待连接', controlHint: '连接后可查看电脑状态并执行电源操作',
+      wakeHint: '先连接并选择电脑'});
+    const cache = wx.getStorageSync(this.cacheKey);
     if (this.client && cache && cache.url === this.client.session.url && cache.client_id === this.client.session.client_id && Array.isArray(cache.devices)) {
       const device = cache.devices.find(d => d.device_id === cache.selectedId);
       if (device) this.setData({devices: cache.devices, selectedId: device.device_id, device: device.name,
         selectedIndex: cache.devices.indexOf(device)});
       this.syncPairing();
     }
+  },
+  editCloudUrl(event) { this.setData({cloudUrlDraft: event.detail.value}); },
+  saveDevelopmentCloud() { this.changeDevelopmentCloud(this.data.cloudUrlDraft); },
+  clearDevelopmentCloud() { this.changeDevelopmentCloud(''); },
+  changeDevelopmentCloud(value) {
+    if (!environment(wx).development || this.data.busy || this.data.updatingList) return;
+    try {
+      const previous = developmentCloud(wx), url = setDevelopmentCloud(wx, value);
+      this.setData({developmentCloud: url, cloudUrlDraft: url});
+      if (url !== previous) {
+        this.serial = (this.serial || 0) + 1;
+        if (this.client) this.client.close();
+        this.refreshAgain = false; this.refreshing = null; this.wakeDrafts = {};
+        this.loadConnection();
+        if (this.client) this.refresh();
+      }
+      this.notify(url ? (this.client ? '已恢复该测试 Cloud 的开发版授权。' : '测试地址已保存，请扫描该 Cloud 的手机授权二维码。') :
+        '已清空测试地址，下次扫码选择 Cloud。已有开发版授权会保留。', 'success');
+    } catch (error) { this.notify(error.message, 'error'); }
   },
   onShow() {
     this.visible = true;
@@ -105,7 +139,11 @@ Page({
     if (this.data.busy) return;
     wx.scanCode({onlyFromCamera: true, scanType: ['qrCode'], success: async ({result}) => {
       let pairing;
-      try { pairing = parseCloudPairing(result); }
+      try {
+        pairing = parseCloudPairing(result, wx);
+        const target = developmentCloud(wx);
+        if (target && pairing.url !== target) throw new Error('授权码与测试 Cloud 地址不同，请在该测试 Cloud 生成授权二维码');
+      }
       catch (error) { this.notify(error.message, 'error'); return; }
       wx.showModal({title: '授权这部手机', content: `允许此手机连接 ${pairing.url} 并查看、控制已授权的 Windows 电脑？\n\n凭据保存在这部手机，可在小程序或 Cloud 网页撤销授权。`,
         success: async ({confirm}) => {
@@ -118,9 +156,14 @@ Page({
             this.serial = (this.serial || 0) + 1;
             if (this.client) this.client.close();
             this.client = client;
+            this.lanStorageKey = storageKey(wx, LOCAL_KEY);
+            this.cacheKey = storageKey(wx, CACHE_KEY);
+            this.local = wx.getStorageSync(this.lanStorageKey) || {};
+            if (!sameCloud) this.wakeDrafts = {};
             this.route = ''; this.wakeRoute = '';
             this.setData({connected: true, ...(sameCloud ? {} : {devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑'}),
-              cloudHost: pairing.url.replace(/^https:\/\//, ''), cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
+              cloudHost: pairing.url.replace(/^https?:\/\//, ''), cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
+              developmentCloud: developmentCloud(wx), cloudUrlDraft: developmentCloud(wx),
               devicesLoaded: false, activeTab: 'home', canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态',
               routeHint: '正在读取电脑列表', controlHint: '选择电脑后显示可执行操作', wakeHint: '正在检查可用的唤醒方式'});
             this.syncPairing(); this.cacheDevices();
@@ -143,7 +186,7 @@ Page({
         try {
           if (!this.data.needsReauthorize) await this.client.call('/api/v2/clients/revoke', 'POST');
           this.client.close();
-          wx.removeStorageSync(CLIENT_KEY);
+          wx.removeStorageSync(client.storageKey);
           this.client = null;
           this.route = ''; this.wakeRoute = '';
           this.serial = (this.serial || 0) + 1;
@@ -173,7 +216,7 @@ Page({
     this.refresh();
   },
   cacheDevices() {
-    wx.setStorageSync(CACHE_KEY, {url: this.client.session.url, client_id: this.client.session.client_id,
+    wx.setStorageSync(this.cacheKey, {url: this.client.session.url, client_id: this.client.session.client_id,
       devices: this.data.devices.map(d => ({device_id: d.device_id, name: d.name, device_type: 'windows'})), selectedId: this.data.selectedId});
   },
   async reloadDevices() {
@@ -214,7 +257,7 @@ Page({
         wx.showModal({title: '关联局域网电脑', content: `确认此二维码来自“${this.data.device}”这台电脑？`, success: ({confirm}) => {
           if (!confirm || key !== this.localKey() || this.data.busy) return;
           const local = {...this.local, [key]: {...this.local[key], ...pairing}};
-          wx.setStorageSync(LOCAL_KEY, local);
+          wx.setStorageSync(this.lanStorageKey, local);
           this.local = local;
           this.serial = (this.serial || 0) + 1;
           this.setData({lanOpen: true});
@@ -231,7 +274,7 @@ Page({
       success: ({confirm}) => {
         if (!confirm || key !== this.localKey() || this.data.busy) return;
         const local = {...this.local}; delete local[key]; delete this.wakeDrafts[key];
-        wx.setStorageSync(LOCAL_KEY, local); this.local = local;
+        wx.setStorageSync(this.lanStorageKey, local); this.local = local;
         this.serial = (this.serial || 0) + 1;
         this.route = ''; this.wakeRoute = '';
         this.setData({lanOpen: false, canControl: false, canWake: false});
@@ -252,7 +295,7 @@ Page({
       const octets = broadcast.split('.');
       if (octets.length !== 4 || octets.some(o => !/^\d{1,3}$/.test(o) || Number(o) > 255)) throw new Error('广播地址无效');
       const local = {...this.local, [this.localKey()]: {...this.pairing(), mac: this.data.mac.trim(), broadcast}};
-      wx.setStorageSync(LOCAL_KEY, local); this.local = local;
+      wx.setStorageSync(this.lanStorageKey, local); this.local = local;
       delete this.wakeDrafts[this.localKey()]; this.syncPairing();
       this.notify('局域网唤醒设置已保存。', 'success'); this.refresh();
     } catch (error) { this.notify(error.message, 'error'); }

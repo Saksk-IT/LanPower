@@ -1,6 +1,7 @@
 const {broadcastWake, makeMagicPacket, PC_MAC, BROADCAST} = require('../../utils/wol');
 const {parsePairingLink} = require('../../utils/pairing');
 const {parseRemotePairing} = require('../../utils/remote');
+const {storageKey} = require('../../utils/environment');
 
 const LOCAL_KEY = 'lanpower_pairing_v1';
 const REMOTE_KEY = 'lanpower_remote_v1';
@@ -15,19 +16,21 @@ Page({
   },
 
   onLoad() {
-    const local = wx.getStorageSync(LOCAL_KEY);
+    this.localStorageKey = storageKey(wx, LOCAL_KEY);
+    this.remoteStorageKey = storageKey(wx, REMOTE_KEY);
+    const local = wx.getStorageSync(this.localStorageKey);
     if (local && typeof local.host === 'string' && /^[0-9a-f]{64}$/i.test(local.token || '')) {
       this.pairing = local;
       const target = this.localWakeTarget();
       this.setData({paired: true, host: local.host, canWake: !!target, wakeRoute: target ? 'local' : 'none',
         mac: target ? target.mac : '', broadcast: target ? target.broadcast : BROADCAST, wakeConfigured: !!target});
     }
-    const remote = wx.getStorageSync(REMOTE_KEY);
+    const remote = wx.getStorageSync(this.remoteStorageKey);
     if (remote && typeof remote.url === 'string') {
       try {
         this.remote = parseRemotePairing(`${remote.url}/#lanpower-remote=${remote.gatewayId}.${remote.token}`);
         this.setData({remotePaired: true});
-      } catch (_) { wx.removeStorageSync(REMOTE_KEY); }
+      } catch (_) { wx.removeStorageSync(this.remoteStorageKey); }
     }
   },
 
@@ -69,7 +72,7 @@ Page({
       const octets = broadcast.split('.');
       if (octets.length !== 4 || octets.some(o => !/^\d{1,3}$/.test(o) || Number(o) > 255)) throw new Error('广播地址无效');
       this.pairing = {...this.pairing, mac, broadcast};
-      wx.setStorageSync(LOCAL_KEY, this.pairing);
+      wx.setStorageSync(this.localStorageKey, this.pairing);
       this.setData({wakeConfigured: true, feedback: '局域网唤醒设置已保存。'});
       this.refresh();
     } catch (error) { this.setData({feedback: error.message}); }
@@ -88,7 +91,7 @@ Page({
       try {
         const parsed = parsePairingLink(result.result);
         const pairing = {...(this.pairing && this.pairing.host === parsed.host ? this.pairing : {}), ...parsed};
-        wx.setStorageSync(LOCAL_KEY, pairing);
+        wx.setStorageSync(this.localStorageKey, pairing);
         this.pairing = pairing;
         const target = this.localWakeTarget();
         this.setData({paired: true, host: pairing.host, canWake: !!target, wakeRoute: target ? 'local' : 'none',
@@ -106,7 +109,7 @@ Page({
     wx.scanCode({onlyFromCamera: true, scanType: ['qrCode'], success: (result) => {
       try {
         const remote = parseRemotePairing(result.result);
-        wx.setStorageSync(REMOTE_KEY, remote);
+        wx.setStorageSync(this.remoteStorageKey, remote);
         this.remote = remote;
         this.setData({remotePaired: true, feedback: '远程配对信息已保存。'});
         this.refreshSerial = (this.refreshSerial || 0) + 1;
@@ -121,7 +124,7 @@ Page({
     wx.showModal({title: '清除局域网配对', content: '确定移除这台电脑的局域网配对信息吗？',
       success: ({confirm}) => {
         if (!confirm) return;
-        wx.removeStorageSync(LOCAL_KEY);
+        wx.removeStorageSync(this.localStorageKey);
         this.pairing = null;
         this.setData({paired: false, host: '', feedback: '', canControl: false, mac: '', broadcast: BROADCAST, wakeConfigured: false, wakeOpen: false,
           canWake: !!this.remote, wakeRoute: this.remote ? 'remote' : 'none'});
@@ -135,7 +138,7 @@ Page({
     wx.showModal({title: '清除远程配对', content: '确定移除远程配对信息吗？',
       success: ({confirm}) => {
         if (!confirm) return;
-        wx.removeStorageSync(REMOTE_KEY);
+        wx.removeStorageSync(this.remoteStorageKey);
         this.remote = null;
         this.setData({remotePaired: false, feedback: '', canControl: false,
           canWake: !!this.localWakeTarget(), wakeRoute: this.localWakeTarget() ? 'local' : 'none'});

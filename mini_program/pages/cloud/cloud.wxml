@@ -65,7 +65,16 @@
   </view>
 
   <view wx:if="{{activeTab == 'connect'}}" class="page-content">
-    <view class="page-heading"><view class="page-title">连接设置</view><view class="page-subtitle">手机授权与电脑直连，分开管理</view></view>
+    <view class="page-heading"><view class="page-title">连接设置</view><view class="page-subtitle">{{environmentLabel}} · 手机授权与电脑直连，分开管理</view></view>
+    <view wx:if="{{development}}" class="setting-card development-settings">
+      <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">开发版 Cloud 地址</view><view class="setting-copy">填写本机或测试服务器地址。开发版授权与正式版独立保存。</view></view><view class="setting-state warning-text">开发版</view></view>
+      <label class="field-label" for="development-cloud">测试 Cloud 地址</label>
+      <input id="development-cloud" value="{{cloudUrlDraft}}" bindinput="editCloudUrl" placeholder="https://localhost:8443" maxlength="300" disabled="{{busy || updatingList}}" />
+      <view class="field-help">模拟器可使用 localhost；手机请使用电脑的局域网地址，并连接同一 Wi-Fi。</view>
+      <button class="outline-button compact-button" bindtap="saveDevelopmentCloud" disabled="{{busy || updatingList || !cloudUrlDraft}}">保存测试地址</button>
+      <button wx:if="{{developmentCloud}}" class="text-button centered-button" bindtap="clearDevelopmentCloud" disabled="{{busy || updatingList}}">清空地址，下次扫码选择</button>
+      <view class="setting-copy">保存后请扫描该测试 Cloud 生成的手机授权码。换地址会切换授权和电脑列表。</view>
+    </view>
     <view class="setting-card">
       <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">手机远程授权</view><view class="setting-copy">连接 Cloud 后，可在 Wi-Fi 或蜂窝网络下管理电脑。</view></view><view class="setting-state {{cloudState == 'online' ? 'success-text' : needsReauthorize ? 'warning-text' : 'muted-text'}}">{{cloudStatusText}}</view></view>
       <view wx:if="{{connected}}" class="setting-row"><text>Cloud 地址</text><text class="setting-value">{{cloudHost}}</text></view>
@@ -131,7 +140,7 @@
       <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="sleep"><text>睡眠和休眠有什么区别？</text><text class="chevron">{{faqOpen == 'sleep' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'sleep'}}" class="faq-answer">睡眠把当前状态保留在内存，耗电较低、恢复较快；休眠先把状态写入磁盘，再进入低功耗或断电状态，恢复通常更慢。操作前仍建议保存文件；休眠需要 Windows 已启用此功能。</view></view>
       <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="auth"><text>授权失效后怎么办？</text><text class="chevron">{{faqOpen == 'auth' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'auth'}}" class="faq-answer">新版 Cloud 与小程序支持一次扫码长期授权，断网或退出微信后会自动恢复。主动撤销授权、清除小程序数据，或旧版已丢失有效凭据时，需在 Cloud 生成新码再扫描。重新授权同一 Cloud 后，已保存的局域网关联会保留。</view></view>
     </view>
-    <view class="about-copy">LanPower · 小程序 v{{version}}<view>电脑电源，随手管理</view></view>
+    <view class="about-copy">LanPower · {{environmentLabel}} · 小程序 v{{version}}<view>电脑电源，随手管理</view></view>
   </view>
 
   <view class="tabbar">

@@ -1,6 +1,8 @@
 # LanPower
 
-当前源码版本：**v1.12.0**，微信小程序 **2.1.0** 新增原生 Codex Remote 页面：白色会话列表、深色模式、消息详情、底部输入栏和单次审批弹层。支持选择电脑与项目、查看会话、实时输出、补充要求、暂停和文件 Diff。公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**；第一版界面与导入方法见 [小程序使用说明](docs/codex-remote-mini-program.md)。
+微信小程序开发版与正式版独立保存授权和连接配置；开发版可在「连接 → 开发版 Cloud 地址」修改本机测试地址。使用步骤见 [开发版与正式版](docs/mini-program-environments.md)。
+
+当前源码版本：**v1.12.0**，微信小程序 **2.1.1** 新增原生 Codex Remote 页面：白色会话列表、深色模式、消息详情、底部输入栏和单次审批弹层。支持选择电脑与项目、查看会话、实时输出、补充要求、暂停和文件 Diff。公开发布版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**；第一版界面与导入方法见 [小程序使用说明](docs/codex-remote-mini-program.md)。
 
 Windows 主动通过 WSS 出站连接；Codex 在已登录 Windows 的用户会话中运行，Cloud 不保存任务、代码、Diff 或 OpenAI 凭据。首次在「远程连接」开启授权并保存，默认自动识别本机 Codex 项目；可关闭自动识别，改用手动目录。桌面占用的已有会话支持同步查看，需由桌面释放后才能在 Remote 继续；Remote 自己的任务支持引导和暂停。本轮已更新本机 Docker 和 Windows，保留配置与设备身份；未改动远程服务器、推送或发布 Release。[使用与验收说明](docs/codex-remote.md) · [Relay 协议](docs/codex-remote-protocol.md) · [MVP 进度](docs/codex-remote-mvp-plan.md)。
 
@@ -8,7 +10,7 @@ Windows 主动通过 WSS 出站连接；Codex 在已登录 Windows 的用户会�
 |---|---|
 | Windows 应用 / 安装器 | `1.12.0` |
 | Cloud 控制台 | `1.12.0` |
-| 微信小程序 | `2.1.0` |
+| 微信小程序 | `2.1.1` |
 | Wake Gateway | `2.1.2` |
 
 2026-10-03 本轮小程序第一版：原生 Codex 页面与独立手机开发权限完成，已有手机可直接修改权限，无需重新扫码。Cloud 193 项、Windows 71 项、小程序交互及微信编译检查通过；320/390/430px 的浅色、深色、审批和键盘布局通过。正常 HTTPS 的实际手机 Bearer WSS 入口、修改权限和撤销已验证；安装 Host 就绪，另一控制页面仍在使用，未抢占它执行真实任务。本机 Docker 和 Windows 已更新，原配置、配对与身份保留；真实微信、5G 和远程服务器部署待后续验收。
@@ -37,7 +39,7 @@ Windows 主动通过 WSS 出站连接；Codex 在已登录 Windows 的用户会�
 - 配置微信订阅消息后，可按离线阈值向多个接收人发送通知。
 - 控制台适配 375–480px 手机屏幕，提供折叠菜单和触控按钮。
 
-正式 Cloud 当前运行 `1.7.2`，公开下载入口仍为 `1.6.1`；本机 Docker 使用 `1.12.0-dev.1`，部署记录见 [本机开发指南](docs/local-development.md)。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.1.0`，已撤销或已丢失的旧授权需重新扫码。新的 Codex 手机入口需要 Cloud `1.12.0`，正式服务器本轮尚未升级。
+正式 Cloud 当前运行 `1.7.2`，公开下载入口仍为 `1.6.1`；本机 Docker 使用 `1.12.0-dev.1`，部署记录见 [本机开发指南](docs/local-development.md)。手机长期授权按 [小程序升级说明](docs/mini-program-v2.md#长期授权升级) 使用；导入新包后需重新预览或上传 `2.1.1`，已撤销或已丢失的旧授权需重新扫码。新的 Codex 手机入口需要 Cloud `1.12.0`，正式服务器本轮尚未升级。
 
 LanPower 用于管理 Windows 电脑的电源和远程开发。在家可通过局域网控制电脑；在外可通过 Cloud 网页控制在线电脑，并连接本机 Codex Runtime。Wake Gateway 是可选组件，用于远程唤醒离线电脑。各版本的部署和实机验收结果分别记录；新版 Codex Remote 的手机 5G 公网链路仍需人工验收。
 

@@ -1,5 +1,6 @@
 const CLIENT_KEY = 'lanpower_client_v2';
 const {VERSION, PROTOCOL_VERSION} = require('./version');
+const {cloudOrigin, environment, developmentCloud, setDevelopmentCloud, storageKey} = require('./environment');
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 
@@ -9,20 +10,12 @@ function authorizationError(message = 'Cloud 授权已失效，请重新扫码')
   return error;
 }
 
-function cloudOrigin(value) {
-  const match = /^(https:\/\/[a-z0-9.-]+(?::([0-9]{1,5}))?)$/i.exec(value || '');
-  if (!match || value.includes('..') || (match[2] && (+match[2] < 1 || +match[2] > 65535))) {
-    throw new Error('Cloud 地址无效');
-  }
-  return match[1];
-}
-
-function parseCloudPairing(value) {
+function parseCloudPairing(value, wxApi) {
   const parts = String(value).trim().split('/#lanpower-client=');
   if (parts.length !== 2 || !/^[A-Za-z0-9_-]{43}$/.test(parts[1])) {
     throw new Error('请扫描 Cloud 的“已授权客户端”页面生成的二维码');
   }
-  return {url: cloudOrigin(parts[0]), code: parts[1]};
+  return {url: cloudOrigin(parts[0], wxApi), code: parts[1]};
 }
 
 function validTokens(data) {
@@ -43,31 +36,53 @@ function request(wxApi, url, method, data, token) {
 
 class CloudClient {
   constructor(wxApi, session) {
-    cloudOrigin(session.url);
+    cloudOrigin(session.url, wxApi);
     if (!validTokens(session)) throw new Error('请重新扫描 Cloud 授权二维码');
     this.wx = wxApi;
     this.session = session;
+    this.environment = environment(wxApi).name;
+    this.storageKey = storageKey(wxApi, CLIENT_KEY, session.url);
+    this.assertCurrent();
+  }
+
+  assertCurrent() {
+    if (environment(this.wx).name !== this.environment || storageKey(this.wx, CLIENT_KEY) !== this.storageKey) {
+      const error = new Error('Cloud 地址已切换，请重新连接');
+      error.code = 'CLOUD_CHANGED';
+      throw error;
+    }
   }
 
   static load(wxApi) {
-    const saved = wxApi.getStorageSync(CLIENT_KEY);
+    const key = storageKey(wxApi, CLIENT_KEY);
+    const saved = wxApi.getStorageSync(key);
     if (!saved) return null;
     try { return new CloudClient(wxApi, saved); }
-    catch (_) { wxApi.removeStorageSync(CLIENT_KEY); return null; }
+    catch (_) { wxApi.removeStorageSync(key); return null; }
   }
 
   static async enroll(wxApi, pairing) {
-    cloudOrigin(pairing.url);
-    let response = await request(wxApi, pairing.url + '/api/v2/clients/enroll', 'POST',
+    const url = cloudOrigin(pairing.url, wxApi);
+    if (!/^[A-Za-z0-9_-]{43}$/.test(pairing.code || '')) throw new Error('Cloud 授权码无效，请重新扫码');
+    const target = developmentCloud(wxApi);
+    if (target && target !== url) throw new Error('授权码与测试 Cloud 地址不同，请在该测试 Cloud 生成授权二维码');
+    const initialKey = storageKey(wxApi, CLIENT_KEY);
+    const ensureCurrent = () => {
+      if (storageKey(wxApi, CLIENT_KEY) !== initialKey) throw new Error('Cloud 地址已切换，请重新扫码');
+    };
+    let response = await request(wxApi, url + '/api/v2/clients/enroll', 'POST',
       {code: pairing.code, version: VERSION, protocol_version: PROTOCOL_VERSION});
+    ensureCurrent();
     // Earlier v2 Clouds reject extra fields before consuming the one-time code.
     // Retry only that explicit response, never a lost or uncertain response.
     if (response.statusCode === 400 && response.data && response.data.error === 'invalid enrollment') {
-      response = await request(wxApi, pairing.url + '/api/v2/clients/enroll', 'POST', {code: pairing.code});
+      response = await request(wxApi, url + '/api/v2/clients/enroll', 'POST', {code: pairing.code});
+      ensureCurrent();
     }
     if (response.statusCode !== 200 || !validTokens(response.data)) throw new Error('授权码无效或已使用，请在 Cloud 重新生成');
-    const session = savedSession(pairing.url, response.data);
-    wxApi.setStorageSync(CLIENT_KEY, session);
+    const session = savedSession(url, response.data);
+    wxApi.setStorageSync(storageKey(wxApi, CLIENT_KEY, url), session);
+    if (environment(wxApi).development) setDevelopmentCloud(wxApi, url);
     return new CloudClient(wxApi, session);
   }
 
@@ -80,9 +95,11 @@ class CloudClient {
     // storage write or legacy refresh_pending marker can be retried safely.
     // Never fall back to the old single-use /token endpoint on an older Cloud.
     this.refreshInFlight = Promise.resolve().then(async () => {
+      this.assertCurrent();
       const response = await request(this.wx, original.url + '/api/v2/clients/renew', 'POST',
         {client_id: original.client_id, refresh_token: original.refresh_token});
       if (this.closed) throw new Error('连接已关闭');
+      this.assertCurrent();
       if (response.statusCode === 401) {
         this.authorizationInvalid = true;
         throw authorizationError();
@@ -95,7 +112,7 @@ class CloudClient {
         throw new Error('Cloud 暂时无法续期，恢复连接后将自动重试');
       }
       const next = savedSession(original.url, response.data);
-      try { this.wx.setStorageSync(CLIENT_KEY, next); }
+      try { this.wx.setStorageSync(this.storageKey, next); }
       catch (_) { throw new Error('无法保存 Cloud 授权，请检查手机存储后重试'); }
       this.session = next;
     }).finally(() => { this.refreshInFlight = null; });
@@ -104,13 +121,18 @@ class CloudClient {
 
   async call(path, method = 'GET', data) {
     if (this.closed) throw new Error('连接已关闭');
+    this.assertCurrent();
     if (!/^\/api\/v2\//.test(path)) throw new Error('请求地址无效');
     if (this.session.refresh_pending || this.session.access_expires_at <= Date.now() / 1000 + 30) await this.refresh();
+    this.assertCurrent();
     const sent = this.session.access_token;
     let response = await request(this.wx, this.session.url + path, method, data, sent);
+    this.assertCurrent();
     if (response.statusCode === 401) {
       if (this.session.access_token === sent) await this.refresh();
+      this.assertCurrent();
       response = await request(this.wx, this.session.url + path, method, data, this.session.access_token);
+      this.assertCurrent();
     }
     if (response.statusCode !== 200) {
       if (response.statusCode === 401) throw authorizationError();

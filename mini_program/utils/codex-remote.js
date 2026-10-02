@@ -44,7 +44,7 @@ class CodexConnection {
       await this.cloud.call('/api/v2/remote/status/' + encodeURIComponent(this.device));
       if (generation !== this.generation || !this.device) return;
       const socket = this.wx.connectSocket({
-        url: this.cloud.session.url.replace(/^https:/, 'wss:') + '/api/v2/remote/mobile/' + encodeURIComponent(this.device),
+        url: this.cloud.session.url.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/api/v2/remote/mobile/' + encodeURIComponent(this.device),
         header: {Authorization: 'Bearer ' + this.cloud.session.access_token},
         protocols: ['lanpower.codex.v1'], timeout: 10000,
         success: () => {}, fail: () => this.lost(socket, generation, 1006)

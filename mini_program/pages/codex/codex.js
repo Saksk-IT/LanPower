@@ -1,4 +1,5 @@
 const {CloudClient} = require('../../utils/cloud');
+const {storageKey} = require('../../utils/environment');
 const {CodexConnection, STATES, ERRORS} = require('../../utils/codex-remote');
 const {projectName, relativeTime, elapsed, markdown, diffSummary, utf8Length} = require('../../utils/codex-format');
 const THEME_KEY = 'lanpower_codex_theme_v1';
@@ -18,7 +19,8 @@ Page({
     this.client = CloudClient.load(wx); this.authorized = !!this.client;
     this.epoch = 0; this.selection = 0; this.follow = true; this.activeTurns = new Map(); this.pendingApprovals = new Map();
     this.items = []; this.sessions = []; this.projects = []; this.changes = new Map(); this.turnRevision = 0;
-    this.themeMode = wx.getStorageSync(THEME_KEY) || 'system';
+    this.themeStorageKey = storageKey(wx, THEME_KEY);
+    this.themeMode = wx.getStorageSync(this.themeStorageKey) || 'system';
     const system = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync ? wx.getSystemInfoSync() : {};
     this.systemTheme = (wx.getAppBaseInfo ? wx.getAppBaseInfo().theme : system.theme) || 'light';
     this.applyTheme();
@@ -26,7 +28,7 @@ Page({
     if (wx.onThemeChange) wx.onThemeChange(this.themeChanged);
     this.networkChanged = ({isConnected}) => { if (this.visible && isConnected && this.connection && !this.connection.opened) this.reconnect(); };
     if (wx.onNetworkStatusChange) wx.onNetworkStatusChange(this.networkChanged);
-    const cache = wx.getStorageSync(CACHE_KEY);
+    const cache = wx.getStorageSync(storageKey(wx, CACHE_KEY));
     this.preferredDevice = options.computer || (this.client && cache && cache.url === this.client.session.url &&
       cache.client_id === this.client.session.client_id ? cache.selectedId : '');
     this.setData({authorized: this.authorized});
@@ -63,7 +65,7 @@ Page({
   changeTheme(event) {
     const value = event.currentTarget.dataset.value;
     if (!['light', 'dark', 'system'].includes(value)) return;
-    this.themeMode = value; wx.setStorageSync(THEME_KEY, value); this.applyTheme();
+    this.themeMode = value; wx.setStorageSync(this.themeStorageKey, value); this.applyTheme();
   },
   navigate(event) {
     const tab = event.currentTarget.dataset.tab || 'connect';
