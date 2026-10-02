@@ -1,6 +1,8 @@
 # Windows 应用
 
-当前源码版本：Windows `1.10.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增用户会话 Codex Host、出站 WSS Relay 和桌面端本地项目授权。本轮已在本机就地升级，保留 LAN 配对和 Cloud 设备身份，未发布。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.11.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增用户会话 Codex Host、出站 WSS Relay 和桌面端本地项目授权。本轮已在本机就地升级，保留 LAN 配对和 Cloud 设备身份，未发布。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+
+1.11 新增会话自动释放和菜单“交还桌面”，按会话隔离活动任务与审批；存在未结束任务或后台命令时保留连接。官方 Runtime 验证占用、释放和同会话恢复，原生桌面当前的活动任务仍只能同步查看。
 
 本目录是 .NET 10 Windows 服务、WPF 桌面端和安装包的源码。服务同时提供 LAN Direct 与可选的 Cloud Direct，旧版 Python 实现继续保留。局域网控制不依赖 Cloud 或 Wake Gateway。
 
@@ -57,6 +59,8 @@ Setup 在文件复制后、创建快捷方式前验证后台服务，使用原�
 - 卸载新应用会移除服务和防火墙规则，并保留 ProgramData 配对配置，供重装沿用。旧版 `source/`、`LanPower/` 与 `Install.cmd` 仍保留。
 
 ## 验证边界
+
+2026-10-02 Codex Remote 1.11.0：71 项单元测试通过；真实官方 Runtime 验证占用错误、系统写锁释放、另一连接恢复、暂停后的自动释放和同会话继续。Setup 已就地安装，三个程序与构建哈希匹配，配置、用户授权、Cloud 地址和设备身份保留；服务与安装 Host 就绪，原生桌面未重启。完整双端活动任务控制尚未完成。
 
 2026-10-02 Codex Remote 1.10.0：68 项 Windows 单元测试通过，包括原生已保存会话观察、长任务真实耗时、Windows 扩展路径、历史暂停与新轮状态、写锁释放和项目范围。实际只读 Runtime 确认桌面运行/结束状态和近期消息。Setup 已就地安装，三项程序与构建产物匹配；原 LAN 配置、用户授权、Cloud 地址和设备身份保留。原生桌面任务仍不可从当前网页引导或暂停，详见 [Codex Remote](../docs/codex-remote.md)。
 

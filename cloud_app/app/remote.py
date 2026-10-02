@@ -18,6 +18,7 @@ MAX_FRAME = 1024 * 1024
 MAX_PENDING = 64
 FIELDS = {
     "lanpower/status": set(),
+    "lanpower/session/release": {"threadId"},
     "model/list": {"cursor", "limit"},
     "thread/list": {"cursor", "limit", "cwd", "archived"},
     "thread/start": {"cwd", "model"},
@@ -87,7 +88,7 @@ def validate_request(payload: dict) -> str:
         raise ProtocolError("method_not_allowed")
     if not isinstance(params, dict) or set(params) - FIELDS[method]:
         raise ProtocolError("params_not_allowed")
-    if method.startswith("thread/") and method not in {"thread/list", "thread/start"} or method.startswith("turn/"):
+    if method.startswith("thread/") and method not in {"thread/list", "thread/start"} or method.startswith("turn/") or method == "lanpower/session/release":
         if not isinstance(params.get("threadId"), str) or not 1 <= len(params["threadId"]) <= 100:
             raise ProtocolError()
     for key in ("cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId"):

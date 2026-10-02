@@ -13,7 +13,7 @@ public static class CodexRemoteProtocol
     public const string WebSocketProtocol = "lanpower.codex.v1";
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["lanpower/status"] = [], ["model/list"] = ["cursor", "limit"],
+        ["lanpower/status"] = [], ["lanpower/session/release"] = ["threadId"], ["model/list"] = ["cursor", "limit"],
         ["thread/list"] = ["cursor", "limit", "cwd", "archived"],
         ["thread/start"] = ["cwd", "model"], ["thread/resume"] = ["threadId"],
         ["thread/read"] = ["threadId", "includeTurns"], ["thread/name/set"] = ["threadId", "name"],
@@ -71,7 +71,7 @@ public static class CodexRemoteProtocol
             message["params"] is not JsonObject args || args.Any(pair => !fields.Contains(pair.Key)))
             throw new InvalidDataException("method_not_allowed");
         if ((method.StartsWith("thread/") && method is not "thread/list" and not "thread/start") ||
-            method.StartsWith("turn/")) ValidateString(args, "threadId", 100, true);
+            method.StartsWith("turn/") || method == "lanpower/session/release") ValidateString(args, "threadId", 100, true);
         foreach (var name in new[] { "cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId" })
             ValidateString(args, name, 1000, method == "turn/interrupt" && name == "turnId" ||
                 method == "turn/steer" && name == "expectedTurnId");

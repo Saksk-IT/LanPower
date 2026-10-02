@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Collections.Concurrent;
 using LanPower.Shared;
 
 namespace LanPower.CodexHost;
@@ -8,7 +9,8 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
     private RuntimeClient? _runtime;
     private readonly Dictionary<string, string> _threads = new();
     private readonly Dictionary<string, JsonObject> _newThreads = new();
-    private readonly HashSet<string> _owned = new();
+    private readonly ConcurrentDictionary<string, SessionWorker> _writers = new();
+    private readonly Dictionary<string, string> _recentDiffs = new();
     private List<CodexProject> _projects = new();
     private CodexHostSettings _scope = new(false, [], AutoDiscover: false);
     private DateTimeOffset _catalogUpdated;
@@ -16,7 +18,57 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
     private bool _initialized;
     public event Action<JsonObject>? Message;
     public bool Running => _initialized && _runtime?.Running == true;
-    public JsonArray PendingApprovals => _runtime?.PendingApprovals ?? new();
+    public JsonArray PendingApprovals => new(_writers.Values.SelectMany(worker => worker.Client.PendingApprovals)
+        .Take(64).Select(item => item?.DeepClone()).ToArray());
+    private sealed class SessionWorker(RuntimeClient client)
+    {
+        public RuntimeClient Client { get; } = client;
+        public long ReleaseAt;
+    }
+
+    private async Task<SessionWorker> CreateWorkerAsync(string cwd, CancellationToken token)
+    {
+        if (_writers.Count >= 8) throw new InvalidDataException("too_many_sessions");
+        var worker = new SessionWorker(new RuntimeClient(RuntimeClient.FindExecutable(settings()), cwd));
+        worker.Client.Message += message =>
+        {
+            var method = message["method"]?.GetValue<string>();
+            if (method == "turn/started") Interlocked.Exchange(ref worker.ReleaseAt, 0);
+            if (method == "turn/completed") Interlocked.Exchange(ref worker.ReleaseAt, DateTimeOffset.UtcNow.AddSeconds(2).UtcTicks);
+            Message?.Invoke(message);
+        };
+        try { await worker.Client.InitializeAsync(token); return worker; }
+        catch { await worker.Client.DisposeAsync(); throw; }
+    }
+
+    private async Task ReleaseWorkerAsync(string id)
+    {
+        if (!_writers.TryRemove(id, out var worker)) return;
+        if (_recentDiffs.Count >= 32) _recentDiffs.Remove(_recentDiffs.Keys.First());
+        _recentDiffs[id] = worker.Client.Diff;
+        _newThreads.Remove(id);
+        await worker.Client.DisposeAsync();
+        // This process owns only this idle session. Other workers and the native desktop stay alive.
+        Message?.Invoke(new JsonObject { ["method"] = "lanpower/session/released", ["params"] = new JsonObject { ["threadId"] = id } });
+    }
+
+    private static async Task<string?> ReleaseIssueAsync(SessionWorker worker, CancellationToken token)
+    {
+        if (worker.Client.ActiveTurns.Count != 0 || worker.Client.PendingApprovals.Count != 0) return "task_running";
+        var loaded = await worker.Client.CallAsync("thread/loaded/list", new JsonObject(), token);
+        if (loaded["result"]?["data"] is not JsonArray { Count: <= 128 } ids) return "session_release_unavailable";
+        foreach (var id in ids)
+        {
+            var read = await worker.Client.CallAsync("thread/read", new JsonObject { ["threadId"] = id?.DeepClone(), ["includeTurns"] = false }, token);
+            var state = read["result"]?["thread"]?["status"]?["type"]?.GetValue<string>();
+            if (state == "active") return "task_running";
+            if (state is not ("idle" or "notLoaded")) return "session_release_unavailable";
+            var terminals = await worker.Client.CallAsync("thread/backgroundTerminals/list", new JsonObject { ["threadId"] = id?.DeepClone() }, token);
+            if (terminals["result"]?["data"] is not JsonArray data) return "session_release_unavailable";
+            if (data.Count != 0 || terminals["result"]?["nextCursor"] is not null) return "background_running";
+        }
+        return worker.Client.ActiveTurns.Count != 0 || worker.Client.PendingApprovals.Count != 0 ? "task_running" : null;
+    }
 
     public async Task OpenAsync(CancellationToken token)
     {
@@ -72,7 +124,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
 
     private void RequireControl(string thread)
     {
-        if (!_owned.Contains(thread) && CodexProjects.DesktopOwns(thread))
+        if (!_writers.ContainsKey(thread) && CodexProjects.DesktopOwns(thread))
             throw new InvalidDataException("desktop_session_busy");
     }
 
@@ -84,7 +136,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
              cwd.StartsWith(project.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
             .OrderBy(project => project.Path.Length).FirstOrDefault();
         var id = thread["id"]!.GetValue<string>();
-        var control = _owned.Contains(id) ? "remote" : CodexProjects.DesktopOwns(id) ? "desktop" : "available";
+        var control = _writers.ContainsKey(id) ? "remote" : CodexProjects.DesktopOwns(id) ? "desktop" : "available";
         string Short(string key, int max) { var value = thread[key]?.GetValue<string>() ?? ""; return value.Length > max ? value[..max] : value; }
         var summary = new JsonObject {
             ["id"] = id, ["name"] = Short("name", 160), ["preview"] = Short("preview", 160),
@@ -137,11 +189,12 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
     private async Task<JsonObject> ReadThreadAsync(string id, bool history, CancellationToken token)
     {
         if (_newThreads.TryGetValue(id, out var empty)) return Summary(empty);
-        var response = await _runtime!.CallAsync("thread/read", new JsonObject { ["threadId"] = id, ["includeTurns"] = false }, token);
+        var reader = _writers.TryGetValue(id, out var writer) ? writer.Client : _runtime!;
+        var response = await reader.CallAsync("thread/read", new JsonObject { ["threadId"] = id, ["includeTurns"] = false }, token);
         if (response["result"]?["thread"] is not JsonObject native) throw new IOException("thread_unavailable");
         RequireWorkspace(native["cwd"]?.GetValue<string>());
         var thread = Summary(native);
-        if (!_owned.Contains(id) && NativeSessionSnapshot.Read(id, native["path"]?.GetValue<string>(), native["cwd"]!.GetValue<string>()) is { } snapshot)
+        if (!_writers.ContainsKey(id) && NativeSessionSnapshot.Read(id, native["path"]?.GetValue<string>(), native["cwd"]!.GetValue<string>()) is { } snapshot)
         {
             thread["live"] = snapshot["live"]?.DeepClone();
             if (snapshot["live"]?["state"]?.GetValue<string>() == "running") thread["status"] = new JsonObject { ["type"] = "active" };
@@ -153,7 +206,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
         }
         if (history)
         {
-            var turns = await _runtime.CallAsync("thread/turns/list", new JsonObject {
+            var turns = await reader.CallAsync("thread/turns/list", new JsonObject {
                 ["threadId"] = id, ["limit"] = 8, ["itemsView"] = "full", ["sortDirection"] = "desc" }, token);
             if (turns["result"]?["data"] is JsonArray data)
             {
@@ -164,7 +217,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
             else
             {
                 // Compatibility for Runtime versions without paginated history.
-                var full = await _runtime.CallAsync("thread/read", new JsonObject { ["threadId"] = id, ["includeTurns"] = true }, token);
+                var full = await reader.CallAsync("thread/read", new JsonObject { ["threadId"] = id, ["includeTurns"] = true }, token);
                 thread["turns"] = BoundedTurns(new JsonArray((full["result"]?["thread"]?["turns"] as JsonArray ?? new())
                     .Reverse().Take(8).Select(item => item?.DeepClone()).ToArray()));
                 thread["turns"] = new JsonArray(thread["turns"]!.AsArray().Reverse().Select(item => item?.DeepClone()).ToArray());
@@ -182,12 +235,14 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
         if (!request.ContainsKey("method"))
         {
             var key = CodexRemoteProtocol.Id(request);
-            var pending = _runtime!.PendingApprovals.OfType<JsonObject>().FirstOrDefault(item => CodexRemoteProtocol.Id(item) == key);
+            var worker = _writers.Values.FirstOrDefault(value => value.Client.PendingApprovals.OfType<JsonObject>()
+                .Any(item => CodexRemoteProtocol.Id(item) == key)) ?? throw new InvalidDataException("approval_unavailable");
+            var pending = worker.Client.PendingApprovals.OfType<JsonObject>().First(item => CodexRemoteProtocol.Id(item) == key);
             if (request["result"]?["decision"]?.GetValue<string>() == "accept" &&
                 pending?["method"]?.GetValue<string>() == "item/fileChange/requestApproval" &&
                 pending["params"]?["grantRoot"] is { } root && !_scope.Allows(root.GetValue<string>()))
                 throw new InvalidDataException("workspace_not_allowed");
-            await _runtime.DecideAsync(request, token); return null;
+            await worker.Client.DecideAsync(request, token); return null;
         }
         var method = CodexRemoteProtocol.ValidateRequest(request);
         var parameters = (JsonObject)request["params"]!.DeepClone();
@@ -196,13 +251,19 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
         {
             if (DateTimeOffset.UtcNow - _catalogUpdated > TimeSpan.FromSeconds(30)) await RefreshCatalogAsync(token);
             var account = await _runtime!.CallAsync("account/read", new JsonObject { ["refreshToken"] = false }, token);
+            var active = _writers.FirstOrDefault(pair => pair.Value.Client.ActiveTurns.ContainsKey(pair.Key));
+            var last = active.Key ?? _lastThread;
+            var diff = last is not null && _writers.TryGetValue(last, out var lastWriter) ? lastWriter.Client.Diff
+                : last is not null ? _recentDiffs.GetValueOrDefault(last, "") : "";
             return Reply(new JsonObject {
                 ["workspaces"] = new JsonArray(_projects.Select(project => JsonValue.Create(project.Path)).ToArray()),
                 ["projects"] = new JsonArray(_projects.Select(project => (JsonNode)new JsonObject {
                     ["name"] = project.Name, ["path"] = project.Path, ["id"] = project.Id }).ToArray()),
-                ["autoDiscover"] = config.AutoDiscover, ["loggedIn"] = account["result"]?["account"] is not null,
-                ["pendingApprovals"] = _runtime.PendingApprovals, ["activeThread"] = _runtime.ActiveThread ?? _lastThread,
-                ["activeTurn"] = _runtime.ActiveTurn, ["diff"] = _runtime.Diff.Length > 262144 ? _runtime.Diff[..262144] : _runtime.Diff });
+                ["autoDiscover"] = config.AutoDiscover, ["loggedIn"] = account["result"]?["account"] is not null, ["sessionHandoff"] = true,
+                ["pendingApprovals"] = PendingApprovals, ["activeThread"] = last,
+                ["activeTurn"] = active.Key is null ? null : active.Value.Client.ActiveTurns.GetValueOrDefault(active.Key), ["diff"] = diff,
+                ["activeTurns"] = new JsonArray(_writers.Where(pair => pair.Value.Client.ActiveTurns.ContainsKey(pair.Key))
+                    .Select(pair => (JsonNode)new JsonObject { ["threadId"] = pair.Key, ["turnId"] = pair.Value.Client.ActiveTurns.GetValueOrDefault(pair.Key) }).ToArray()) });
         }
         string? cwd = null;
         var threadId = parameters["threadId"]?.GetValue<string>();
@@ -217,6 +278,16 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
             _threads[threadId] = cwd!;
             if (method == "thread/read")
                 return Reply(new JsonObject { ["thread"] = await ReadThreadAsync(threadId, parameters["includeTurns"]?.GetValue<bool>() == true, token) });
+            if (method == "lanpower/session/release")
+            {
+                if (_writers.TryGetValue(threadId, out var owner))
+                {
+                    if (await ReleaseIssueAsync(owner, token) is { } issue) throw new InvalidDataException(issue);
+                    await ReleaseWorkerAsync(threadId);
+                }
+                else if (CodexProjects.DesktopOwns(threadId)) throw new InvalidDataException("desktop_session_busy");
+                return Reply(new JsonObject { ["released"] = true });
+            }
             RequireControl(threadId);
         }
         if (method == "thread/list")
@@ -253,46 +324,91 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings) : IAsyncDisp
             cwd = parameters["cwd"]?.GetValue<string>(); RequireWorkspace(cwd);
             parameters["cwd"] = CodexHostSettings.Canonical(cwd!);
         }
-        if (method == "turn/start" && _runtime!.ActiveTurn is not null) throw new InvalidDataException("task_running");
+        _writers.TryGetValue(threadId ?? "", out var sessionWorker);
+        if (method == "turn/start" && sessionWorker?.Client.ActiveTurns.ContainsKey(threadId!) == true) throw new InvalidDataException("task_running");
         if (method is "turn/steer" or "turn/interrupt")
         {
             var expected = parameters[method == "turn/steer" ? "expectedTurnId" : "turnId"]?.GetValue<string>();
-            if (_runtime!.ActiveThread != threadId || _runtime.ActiveTurn is null || expected != _runtime.ActiveTurn)
+            if (sessionWorker is null || sessionWorker.Client.ActiveTurns.GetValueOrDefault(threadId!) is not { } actual || expected != actual)
                 throw new InvalidDataException("turn_changed");
         }
         if (method is "thread/start" or "thread/resume")
         { parameters["approvalPolicy"] = "on-request"; parameters["sandbox"] = "workspace-write"; parameters["excludeTurns"] = true; }
         if (method == "thread/resume" && _newThreads.TryGetValue(threadId!, out var newThread))
             return Reply(new JsonObject { ["thread"] = Summary(newThread) });
+        // The catalog connection never loads a writable chat. Each chat has its own disposable worker.
+        if (method is "thread/start" or "thread/resume")
+        {
+            var fresh = sessionWorker is null;
+            sessionWorker ??= await CreateWorkerAsync(CodexHostSettings.Canonical(cwd!), token);
+            try
+            {
+                var started = await sessionWorker.Client.CallAsync(method, parameters, token);
+                started["id"] = request["id"]!.DeepClone();
+                if (started["result"]?["thread"] is not JsonObject created || created["id"]?.GetValue<string>() is not { } createdId ||
+                    created["cwd"]?.GetValue<string>() is not { } createdCwd)
+                {
+                    if (fresh) await sessionWorker.Client.DisposeAsync();
+                    return started;
+                }
+                RequireWorkspace(createdCwd);
+                if (method == "thread/resume" && createdId != threadId) throw new InvalidDataException("thread_unavailable");
+                if (fresh && !_writers.TryAdd(createdId, sessionWorker)) throw new InvalidDataException("thread_unavailable");
+                _threads[createdId] = createdCwd; _lastThread = createdId;
+                if (method == "thread/start") _newThreads[createdId] = (JsonObject)created.DeepClone();
+                started["result"]!["thread"] = method == "thread/start" ? Summary(created) : await ReadThreadAsync(createdId, true, token);
+                return started;
+            }
+            catch
+            {
+                if (fresh)
+                {
+                    foreach (var pair in _writers.Where(pair => pair.Value == sessionWorker)) _writers.TryRemove(pair.Key, out _);
+                    await sessionWorker.Client.DisposeAsync();
+                }
+                throw;
+            }
+        }
         if (method == "turn/start")
         {
-            _newThreads.Remove(threadId!);
+            if (sessionWorker is null)
+            {
+                var resumed = await HandleAsync(new JsonObject { ["id"] = request["id"]!.DeepClone(), ["method"] = "thread/resume",
+                    ["params"] = new JsonObject { ["threadId"] = threadId } }, token);
+                if (resumed?["error"] is not null) return resumed;
+                sessionWorker = _writers[threadId!];
+            }
+            Interlocked.Exchange(ref sessionWorker.ReleaseAt, 0);
             parameters["approvalPolicy"] = "on-request"; parameters["cwd"] = cwd;
             parameters["sandboxPolicy"] = new JsonObject { ["type"] = "workspaceWrite", ["networkAccess"] = false,
                 ["excludeTmpdirEnvVar"] = true, ["excludeSlashTmp"] = true, ["writableRoots"] = new JsonArray(cwd) };
         }
-        var result = await _runtime!.CallAsync(method, parameters, token);
+        var result = await (sessionWorker?.Client ?? _runtime!).CallAsync(method, parameters, token);
         result["id"] = request["id"]!.DeepClone();
-        if (result["result"]?["thread"] is JsonObject created && created["id"]?.GetValue<string>() is { } createdId &&
-            created["cwd"]?.GetValue<string>() is { } createdCwd)
-        {
-            RequireWorkspace(createdCwd);
-            _threads[createdId] = createdCwd; _owned.Add(createdId); _lastThread = createdId;
-            if (method == "thread/start")
-            {
-                if (_newThreads.Count >= 32) _newThreads.Remove(_newThreads.Keys.First());
-                _newThreads[createdId] = (JsonObject)created.DeepClone();
-                result["result"]!["thread"] = Summary(created);
-            }
-            else result["result"]!["thread"] = await ReadThreadAsync(createdId, true, token);
-        }
+        if (method == "turn/start" && result["error"] is null) _newThreads.Remove(threadId!);
+        if (method == "thread/archive" && result["error"] is null && sessionWorker is not null && await ReleaseIssueAsync(sessionWorker, token) is null)
+            await ReleaseWorkerAsync(threadId!);
         return result;
     }
 
-    public Task ExpireAsync(CancellationToken token) => _runtime?.ExpireApprovalsAsync(token) ?? Task.CompletedTask;
+    public async Task ExpireAsync(CancellationToken token)
+    {
+        foreach (var pair in _writers.ToArray())
+        {
+            if (!pair.Value.Client.Running) { await ReleaseWorkerAsync(pair.Key); continue; }
+            await pair.Value.Client.ExpireApprovalsAsync(token);
+            var releaseAt = Interlocked.Read(ref pair.Value.ReleaseAt);
+            if (releaseAt > 0 && DateTimeOffset.UtcNow.UtcTicks >= releaseAt)
+            {
+                if (await ReleaseIssueAsync(pair.Value, token) is null) await ReleaseWorkerAsync(pair.Key);
+                else Interlocked.Exchange(ref pair.Value.ReleaseAt, DateTimeOffset.UtcNow.AddSeconds(30).UtcTicks);
+            }
+        }
+    }
     public async ValueTask DisposeAsync()
     {
         _initialized = false; if (_runtime is not null) await _runtime.DisposeAsync(); _runtime = null;
-        _threads.Clear(); _newThreads.Clear(); _owned.Clear(); _projects.Clear(); _lastThread = null;
+        foreach (var worker in _writers.Values) await worker.Client.DisposeAsync();
+        _writers.Clear(); _threads.Clear(); _newThreads.Clear(); _recentDiffs.Clear(); _projects.Clear(); _lastThread = null;
     }
 }

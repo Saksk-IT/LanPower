@@ -10,7 +10,7 @@ namespace LanPower.UnitTests;
 public sealed class ReleaseTests
 {
     [TestMethod]
-    [DataRow("v1.10.0", true)]
+    [DataRow("v1.11.0", true)]
     [DataRow("v1.4.0", false)]
     [DataRow("v1.1.2", false)]
     public async Task UpdateCheckUsesStableVersionsAndSendsNoPrivateCredentials(string tag, bool update)

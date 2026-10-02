@@ -69,9 +69,11 @@ public sealed class CodexRemoteTests
             await runtime.OpenAsync(CancellationToken.None);
             var approval = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
             var completed = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var resolved = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
             runtime.Message += message => {
                 if (message["method"]?.GetValue<string>() is "item/commandExecution/requestApproval" or "item/fileChange/requestApproval") approval.TrySetResult(message);
                 if (message["method"]?.GetValue<string>() == "turn/completed") completed.TrySetResult(message);
+                if (message["method"]?.GetValue<string>() == "serverRequest/resolved") resolved.TrySetResult(message);
             };
             var thread = await runtime.HandleAsync(Request("thread/start", new() { ["cwd"] = path }), CancellationToken.None);
             var id = thread!["result"]!["thread"]!["id"]!.GetValue<string>();
@@ -87,6 +89,7 @@ public sealed class CodexRemoteTests
             await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(new JsonObject { ["id"] = pending["id"]!.DeepClone(),
                 ["result"] = new JsonObject { ["decision"] = "acceptForSession" } }, CancellationToken.None));
             await runtime.HandleAsync(new JsonObject { ["id"] = pending["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "accept" } }, CancellationToken.None);
+            Assert.AreEqual(pending["id"]!.ToJsonString(), (await resolved.Task.WaitAsync(TimeSpan.FromSeconds(5)))["params"]!["requestId"]!.ToJsonString());
             Assert.AreEqual("completed", (await completed.Task.WaitAsync(TimeSpan.FromSeconds(5)))["params"]!["turn"]!["status"]!.GetValue<string>());
             var status = await runtime.HandleAsync(Request("lanpower/status"), CancellationToken.None);
             Assert.Contains("+fixture change", status!["result"]!["diff"]!.GetValue<string>());
@@ -137,6 +140,112 @@ public sealed class CodexRemoteTests
             var read = await runtime.HandleAsync(Request("thread/read", new() {
                 ["threadId"] = "thread-test", ["includeTurns"] = true }), CancellationToken.None);
             Assert.AreEqual("available", read!["result"]!["thread"]!["control"]!.GetValue<string>());
+        }
+        finally { Directory.Delete(path, true); }
+    }
+
+    [TestMethod]
+    public async Task SessionHandoffKeepsAnotherTaskAndItsApprovalAlive()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        try
+        {
+            await using var runtime = new RemoteRuntime(() => new(true, [path], FakeExecutable(), AutoDiscover: false));
+            await runtime.OpenAsync(CancellationToken.None);
+            var approvals = Channel.CreateUnbounded<JsonObject>();
+            var completed = Channel.CreateUnbounded<JsonObject>();
+            runtime.Message += message => {
+                if (message["method"]?.GetValue<string>() == "item/commandExecution/requestApproval") approvals.Writer.TryWrite(message);
+                if (message["method"]?.GetValue<string>() == "turn/completed") completed.Writer.TryWrite(message);
+            };
+            await runtime.HandleAsync(Request("thread/start", new() { ["cwd"] = path }), CancellationToken.None);
+            await runtime.HandleAsync(Request("thread/start", new() { ["cwd"] = path, ["model"] = "fixture-second" }), CancellationToken.None);
+            foreach (var id in new[] { "thread-test", "thread-second" })
+                await runtime.HandleAsync(Request("turn/start", new() { ["threadId"] = id,
+                    ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "隔离验证" }) }), CancellationToken.None);
+            var first = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            var second = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreNotEqual(CodexRemoteProtocol.Id(first), CodexRemoteProtocol.Id(second), "Native request 7 in two workers must remain distinct.");
+            var release = Request("lanpower/session/release", new() { ["threadId"] = "thread-test" });
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(release, CancellationToken.None));
+            await runtime.HandleAsync(Request("turn/interrupt", new() { ["threadId"] = "thread-test", ["turnId"] = "turn-test" }), CancellationToken.None);
+            await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            var released = await runtime.HandleAsync(release, CancellationToken.None);
+            Assert.IsTrue(released!["result"]!["released"]!.GetValue<bool>());
+            var status = (await runtime.HandleAsync(Request("lanpower/status"), CancellationToken.None))!["result"]!;
+            Assert.AreEqual(1, status["activeTurns"]!.AsArray().Count);
+            Assert.AreEqual("thread-second", status["activeTurns"]![0]!["threadId"]!.GetValue<string>());
+            Assert.AreEqual(1, status["pendingApprovals"]!.AsArray().Count);
+            var remaining = status["pendingApprovals"]![0]!.AsObject();
+            await runtime.HandleAsync(new JsonObject { ["id"] = remaining["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "decline" } }, CancellationToken.None);
+            await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreEqual("available", (await runtime.HandleAsync(Request("thread/read", new() { ["threadId"] = "thread-test" }), CancellationToken.None))!["result"]!["thread"]!["control"]!.GetValue<string>());
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(Request("lanpower/session/release", new() { ["threadId"] = "outside-test" }), CancellationToken.None));
+        }
+        finally { Directory.Delete(path, true); }
+    }
+
+    [TestMethod]
+    public async Task CompletedChatAutomaticallyReleasesAndCanResumeAgain()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        try
+        {
+            await using var runtime = new RemoteRuntime(() => new(true, [path], FakeExecutable(), AutoDiscover: false));
+            await runtime.OpenAsync(CancellationToken.None);
+            var approvals = Channel.CreateUnbounded<JsonObject>(); var completed = Channel.CreateUnbounded<JsonObject>();
+            runtime.Message += message => {
+                if (message["method"]?.GetValue<string>() == "item/commandExecution/requestApproval") approvals.Writer.TryWrite(message);
+                if (message["method"]?.GetValue<string>() == "turn/completed") completed.Writer.TryWrite(message);
+            };
+            await runtime.HandleAsync(Request("thread/resume", new() { ["threadId"] = "thread-test" }), CancellationToken.None);
+            var start = Request("turn/start", new() { ["threadId"] = "thread-test",
+                ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "完成验证" }) });
+            await runtime.HandleAsync(start, CancellationToken.None);
+            var pending = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            var decision = new JsonObject { ["id"] = pending["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "accept" } };
+            await runtime.HandleAsync(decision, CancellationToken.None);
+            await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Delay(2100); await runtime.ExpireAsync(CancellationToken.None);
+            var status = (await runtime.HandleAsync(Request("lanpower/status"), CancellationToken.None))!["result"]!;
+            Assert.AreEqual(0, status["activeTurns"]!.AsArray().Count);
+            Assert.Contains("fixture change", status["diff"]!.GetValue<string>());
+            Assert.AreEqual("available", (await runtime.HandleAsync(Request("thread/read", new() { ["threadId"] = "thread-test" }), CancellationToken.None))!["result"]!["thread"]!["control"]!.GetValue<string>());
+            await runtime.HandleAsync(start, CancellationToken.None);
+            var next = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.AreNotEqual(CodexRemoteProtocol.Id(pending), CodexRemoteProtocol.Id(next));
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(decision, CancellationToken.None));
+            await runtime.HandleAsync(Request("turn/interrupt", new() { ["threadId"] = "thread-test", ["turnId"] = "turn-test" }), CancellationToken.None);
+            await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally { Directory.Delete(path, true); }
+    }
+
+    [TestMethod]
+    public async Task HandoffPreservesBackgroundCommandsAfterTheTurnCompletes()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path);
+        try
+        {
+            await using var runtime = new RemoteRuntime(() => new(true, [path], FakeExecutable(), AutoDiscover: false));
+            await runtime.OpenAsync(CancellationToken.None);
+            var approvals = Channel.CreateUnbounded<JsonObject>(); var completed = Channel.CreateUnbounded<JsonObject>();
+            runtime.Message += message => {
+                if (message["method"]?.GetValue<string>() == "item/commandExecution/requestApproval") approvals.Writer.TryWrite(message);
+                if (message["method"]?.GetValue<string>() == "turn/completed") completed.Writer.TryWrite(message);
+            };
+            await runtime.HandleAsync(Request("thread/start", new() { ["cwd"] = path }), CancellationToken.None);
+            await runtime.HandleAsync(Request("turn/start", new() { ["threadId"] = "thread-test", ["model"] = "fixture-background",
+                ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "后台验证" }) }), CancellationToken.None);
+            var pending = await approvals.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            await runtime.HandleAsync(new JsonObject { ["id"] = pending["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "accept" } }, CancellationToken.None);
+            await completed.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            var failure = await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(Request("lanpower/session/release", new() { ["threadId"] = "thread-test" }), CancellationToken.None));
+            Assert.AreEqual("background_running", failure.Message);
+            await Task.Delay(2100); await runtime.ExpireAsync(CancellationToken.None);
+            Assert.AreEqual("remote", (await runtime.HandleAsync(Request("thread/read", new() { ["threadId"] = "thread-test" }), CancellationToken.None))!["result"]!["thread"]!["control"]!.GetValue<string>());
         }
         finally { Directory.Delete(path, true); }
     }

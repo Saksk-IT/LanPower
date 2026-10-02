@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
   const loginFile = process.env.LANPOWER_DEV_LOGIN_FILE || path.resolve(__dirname, '../deploy/docker/private/dev-login.txt');
   const password = fs.readFileSync(loginFile, 'utf8').match(/^Password: (.+)$/m)[1].trim();
-  const output = path.resolve(__dirname, '../private/codex-remote-1.10');
+  const output = path.resolve(__dirname, '../private/codex-remote-1.11');
   fs.mkdirSync(output, {recursive:true});
   const browser = await chromium.launch({headless:true});
   try {
@@ -30,7 +30,7 @@ const assert = require('node:assert/strict');
         {id:'session-b',name:'桌面任务进度',cwd:other,projectPath:other,projectName:'Ti',updatedAt:1790927999,status:{type:'notLoaded'},control:'desktop'}];
       window.remoteFixtureCalls = []; let activeTurn = null;
       window.WebSocket = class {
-        constructor() { this.readyState=1; setTimeout(()=>{this.onopen?.({});this.frame({type:'state',state:'runtime_ready'});},30); }
+        constructor() { this.readyState=1; window.remoteFixtureSocket=this; setTimeout(()=>{this.onopen?.({});this.frame({type:'state',state:'runtime_ready'});},30); }
         frame(data) { this.onmessage?.({data:JSON.stringify(data)}); }
         event(method,params) { this.frame({type:'rpc',payload:{method,params}}); }
         close() { this.readyState=3; }
@@ -38,10 +38,11 @@ const assert = require('node:assert/strict');
           const message=JSON.parse(raw); if(message.type!=='rpc') return;
           const {id,method,params}=message.payload; window.remoteFixtureCalls.push({method,params});
           let result={};
-          if(method==='lanpower/status') result={loggedIn:true,projects:[{name:'LanPower',path:root},{name:'Ti',path:other}],activeTurn,activeThread:activeTurn?'session-a':null};
+          if(method==='lanpower/status') result={loggedIn:true,sessionHandoff:true,projects:[{name:'LanPower',path:root},{name:'Ti',path:other}],activeTurn,activeThread:activeTurn?'session-a':null,activeTurns:[...(activeTurn?[{threadId:'session-a',turnId:activeTurn}]:[]),...(window.remoteFixtureOtherActive?[{threadId:'other-session',turnId:'other-turn'}]:[])]};
           if(method==='thread/list') result={data:threads,nextCursor:null};
           if(method==='model/list') result={data:[]};
           if(method==='thread/read' || method==='thread/resume') {
+            if(method==='thread/resume') threads.find(t=>t.id===params.threadId).control='remote';
             const desktop = params.threadId==='session-b', finished = window.remoteFixtureDesktopDone;
             const desktopTurns = [{id:'previous-paused-turn',status:'interrupted',items:[]},{id:'desktop-current',startedAt:Math.floor(Date.now()/1000)-180,status:finished?'completed':'inProgress',items:[{id:'desktop-progress',type:'agentMessage',text:window.remoteFixtureDesktopProgress?'这是桌面新增的实时进度。':'这是桌面正在进行的任务。'}]}];
             result={thread:{...threads.find(t=>t.id===params.threadId),turns:desktop?desktopTurns:turns,...(desktop?{live:{state:finished?'idle':'running',turnId:'desktop-current',startedAt:Math.floor(Date.now()/1000)-180}}:{})}};
@@ -49,6 +50,7 @@ const assert = require('node:assert/strict');
           if(method==='thread/start') result={thread:{id:'new-session',name:'新会话',cwd:params.cwd,projectPath:params.cwd,control:'remote',turns:[]}};
           if(method==='turn/start') { activeTurn='active-turn'; result={turn:{id:activeTurn,status:'inProgress'}}; }
           if(method==='turn/steer') result={turnId:activeTurn};
+          if(method==='lanpower/session/release') { threads.find(t=>t.id===params.threadId).control='available';result={released:true}; }
           setTimeout(()=>{
             this.frame({type:'rpc',payload:{id,result}});
             if(method==='turn/start') {
@@ -59,6 +61,7 @@ const assert = require('node:assert/strict');
             }
             if(method==='turn/steer') this.event('item/agentMessage/delta',{threadId:'session-a',itemId:'live-message',delta:'已收到引导。'});
             if(method==='turn/interrupt') { activeTurn=null; this.event('turn/completed',{threadId:'session-a',turn:{id:'active-turn',status:'interrupted'}}); }
+            if(method==='lanpower/session/release') this.event('lanpower/session/released',{threadId:params.threadId});
           },20);
         }
       };
@@ -80,6 +83,8 @@ const assert = require('node:assert/strict');
     await page.locator('#remote-prompt').fill('继续修复登录'); await page.locator('#remote-send').click();
     await page.waitForFunction(()=>document.querySelector('#remote-send').getAttribute('aria-label')==='引导当前任务');
     assert.equal(await page.locator('#remote-interrupt').isEnabled(),true);
+    await page.evaluate(()=>{window.remoteFixtureOtherActive=true;window.remoteFixtureSocket.event('turn/started',{threadId:'other-session',turn:{id:'other-turn',status:'inProgress'}});});
+    assert.equal(await page.locator('#remote-interrupt').isEnabled(),true,'another chat must not steal the current task controls');
     await page.locator('#remote-prompt').fill('只处理登录页面'); await page.locator('#remote-send').click();
     await page.waitForFunction(()=>document.querySelector('#remote-transcript').textContent.includes('已收到引导'));
     const calls=await page.evaluate(()=>window.remoteFixtureCalls);
@@ -91,6 +96,13 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(()=>document.querySelector('#remote-send').getAttribute('aria-label')==='发送消息');
     assert.ok((await page.locator('#remote-transcript').innerText()).includes('该轮已暂停'));
     assert.ok((await page.locator('#remote-feedback').innerText()).includes('已暂停'));
+    await page.locator('#remote-menu-toggle').click();
+    assert.equal(await page.locator('#remote-release').isEnabled(),true);
+    await page.locator('#remote-release').click();
+    await page.waitForFunction(()=>document.querySelector('#remote-feedback').textContent.includes('会话已交还'));
+    assert.equal(await page.locator('#remote-release').isDisabled(),true);
+    assert.equal(await page.locator('#remote-prompt').isEnabled(),true,'a different running chat does not block this idle chat');
+    assert.ok((await page.evaluate(()=>window.remoteFixtureCalls)).some(c=>c.method==='lanpower/session/release'&&c.params.threadId==='session-a'));
     await page.locator('#remote-back').click();
     assert.equal(await page.locator('.remote-sessions').isVisible(),true);
     await page.locator('[data-thread=session-b]').first().click();
@@ -122,7 +134,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(()=>!!window.remoteXss),false);
     assert.deepEqual(errors,[]);
     const result={autoConnect:true,nativeBrowserDefaults:true,projectGroups:2,history:true,steer:true,interrupt:true,
-      desktopReadOnly:true,desktopLiveProgress:true,historicalPauseIsNotCurrentStatus:true,fixedComposer:true,oldCacheRemoved:true,widths:[1440,390,320],browserErrors:errors.length};
+      desktopReadOnly:true,desktopLiveProgress:true,historicalPauseIsNotCurrentStatus:true,sessionHandoff:true,independentChatControls:true,fixedComposer:true,oldCacheRemoved:true,widths:[1440,390,320],browserErrors:errors.length};
     fs.writeFileSync(path.join(output,'browser-result.json'),JSON.stringify(result,null,2)); console.log(JSON.stringify(result));
     // A separate, clearly named layout example for review; it does not represent a real task result.
     await page.setViewportSize({width:390,height:900});

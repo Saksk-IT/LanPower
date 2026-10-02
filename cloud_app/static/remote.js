@@ -15,7 +15,10 @@
   };
   const ERRORS = {
     desktop_session_busy: '这条会话仍由桌面 Codex 占用。可以同步查看，桌面释放后再继续。',
-    task_running: '电脑上已有远程任务正在运行，请先等待完成或暂停。',
+    task_running: '这条会话的任务仍在运行，请先暂停或等待完成，再交还桌面。',
+    too_many_sessions: '已打开较多远程会话，请先交还不使用的会话。',
+    background_running: '这条会话仍有后台命令在运行，请先在会话中结束它，再交还桌面。',
+    session_release_unavailable: '暂时无法确认会话能安全释放，请刷新后重试。',
     workspace_not_allowed: '项目不可用或尚未授权，请在电脑检查项目目录。',
     turn_changed: '任务状态已变化，请刷新会话后再操作。',
     approval_unavailable: '审批已处理或失效，请刷新会话确认。'
@@ -91,7 +94,9 @@
   let ready = false, currentState = 'idle', threadId = null, selectedThread = null, activeThread = null, activeTurn = null, sending = false;
   let cursor = null, epoch = 0, selection = 0, turnRevision = 0, aggregateDiff = false, catalog = [], sessions = [], startedAt = 0, listing = false, refreshing = false;
   const approvals = new Map(), deltas = new Map(), fileChanges = new Map(), messageItems = new Map(), turnGroups = new Map();
+  const activeTurns = new Map();
   let renderTurn = null, synchronizedAt = 0, lastCompletion = null, catalogPolledAt = 0;
+  let handoffSupported = false;
   const rawMessages = new WeakMap();
   const client = new RemoteClient({
     socketFactory: device => new WebSocket(
@@ -183,12 +188,24 @@
     }
   }
   function selectedActive() { return !!activeTurn && activeThread === threadId; }
+  function selectActive() {
+    const turn = activeTurns.get(threadId);
+    activeThread = turn ? threadId : null; activeTurn = turn?.id || null; startedAt = turn?.startedAt || 0;
+  }
+  function installActive(status) {
+    const previous = new Map(activeTurns); activeTurns.clear();
+    const turns = Array.isArray(status.activeTurns) ? status.activeTurns : status.activeTurn ? [{threadId:status.activeThread,turnId:status.activeTurn}] : [];
+    for (const turn of turns) if (turn.threadId && turn.turnId) activeTurns.set(turn.threadId,{id:turn.turnId,startedAt:previous.get(turn.threadId)?.startedAt || Date.now()});
+    selectActive();
+  }
   function controls() {
     const desktop = selectedThread?.control === 'desktop', active = selectedActive(), observed = observedActive();
     el('new').disabled = !ready || sending || !catalog.length;
     el('workspace').disabled = !ready;
-    el('model').disabled = !ready || !!activeTurn || desktop || sending;
-    el('prompt').disabled = !ready || !threadId || desktop || sending || !!activeTurn && !active;
+    el('model').disabled = !ready || active || desktop || sending;
+    el('prompt').disabled = !ready || !threadId || desktop || sending;
+    el('release').disabled = !handoffSupported || !ready || !threadId || selectedThread?.control !== 'remote' || active || sending;
+    el('release').title = handoffSupported ? '' : '请将电脑上的 LanPower 更新至 1.11.0';
     el('send').disabled = el('prompt').disabled || !el('prompt').value.trim();
     el('send').querySelector('span').textContent = active ? '引导' : '发送';
     el('send').setAttribute('aria-label', active ? '引导当前任务' : '发送消息');
@@ -201,7 +218,7 @@
     el('task-state').className = active || observed ? 'running' : '';
     el('control-hint').textContent = !ready ? (STATES[currentState]?.[1] || '正在重新连接电脑。') : desktop
       ? '每 2 秒同步桌面已保存的进度；当前连接无法向桌面任务发送引导或暂停。'
-      : active ? '输入消息可引导当前任务，点击方块可暂停。' : '';
+      : active ? '输入消息可引导当前任务，点击方块可暂停。' : handoffSupported && selectedThread?.control === 'remote' ? '本轮结束后自动释放会话，也可在菜单中交还桌面。' : '';
     el('progress').hidden = !(active || observed);
     if (observed && !active) { el('progress-label').textContent = '正在运行'; el('live-action').textContent = activityTitle(selectedThread.live?.action) || '等待桌面保存下一条进度'; }
     else if (!active) el('live-action').textContent = '';
@@ -297,7 +314,7 @@
   function threadButton(thread) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'remote-thread' + (thread.id === threadId ? ' selected' : '');
     button.dataset.thread = thread.id; if (thread.id === threadId) button.setAttribute('aria-current', 'true');
-    const label = taskLabel(thread, activeThread, activeTurn), dot = document.createElement('span');
+    const label = taskLabel(thread, activeTurns.has(thread.id) ? thread.id : null, activeTurns.get(thread.id)?.id), dot = document.createElement('span');
     dot.className = 'remote-thread-dot' + (label === '运行中' ? ' running' : label === '需要处理' ? ' error' : '');
     button.title = (thread.name || thread.preview || '未命名会话') + ' · ' + label;
     const copy = document.createElement('span'); copy.className = 'remote-thread-copy';
@@ -358,13 +375,12 @@
       ready = false; currentState = 'runtime_error'; controls(); el('state').textContent = '请更新 Windows 应用';
       showError(new Error('请将这台电脑的 LanPower 更新至 1.10.0 后重新连接。')); return;
     }
-    installCatalog(status); catalogPolledAt = Date.now(); activeThread = status.activeThread; activeTurn = status.activeTurn;
-    if (activeTurn && !startedAt) startedAt = Date.now();
+    installCatalog(status); handoffSupported = status.sessionHandoff === true; catalogPolledAt = Date.now(); installActive(status);
     if (!status.loggedIn) el('hint').textContent = '本机 Codex 尚未登录，请在电脑完成登录。';
     for (const request of status.pendingApprovals || []) approval(request);
     controls(); await listThreads(false);
     if (current !== epoch || !ready) return;
-    const restore = threadId || remembered() || activeThread;
+    const restore = threadId || remembered() || status.activeThread;
     if (restore) { try { await readSelection(restore, false); } catch { remember(''); } }
     if (current !== epoch || !ready) return;
     if (restore === status.activeThread && status.diff) renderDiff(status.diff);
@@ -380,8 +396,8 @@
       if (!more && Date.now()-catalogPolledAt>30000) {
         const revision = turnRevision, status = await client.request('lanpower/status');
         if (current!==epoch || !ready) return;
-        installCatalog(status); catalogPolledAt = Date.now();
-        if (revision===turnRevision) { activeThread = status.activeThread; activeTurn = status.activeTurn; }
+        installCatalog(status); handoffSupported = status.sessionHandoff === true; catalogPolledAt = Date.now();
+        if (revision===turnRevision) installActive(status);
         for (const request of status.pendingApprovals || []) approval(request); controls();
       }
       const params = {limit:50}; if (more && cursor) params.cursor = cursor;
@@ -427,6 +443,7 @@
     if (current !== epoch || chosen !== selection || !ready) return;
     const changed = id !== threadId; if (changed) { renderDiff(''); el('prompt').value = ''; feedback(''); }
     threadId = id; selectedThread = result.thread;
+    selectActive();
     synchronizedAt = Date.now();
     el('title').textContent = selectedThread.name || selectedThread.preview || '开发会话';
     el('project-name').textContent = (selectedThread.projectName || projectName(selectedThread.cwd)) + ' · ' + el('device').selectedOptions[0].textContent;
@@ -453,17 +470,28 @@
       return;
     }
     if (method === 'serverRequest/resolved') { approvals.get(JSON.stringify(p.requestId))?.remove(); approvals.delete(JSON.stringify(p.requestId)); return; }
+    if (method === 'lanpower/session/released') {
+      activeTurns.delete(p.threadId); selectActive();
+      const chat = sessions.find(t => t.id === p.threadId); if (chat) chat.control = 'available';
+      if (p.threadId === threadId && selectedThread) {
+        selectedThread.control = 'available'; controls();
+        if (!selectedActive()) refreshSelected();
+      }
+      renderLibrary(); return;
+    }
     if (method === 'turn/started') {
       turnRevision++;
-      activeThread = p.threadId; activeTurn = p.turn?.id; startedAt = Date.now();
-      if (p.threadId === threadId) { fileChanges.clear(); aggregateDiff = false; renderDiff(''); el('plan').replaceChildren(); el('progress-label').textContent = '正在工作'; }
+      activeTurns.set(p.threadId,{id:p.turn?.id,startedAt:Date.now()}); selectActive();
+      if (p.threadId === threadId) { selectedThread.control = 'remote'; fileChanges.clear(); aggregateDiff = false; renderDiff(''); el('plan').replaceChildren(); el('progress-label').textContent = '正在工作'; }
       controls(); renderLibrary();
     }
     if (method === 'turn/completed') {
       turnRevision++;
       lastCompletion = {thread:p.threadId,turn:p.turn?.id,status:p.turn?.status};
-      const duration = p.turn?.durationMs != null ? p.turn.durationMs/1000 : startedAt ? (Date.now()-startedAt)/1000 : null;
-      if (p.threadId === activeThread && p.turn?.id === activeTurn) { activeTurn = null; activeThread = null; sending = false; startedAt = 0; }
+      const begun = activeTurns.get(p.threadId)?.startedAt;
+      const duration = p.turn?.durationMs != null ? p.turn.durationMs/1000 : begun ? (Date.now()-begun)/1000 : null;
+      if (activeTurns.get(p.threadId)?.id === p.turn?.id) activeTurns.delete(p.threadId);
+      selectActive(); if (p.threadId === threadId) sending = false;
       if (p.threadId === threadId) {
         const labels = {completed:'任务已完成',failed:'任务执行失败',interrupted:'本轮任务已暂停，可继续发送消息。'};
         renderTurn = p.turn?.id;
@@ -528,8 +556,8 @@
     if (p.threadId === threadId) el('progress-label').textContent = '等待你的确认';
   }
   function reset() {
-    epoch++; selection++; threadId = activeThread = activeTurn = selectedThread = null; sending = ready = false; cursor = null; sessions = []; catalog = []; startedAt = 0;
-    approvals.clear(); deltas.clear(); fileChanges.clear(); messageItems.clear(); turnGroups.clear(); renderTurn = null; synchronizedAt = catalogPolledAt = 0; lastCompletion = null; el('approvals').replaceChildren(); el('threads').replaceChildren();
+    epoch++; selection++; threadId = activeThread = activeTurn = selectedThread = null; sending = ready = handoffSupported = false; cursor = null; sessions = []; catalog = []; startedAt = 0;
+    approvals.clear(); activeTurns.clear(); deltas.clear(); fileChanges.clear(); messageItems.clear(); turnGroups.clear(); renderTurn = null; synchronizedAt = catalogPolledAt = 0; lastCompletion = null; el('approvals').replaceChildren(); el('threads').replaceChildren();
     el('transcript').replaceChildren(); el('workspace').replaceChildren(); el('prompt').value = ''; feedback(''); renderDiff(''); controls(); viewThread(false);
   }
   function chooseComputer() {
@@ -558,7 +586,6 @@
     if (!text || !ready || !threadId || sending || selectedThread?.control === 'desktop') return;
     const current = epoch, chosen = threadId, turn = selectedActive() ? activeTurn : null; sending = true; feedback(''); controls();
     try {
-      if (!turn && activeTurn) throw new Error(ERRORS.task_running);
       if (!turn && selectedThread.control !== 'remote') {
         await client.request('thread/resume',{threadId:chosen});
         if (current !== epoch || chosen !== threadId) return;
@@ -573,7 +600,7 @@
       resizePrompt();
       if (turn) { el('hint').textContent = '引导已由本机接收，将应用到当前任务。'; feedback('引导已由本机接收。'); }
       else if (revision === turnRevision && !activeTurn && result.turn?.status === 'inProgress') {
-        activeThread = chosen; activeTurn = result.turn.id; startedAt = Date.now();
+        activeTurns.set(chosen,{id:result.turn.id,startedAt:Date.now()}); selectActive();
       }
     } catch (error) { showError(error); }
     finally { if (current === epoch) { sending = false; controls(); renderLibrary(); } }
@@ -641,6 +668,19 @@
   el('device').addEventListener('change',()=>el('device-picker').close());
   el('compose').onclick = () => { const path = selectedThread?.projectPath || selectedThread?.cwd; if (path && catalog.some(p=>p.path===path)) createThread(path).catch(showError); else el('new').click(); };
   el('refresh').onclick = () => { el('menu').hidden = true; refreshSelected(); };
+  el('release').onclick = async () => {
+    if (!handoffSupported || !ready || !threadId || selectedActive() || sending || selectedThread?.control !== 'remote') return;
+    const current = epoch, chosen = threadId; sending = true; controls(); el('menu').hidden = true;
+    try {
+      await client.request('lanpower/session/release',{threadId:chosen});
+      if (current !== epoch || chosen !== threadId) return;
+      selectedThread.control = 'available';
+      try { await readSelection(chosen,false); }
+      catch { threadId = selectedThread = null; selectActive(); viewThread(false); await listThreads(false); }
+      feedback('会话已交还，桌面点击“重试”即可继续。');
+    } catch (error) { showError(error); }
+    finally { if (current === epoch) { sending = false; controls(); renderLibrary(); } }
+  };
   el('copy').onclick = () => { el('menu').hidden = true; const replies = Array.from(el('transcript').querySelectorAll('.remote-message:not(.remote-user):not(.remote-notice)')); const last = replies.at(-1); if (last) copyText(rawMessages.get(last) || last.textContent); else feedback('当前还没有回复可复制。'); };
   el('export').onclick = () => {
     el('menu').hidden = true; const texts = Array.from(el('transcript').querySelectorAll('.remote-message')).map(n=>(n.classList.contains('remote-user')?'你：':'Codex：') + '\n' + (rawMessages.get(n)||n.textContent));

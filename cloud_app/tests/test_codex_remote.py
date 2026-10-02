@@ -96,6 +96,22 @@ def test_steering_roundtrip_and_required_active_turn(remote):
     assert "private-steer-sentinel" not in (temp / "platform.db").read_bytes().decode("latin1")
 
 
+def test_handoff_rpc_and_notification_roundtrip(remote):
+    client, _, creds, _, _ = remote
+    for params in ({}, {"threadId": "chat", "force": True}, {"threadId": False}):
+        with pytest.raises(ProtocolError):
+            validate_request({"id": "bad", "method": "lanpower/session/release", "params": params})
+    with connected(client, creds) as (up, down, session):
+        request = {"id": "release", "method": "lanpower/session/release", "params": {"threadId": "chat"}}
+        down.send_json({"type": "rpc", "payload": request})
+        assert up.receive_json()["payload"] == request
+        notification = {"method": "lanpower/session/released", "params": {"threadId": "chat"}}
+        up.send_json({"type": "rpc", "session": session, "payload": notification})
+        assert down.receive_json()["payload"] == notification
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": "release", "result": {"released": True}}})
+        assert down.receive_json()["payload"]["result"] == {"released": True}
+
+
 def test_recent_sessions_do_not_require_workspace_filter():
     assert validate_request({"id": "recent", "method": "thread/list", "params": {"limit": 50}}) == "thread/list"
 

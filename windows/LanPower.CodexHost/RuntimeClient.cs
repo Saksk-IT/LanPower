@@ -12,7 +12,8 @@ public sealed class RuntimeClient : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _write = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonObject>> _calls = new();
-    private readonly ConcurrentDictionary<string, (JsonObject Request, DateTimeOffset Time)> _approvals = new();
+    private readonly ConcurrentDictionary<string, (JsonObject Request, DateTimeOffset Time, JsonNode NativeId)> _approvals = new();
+    private readonly ConcurrentDictionary<string, JsonObject> _resolvedApprovals = new();
     private readonly Dictionary<string, string> _fileDiffs = new();
     private bool _aggregatedDiff;
     private readonly Task _reader;
@@ -22,6 +23,7 @@ public sealed class RuntimeClient : IAsyncDisposable
     public event Action<JsonObject>? Message;
     public string? ActiveThread { get; private set; }
     public string? ActiveTurn { get; private set; }
+    public ConcurrentDictionary<string, string> ActiveTurns { get; } = new();
     public string Diff { get; private set; } = "";
     public bool Running => !_process.HasExited && !_reader.IsCompleted;
     public JsonArray PendingApprovals => new(_approvals.Values.Select(value => value.Request.DeepClone()).ToArray());
@@ -116,14 +118,31 @@ public sealed class RuntimeClient : IAsyncDisposable
                             ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "unsupported_request" } }, _lifetime.Token);
                         continue;
                     }
-                    _approvals[CodexRemoteProtocol.Id(message)] = (message, DateTimeOffset.UtcNow);
+                    // Independent session workers may receive the same native numeric request ID.
+                    // Give Relay a unique ID and restore the native ID only on this connection.
+                    var nativeId = message["id"]!.DeepClone();
+                    message["id"] = "lp-approval-" + Guid.NewGuid().ToString("N");
+                    _approvals[CodexRemoteProtocol.Id(message)] = (message, DateTimeOffset.UtcNow, nativeId);
                 }
                 else if (!Notifications.Contains(method)) continue;
                 var parameters = message["params"] as JsonObject;
                 if (method == "turn/started")
-                { ActiveThread = parameters?["threadId"]?.GetValue<string>(); ActiveTurn = parameters?["turn"]?["id"]?.GetValue<string>(); Diff = ""; _fileDiffs.Clear(); _aggregatedDiff = false; }
+                {
+                    ActiveThread = parameters?["threadId"]?.GetValue<string>(); ActiveTurn = parameters?["turn"]?["id"]?.GetValue<string>();
+                    if (ActiveThread is not null && ActiveTurn is not null) ActiveTurns[ActiveThread] = ActiveTurn;
+                    Diff = ""; _fileDiffs.Clear(); _aggregatedDiff = false;
+                }
                 if (method == "turn/completed")
-                { ActiveTurn = null; _approvals.Clear(); }
+                {
+                    var threadId = parameters?["threadId"]?.GetValue<string>();
+                    var turnId = parameters?["turn"]?["id"]?.GetValue<string>();
+                    if (threadId is not null && ActiveTurns.GetValueOrDefault(threadId) == turnId) ActiveTurns.TryRemove(threadId, out _);
+                    if (ActiveThread == threadId && ActiveTurn == turnId) ActiveTurn = null;
+                    foreach (var pending in _approvals.Where(pair => pair.Value.Request["params"]?["threadId"]?.GetValue<string>() == threadId &&
+                        pair.Value.Request["params"]?["turnId"]?.GetValue<string>() == turnId)) _approvals.TryRemove(pending.Key, out _);
+                    foreach (var decided in _resolvedApprovals.Where(pair => pair.Value["params"]?["threadId"]?.GetValue<string>() == threadId &&
+                        pair.Value["params"]?["turnId"]?.GetValue<string>() == turnId)) _resolvedApprovals.TryRemove(decided.Key, out _);
+                }
                 if (method == "turn/diff/updated") { Diff = parameters?["diff"]?.GetValue<string>() ?? ""; _aggregatedDiff = true; }
                 if (method == "item/completed" && parameters?["item"] is JsonObject item &&
                     item["type"]?.GetValue<string>() == "fileChange" && item["status"]?.GetValue<string>() == "completed" &&
@@ -138,7 +157,16 @@ public sealed class RuntimeClient : IAsyncDisposable
                     if (!_aggregatedDiff) Diff = combined.Length > 262144 ? combined[..262144] : combined;
                 }
                 if (method == "serverRequest/resolved" && parameters?["requestId"] is { } resolved)
-                    _approvals.TryRemove(resolved.ToJsonString(), out _);
+                {
+                    var pending = _approvals.FirstOrDefault(pair => pair.Value.NativeId.ToJsonString() == resolved.ToJsonString());
+                    if (pending.Key is not null)
+                    {
+                        parameters["requestId"] = pending.Value.Request["id"]!.DeepClone();
+                        _approvals.TryRemove(pending.Key, out _);
+                    }
+                    else if (_resolvedApprovals.TryRemove(resolved.ToJsonString(), out var decided))
+                        parameters["requestId"] = decided["id"]!.DeepClone();
+                }
                 Message?.Invoke(message);
             }
         }
@@ -147,6 +175,7 @@ public sealed class RuntimeClient : IAsyncDisposable
         {
             foreach (var call in _calls.Values) call.TrySetException(new IOException("runtime_exited"));
             _approvals.Clear();
+            _resolvedApprovals.Clear();
         }
     }
 
@@ -185,7 +214,11 @@ public sealed class RuntimeClient : IAsyncDisposable
                  result.Any(pair => pair.Key is not ("action" or "content")) || result["content"] is not null)
             throw new InvalidDataException("unsupported_elicitation");
         if (!_approvals.TryRemove(key, out _)) throw new InvalidDataException("approval_unavailable");
-        await SendAsync(response, token);
+        if (_resolvedApprovals.Count >= 64 && _resolvedApprovals.Keys.FirstOrDefault() is { } oldest) _resolvedApprovals.TryRemove(oldest, out _);
+        _resolvedApprovals[pending.NativeId.ToJsonString()] = (JsonObject)pending.Request.DeepClone();
+        var nativeResponse = (JsonObject)response.DeepClone();
+        nativeResponse["id"] = pending.NativeId.DeepClone();
+        await SendAsync(nativeResponse, token);
     }
 
     public async Task ExpireApprovalsAsync(CancellationToken token)

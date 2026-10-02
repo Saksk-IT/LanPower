@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-应用源码版本为 `1.10.0`，本地部署配置版本为 `1.10.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.11.0`，本地部署配置版本为 `1.11.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
 
@@ -68,6 +68,12 @@ Cloud 使用普通用户和只读根文件系统；宿主机只发布回环 `844
 Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<开发 CA 指纹>'
 Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 ```
+
+## 本机 1.11.0 会话交接更新（2026-10-02）
+
+开发镜像为 `lanpower-cloud:1.11.0-dev.1`，Cloud 与 Caddy 健康，正常 HTTPS、登录和运行/分发包版本通过。更新前用 SQLite backup API 保存一致备份，升级后完整性为 ok；九张身份及授权配置表的主键/引用摘要与备份一致，原数据卷、登录设置与 CA 保留。
+
+Windows Setup 已就地安装到现有目录，三个程序哈希与构建产物匹配，服务 Running；原 LAN 配置、用户 Codex 授权保留，Cloud 地址与设备身份一致，续期凭据正常轮换。原生桌面进程未重启。Windows 71 项、Cloud 187 项及浏览器 1440/390/320px 检查通过；官方 Runtime 实测会话占用、释放、暂停后的自动释放及同会话恢复。真实浏览器验证安装 Host 就绪，因另一控制页面在使用，未抢占其连接完成真实网页任务验收。原生桌面同时控制仍未完成，未更新远程服务器或发布。
 
 ## Codex Remote 1.10 本机验证（2026-10-02）
 
