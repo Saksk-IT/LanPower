@@ -18,7 +18,7 @@ function fixture() {
     addStreamRoleStateCallback: (fn: Function) => subscribe('role', fn),
     replyWithUserInputResponse: (conversationId: string, id: number, result: any) => { replies.push({ conversationId, id, result }); conversation.requests = []; emit('notification', { method: 'serverRequest/resolved', params: { requestId: id } }) },
   }
-  const context = createContext({ __codexRoot: { _internalRoot: { current: { memoizedState: { memoizedState: manager } } } },
+  const context = createContext({ TextEncoder, __codexRoot: { _internalRoot: { current: { memoizedState: { memoizedState: manager } } } },
     eventA: (raw: string) => events.push(JSON.parse(raw)), eventB: (raw: string) => events.push(JSON.parse(raw)),
     electronBridge: { sendMessageFromView: async (reply: any) => { replies.push(reply); conversation.requests = [] } },
   })
@@ -26,6 +26,26 @@ function fixture() {
   return { context, manager, conversation, events, replies, listeners, emit, attach }
 }
 describe('original desktop renderer integration', () => {
+  it('downloads a native turn above 16 MiB without a large CDP frame or private reasoning', async () => {
+    const f = fixture(), expected = '开始🎨' + 'x'.repeat(17 * 1024 * 1024) + '结尾'
+    ;(f.manager as any).sendRequest = async () => ({data:[{id:'huge-turn',items:[{id:'large',type:'agentMessage',text:expected},{id:'private',type:'reasoning',content:['secret'],encryptedContent:'secret',summary:['public']}]}],nextCursor:null})
+    const a = await f.attach('adapterA','eventA')
+    const page = await a.rpc('codex-web/local/history/page',{threadId:'chat',limit:1})
+    expect(JSON.stringify(page).length).toBeLessThan(1024)
+    const item = page.data[0].items[0], chunks:string[] = []; let offset: number | null = 0
+    do { const result = await a.rpc('codex-web/local/history/item/read',{threadId:'chat',reference:item.reference,offset});chunks.push(result.data);offset=result.nextOffset } while (offset !== null)
+    const original = JSON.parse(chunks.join(''))
+    expect(original.items[0].text).toBe(expected); expect(original.items[1]).toEqual({id:'private',type:'reasoning',summary:['public']})
+    await expect(a.rpc('codex-web/local/history/item/read',{threadId:'other',reference:item.reference,offset:0})).rejects.toThrow('history_reference_expired')
+    a.dispose()
+  })
+  it('removes an approval resolved in the native cache without a notification', async () => {
+    const f = fixture();f.conversation.requests.push({id:22,method:'item/commandExecution/requestApproval',params:{threadId:'chat'}})
+    const a = await f.attach('adapterA','eventA'); f.conversation.requests = []
+    expect(await a.rpc('codex-web/local/server-requests/pending')).toEqual([])
+    await expect(a.rpc('codex-web/local/server-requests/respond',{id:22,result:{decision:'accept'}})).rejects.toThrow('No pending')
+    expect(f.replies).toHaveLength(0); a.dispose()
+  })
   it('keeps another connection alive when disposing and resumes before starting a turn', async () => {
     const f = fixture(), a = await f.attach('adapterA', 'eventA'), b = await f.attach('adapterB', 'eventB')
     await a.rpc('turn/start', { threadId: 'chat', input: [{ type: 'text', text: 'safe' }] })

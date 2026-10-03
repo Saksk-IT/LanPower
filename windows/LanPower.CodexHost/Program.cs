@@ -205,7 +205,8 @@ while (!lifetime.IsCancellationRequested)
                             // Remote failures contain only fixed categories. Runtime RPC errors remain encrypted in transit.
                             var category = error.Message is "desktop_session_busy" or "task_running" or "workspace_not_allowed" or
                                 "turn_changed" or "approval_unavailable" or "too_many_sessions" or "background_running" or
-                                "session_release_unavailable" or "shared_session_control" or "shared_runtime_required" or "image_not_referenced" or "image_too_large" or "unsupported_image" ? error.Message : "request_rejected";
+                                "session_release_unavailable" or "shared_session_control" or "shared_runtime_required" or "image_not_referenced" or "image_too_large" or "unsupported_image" or
+                                "submission_mismatch" or "submission_store_full" or "submission_store_unavailable" or "history_reference_expired" or "history_item_too_large" or "result_too_large" ? error.Message : "request_rejected";
                             Emit(new { type = "rpc", session, payload = new JsonObject { ["id"] = request["id"]?.DeepClone(),
                                 ["error"] = new JsonObject { ["code"] = -32000, ["message"] = category } } });
                         }

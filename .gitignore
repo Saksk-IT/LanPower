@@ -19,6 +19,7 @@
 **/.codex/
 **/codex-home/
 **/command-receipts.json
+**/codex-submissions.json
 **/auto-targets.json
 **/cloud-replay.jsonl
 **/*recovery-codes*.txt
@@ -32,6 +33,8 @@
 /windows/**/bin/
 /windows/**/obj/
 /windows/out/
+/tests/native_codex_recovery/bin/
+/tests/native_codex_recovery/obj/
 private/
 /deploy/docker/.env
 /deploy/docker/private/

@@ -62,7 +62,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     if (!(await page.locator('.conversation-root').textContent()).includes('更早的原窗口消息')) await page.locator('.load-more-button').first().click();
     await page.waitForFunction(()=>document.querySelector('.conversation-root')?.textContent.includes('更早的原窗口消息'));
     await page.locator('.thread-composer-stop').click(); await page.waitForFunction(()=>window.__fixtureCalls.some(c=>c.method==='turn/interrupt'));
-    await page.waitForFunction(()=>document.querySelector('.lp-chat-status span')?.textContent === '已同步');
+    await page.waitForFunction(()=>document.querySelector('.lp-chat-status')?.textContent.includes('当前无运行任务'));
     await page.locator('.thread-composer-input').fill('继续原窗口会话'); await page.locator('.thread-composer-input').press('Enter');
     await page.waitForFunction(()=>window.__fixtureCalls.some(c=>c.method==='turn/start'));
     const before = await page.evaluate(()=>window.__fixtureCalls.filter(c=>c.method==='turn/start').length);

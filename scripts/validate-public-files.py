@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PRIVATE_NAMES = {
     "agents.md", "project.private.config.json", "config.json", "gateway.json",
     "cloud.json", "device-credentials.json", "credentials.dat",
-    "command-receipts.json", "cloud-replay.jsonl", "gateway.lock", "seen.json",
+    "command-receipts.json", "codex-submissions.json", "cloud-replay.jsonl", "gateway.lock", "seen.json",
     "setup-code", "auto-targets.json", "codex-remote.json", "auth.json", "tokens.json",
 }
 LOCAL_DOCUMENTS = {

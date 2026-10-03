@@ -42,14 +42,35 @@ describe('LanPower browser relay lifecycle', () => {
     expect(event).not.toHaveBeenCalled()
     expect(FakeSocket.sockets[1]!.url).toContain('/second')
   })
-  it('preserves approval identifiers and does not retry a controller rejection', () => {
+  it('preserves approval identifiers and does not retry a controller rejection', async () => {
     const state = vi.fn(); client.onState = state; client.connect('one')
     const socket = FakeSocket.sockets[0]!
-    client.decide('lp-approval-native', { decision: 'accept' })
+    const decision = client.decide('lp-approval-native', { decision: 'accept' })
+    const rejected = expect(decision).rejects.toThrow('审批结果待确认')
     expect(socket.sent[0]).toEqual({ type: 'rpc', payload: { id: 'lp-approval-native', result: { decision: 'accept' } } })
     socket.onclose?.({ code: 4409 }); vi.advanceTimersByTime(60000)
+    await rejected
     expect(state).toHaveBeenLastCalledWith('controller_busy')
     expect(FakeSocket.sockets).toHaveLength(1)
+  })
+  it('waits for a native approval receipt and prevents repeated decisions', async () => {
+    client.connect('one'); const socket = FakeSocket.sockets[0]!
+    const first = client.decide('approval', {decision:'accept'})
+    await expect(client.decide('approval',{decision:'accept'})).rejects.toThrow('重复点击')
+    socket.receive({type:'rpc',payload:{method:'serverRequest/resolved',params:{requestId:'approval'}}})
+    await first; expect(socket.sent).toHaveLength(1)
+    const second = client.decide('another',{decision:'decline'})
+    client.reconcileApprovals([]); await second
+  })
+  it('retains structured errors and aborts a history read without replaying it', async () => {
+    client.connect('one'); const socket = FakeSocket.sockets[0]!, controller = new AbortController()
+    const pending = client.request('thread/turns/list',{threadId:'native'},controller.signal)
+    const rejected = expect(pending).rejects.toMatchObject({name:'AbortError'})
+    controller.abort(); await rejected
+    const read = client.request('thread/read',{threadId:'native'})
+    socket.receive({type:'rpc',payload:{id:socket.sent[1].payload.id,error:{code:-32000,message:'result_too_large'}}})
+    await expect(read).rejects.toMatchObject({code:'result_too_large'})
+    expect(socket.sent).toHaveLength(2)
   })
   it('delivers large paginated history only after every fragment arrives',async () => {
     client.connect('one'); const socket = FakeSocket.sockets[0]!

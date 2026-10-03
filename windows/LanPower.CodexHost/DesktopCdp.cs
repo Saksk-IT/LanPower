@@ -111,12 +111,12 @@ public sealed class DesktopCdp : IAsyncDisposable
     private async Task<JsonNode?> RpcAsync(string method, JsonNode parameters, CancellationToken token)
     {
         // Only fixed error categories cross the CDP boundary; never forward renderer stacks or task content.
-        var response = await EvaluateAsync($"(async()=>{{const a=globalThis[{JsonSerializer.Serialize(_global)}];try{{if(!a)throw new Error('bridge unavailable');return {{ok:true,result:await a.rpc({JsonSerializer.Serialize(method)},{parameters.ToJsonString()})}};}}catch(e){{let missing=false;let code=-32000;let c=e;for(let i=0;c&&i<4;i++,c=c.cause){{const text=String(c.message||c).toLowerCase();if(text.includes('no rollout found for thread id'))missing=true;if(typeof c.code==='number')code=c.code;else if(/method not found|unknown method|unrecognized method|unknown variant/.test(text))code=-32601;}}return {{ok:false,code,missing}};}}}})()", token);
+        var response = await EvaluateAsync($"(async()=>{{const a=globalThis[{JsonSerializer.Serialize(_global)}];try{{if(!a)throw new Error('bridge unavailable');return {{ok:true,result:await a.rpc({JsonSerializer.Serialize(method)},{parameters.ToJsonString()})}};}}catch(e){{let missing=false;let code=-32000;let category='desktop_request_failed';let c=e;for(let i=0;c&&i<4;i++,c=c.cause){{const text=String(c.message||c).toLowerCase();if(text.includes('no rollout found for thread id'))missing=true;if(['history_reference_expired','history_item_too_large','invalid_history_offset'].includes(text))category=text;if(text.includes('no pending desktop server request'))category='approval_unavailable';if(typeof c.code==='number')code=c.code;else if(/method not found|unknown method|unrecognized method|unknown variant/.test(text))code=-32601;}}return {{ok:false,code,missing,category}};}}}})()", token);
         if (response?["ok"]?.GetValue<bool>() != true)
         {
             var missing = response?["missing"]?.GetValue<bool>() == true;
             throw new DesktopRpcException(missing ? -32600 : response?["code"]?.GetValue<int>() ?? -32000,
-                missing && parameters["threadId"] is not null ? "no rollout found for thread id " + parameters["threadId"]!.GetValue<string>() : "desktop_request_failed");
+                missing && parameters["threadId"] is not null ? "no rollout found for thread id " + parameters["threadId"]!.GetValue<string>() : response?["category"]?.GetValue<string>() ?? "desktop_request_failed");
         }
         return response?["result"]?.DeepClone();
     }

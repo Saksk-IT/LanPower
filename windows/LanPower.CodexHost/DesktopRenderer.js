@@ -57,12 +57,47 @@
     const pendingServerRequests = new Map();
     const respondingServerRequestIds = new Set();
     const desktopResolvedDuringResponseIds = new Set();
+    const historyItems = new Map();
+    let historyCharacters = 0;
+    const storeHistory = (threadId, item, wholeTurn = false) => {
+      const body = JSON.stringify(item);
+      if (body.length * 2 > 64 * 1024 * 1024) throw new Error('history_item_too_large');
+      for (const [key, entry] of historyItems) {
+        if (Date.now() - entry.time > 600000) { historyCharacters -= entry.body.length; historyItems.delete(key); }
+      }
+      while ((historyCharacters + body.length) * 2 > 64 * 1024 * 1024 && historyItems.size) {
+        const key = historyItems.keys().next().value;
+        historyCharacters -= historyItems.get(key).body.length; historyItems.delete(key);
+      }
+      const reference = 'native-' + (++sequence) + '-' + Math.random().toString(36).slice(2);
+      historyItems.set(reference, { threadId, body, time: Date.now() }); historyCharacters += body.length;
+      return { id: item.id, type: 'lanpowerLargeItem', originalType: wholeTurn ? 'turn' : item.type,
+        reference, characters: body.length, bytes: new TextEncoder().encode(body).length, wholeTurn };
+    };
+    const publicTurn = turn => ({ ...turn, items: (turn.items || []).map(item => {
+      if (item.type !== 'reasoning') return item;
+      const visible = { ...item }; delete visible.content; delete visible.encryptedContent; return visible;
+    }) });
+    const packTurn = (threadId, turn) => {
+      const visible = publicTurn(turn);
+      if (JSON.stringify(visible).length > 2 * 1024 * 1024)
+        return { ...visible, items: [storeHistory(threadId, visible, true)] };
+      return { ...visible, items: visible.items.map(item => JSON.stringify(item).length > 128 * 1024 ? storeHistory(threadId, item) : item) };
+    };
     const emit = (kind, payload) => {
       if (disposed) return;
       const binding = globalThis[bindingName];
       if (typeof binding !== 'function') return;
       try {
-        binding(JSON.stringify({ protocol, kind, sequence: ++sequence, payload }));
+        let visible = payload;
+        // Large events are hints; full bodies remain in the native history and its bounded cache.
+        if (kind === 'notification' && JSON.stringify(payload).length > 128 * 1024) {
+          const p = payload.params || {}, threadId = p.threadId || p.thread?.id;
+          visible = payload.method === 'turn/completed' || payload.method === 'turn/started'
+            ? { ...payload, params: { ...p, turn: { ...p.turn, items: [] } } }
+            : { method: 'lanpower/historyChanged', params: { threadId } };
+        }
+        binding(JSON.stringify({ protocol, kind, sequence: ++sequence, payload: visible }));
       } catch {}
     };
     const addDisposer = (value) => {
@@ -214,12 +249,31 @@
         }
         if (method === 'turn/start') return adapter.startTurn(params);
         if (method === 'turn/interrupt') { await adapter.interruptTurn(params); return {}; }
+        if (method === 'codex-web/local/history/page') {
+          const page = await manager.sendRequest('thread/turns/list', params, { priority: 'critical' });
+          return { ...page, data: (page.data || []).map(turn => packTurn(params.threadId, turn)) };
+        }
+        if (method === 'codex-web/local/history/item/read') {
+          const entry = historyItems.get(params.reference), offset = params.offset;
+          if (!entry || entry.threadId !== params.threadId || Date.now() - entry.time > 600000) throw new Error('history_reference_expired');
+          if (!Number.isSafeInteger(offset) || offset < 0 || offset >= entry.body.length) throw new Error('invalid_history_offset');
+          let end = Math.min(entry.body.length, offset + 65536);
+          if (end < entry.body.length && /[\uD800-\uDBFF]/.test(entry.body[end - 1])) end--;
+          entry.time = Date.now();
+          return { data: entry.body.slice(offset, end), offset, nextOffset: end < entry.body.length ? end : null, characters: entry.body.length };
+        }
         if (method === 'codex-web/local/server-requests/pending') {
+          // Recheck the native cache after backgrounding, suspension, or a desktop response.
+          for (const [id, pending] of pendingServerRequests) {
+            const conversation = manager.getConversation(pending.conversationId);
+            if (conversation && Array.isArray(conversation.requests) && !conversation.requests.some(request => readRequestId(request) === id)) pendingServerRequests.delete(id);
+          }
           return Array.from(pendingServerRequests.values());
         }
         if (method === 'codex-web/local/server-requests/respond') {
           const id = readRequestId(params);
           if (id === null) throw new Error('Desktop server request response requires an integer id.');
+          await adapter.rpc('codex-web/local/server-requests/pending');
           const pending = pendingServerRequests.get(id);
           if (!pending) throw new Error('No pending Desktop server request found for id ' + String(id) + '.');
           const electronBridge = globalThis.electronBridge;
@@ -318,6 +372,7 @@
         for (const dispose of disposers.splice(0)) {
           try { dispose(); } catch {}
         }
+        historyItems.clear(); historyCharacters = 0;
         if (globalThis[globalName] === adapter) delete globalThis[globalName];
       }
     };

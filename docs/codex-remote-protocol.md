@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.15.2 与小程序 2.1.5。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
+适用于 LanPower Windows / Cloud / Web 1.16.0 与小程序 2.1.6。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
 
 ## 认证与连接
 
@@ -66,21 +66,23 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 | `thread/list` | `cursor`, `limit`, `cwd`, `archived` |
 | `thread/start` | `cwd`, `model` |
 | `thread/resume` | `threadId` |
-| `thread/read` | `threadId`, `includeTurns` |
+| `thread/read` | `threadId`, `includeTurns`, `historyLimit`（1–8） |
 | `thread/turns/list` | `threadId`, `cursor`, `limit`；完整可见历史，Host 每页最多 8 轮 |
 | `thread/fork` | `threadId` |
 | `thread/rollback` | `threadId`, `numTurns`；回退 1–100000 轮，仍受会话授权与原生控制约束 |
 | `thread/name/set` | `threadId`, `name` |
 | `thread/archive`, `thread/unarchive` | `threadId` |
-| `thread/queue/add` | `threadId`, `clientUserMessageId`, `input` |
+| `thread/queue/add` | `threadId`, `clientUserMessageId`, `input`, `submissionId` |
 | `thread/queue/list` | `threadId`, `cursor`, `limit` |
-| `thread/queue/update` | `threadId`, `queuedSubmissionId`, `input` |
+| `thread/queue/update` | `threadId`, `queuedSubmissionId`, `input`, `submissionId` |
 | `thread/queue/delete` | `threadId`, `queuedSubmissionId` |
 | `thread/queue/reorder` | `threadId`, `queuedSubmissionIds`，1–32 个不重复编号 |
-| `thread/queue/start` | `threadId`, `queuedSubmissionId`（可省略） |
-| `turn/start` | `threadId`, `input`, `model`, `effort`, `mode`（`default` / `plan`） |
+| `thread/queue/start` | `threadId`, `queuedSubmissionId`（必填，防止恢复后执行其他队列项） |
+| `turn/start` | `threadId`, `input`, `model`, `effort`, `mode`（`default` / `plan`）, `submissionId` |
 | `turn/interrupt` | `threadId`, `turnId` |
-| `turn/steer` | `threadId`, `expectedTurnId`, `input`；必须匹配本 Runtime 的当前任务 |
+| `turn/steer` | `threadId`, `expectedTurnId`, `input`, `submissionId`；必须匹配本 Runtime 的当前任务 |
+| `lanpower/submission/read` | `threadId`, `submissionId`（1–100 字符）；只读取已授权会话的本机回执 |
+| `lanpower/history/item/read` | `threadId`, `reference`（1–100 字符）, `offset`（0–64 Mi，UTF-16 字符偏移）；读取本机会话绑定的临时引用 |
 
 请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。input 最多 13 项：至多一项 `{type:"text", text:"..."}`（16000 字符）、4 项 `{type:"image", url:"data:image/...;base64,..."}`（png/jpeg/webp/gif，单项最多 700000 字符、合计最多 850000 字符），以及 8 项 `{type:"skill", name, path}`。共享/原窗口模式发送技能前，Host 验证其与当前授权会话原生目录中的启用项相符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
 
@@ -93,6 +95,16 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 独立模式 `thread/read` 只读取，不恢复会话。原窗口与共享模式按原生 `thread/turns/list {itemsView:"full",sortDirection:"desc"}` 游标取最近 8 轮，摘要带 `historyCursor`；客户端继续分页至开头。只在原生接口明确返回 `-32601` 时退回完整 `thread/read`，使用 `lp-history-v1:<offset>` 分页。可见历史不再按每轮 80 项、单项 8000 字或总计 128 轮裁剪；公开推理摘要可显示，隐藏正文与加密推理不转发。旧独立桌面保存记录的只读活动摘要仍有自己的限额，不能把该路径当作原窗口完整历史。
 
 摘要返回 `control: desktop/available/remote/shared`、项目范围、`isChat` 及实际读取到的 model / reasoningEffort / collaborationMode。桌面仍持有独立写锁时，继续、引导、中断及其他修改操作被拒绝。`turn/steer` 的输入约束与 `turn/start` 相同，不能带模型、目录或策略覆盖；`expectedTurnId` 必须匹配当前任务。
+
+## 1.16.0 状态版本、发送回执和超大历史
+
+`lanpower/status` 增加 `lanpowerRevision`、`submissionReceipts`、`largeHistory` 与 `unsupportedMethods`。会话摘要及通知参数也带 `lanpowerRevision`，网页结合读取开始时的本地状态代次核对，避免旧快照或旧任务完成事件覆盖新任务。重连、回到前台和定期补读恢复审批/任务/队列，不重发写操作。
+
+`submissionId` 对四类发送方法为可选兼容字段；1.16 网页生成稳定编号并始终携带。Host 从原生参数中移除它，在本机先记录再派发，相同编号/参数返回原回执而不重新派发；不同会话或参数返回 `submission_mismatch`。成功结果增加 `receipt`；查询返回 `sending|accepted|failed|uncertain|unknown` 及实际可得的任务/队列编号。发送中重启转为 uncertain，只有明确拒绝可标记 failed，传输失联不推断未执行。文件仅保存元数据与哈希，不保存输入正文。
+
+大项替换为 `{type:"lanpowerLargeItem",id,originalType,reference,characters,bytes,wholeTurn}`，`wholeTurn:true` 表示完整轮次。客户端通过 `lanpower/history/item/read` 取得 `{offset,data,nextOffset,characters}`；最多 64 Ki 个 UTF-16 字符，末块 `nextOffset:null`，代理对保持完整。引用绑定 threadId，读取前重新核对授权。Renderer / Host 各保留最多 64 MiB 的内存缓存和 10 分钟空闲有效期；超限、过期、无效偏移分别返回固定错误类别。正文不写 Cloud。
+
+网页超限页按 8/4/2/1 缩小；完整导出逐轮还原大项 JSON 并组装 Blob，取消后保留已完成轮次与当前块偏移，失败不重放发送。Cloud 的 1 MiB 帧、16 MiB 结果、请求限速和内存中继边界保持适用。具体测试与人工验收范围见 [P0 记录](codex-remote-p0.md)。
 
 ## 1.15.1 电脑端项目组织和资源
 

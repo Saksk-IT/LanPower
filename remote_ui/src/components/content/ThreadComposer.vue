@@ -444,6 +444,7 @@ const props = defineProps<{
   collaborationModes?: CollaborationModeOption[]
   selectedCollaborationMode: CollaborationModeKind
   models: string[]
+  validReasoningEfforts?: ReasoningEffort[]
   selectedModel: string
   selectedReasoningEffort: ReasoningEffort | ''
   selectedSpeedMode: SpeedMode
@@ -484,6 +485,7 @@ export type ThreadComposerExposed = {
   hydrateDraft: (payload: ComposerDraftPayload) => void
   appendTextToDraft: (text: string) => void
   hasUnsavedDraft: () => boolean
+  getDraft: () => ComposerDraftPayload
   addProjectFile: (path: string) => void
   addSkill: (skill: {name:string;path:string}) => void
 }
@@ -593,14 +595,16 @@ const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.
 const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v1.'
 let lastActiveThreadId = ''
 
-const reasoningOptions = computed<Array<{ value: ReasoningEffort; label: string }>>(() => [
+const reasoningOptions = computed<Array<{ value: ReasoningEffort; label: string }>>(() => ([
   { value: 'none', label: t('None') },
   { value: 'minimal', label: t('Minimal') },
   { value: 'low', label: t('Low') },
   { value: 'medium', label: t('Medium') },
   { value: 'high', label: t('High') },
   { value: 'xhigh', label: t('Extra high') },
-])
+  { value: 'max', label: 'Max' },
+  { value: 'ultra', label: 'Ultra' },
+] as Array<{value:ReasoningEffort;label:string}>).filter(option => !props.remoteMode || props.validReasoningEfforts?.includes(option.value)))
 function formatModelLabel(modelId: string): string {
   return modelId.trim().replace(/^gpt/i, 'GPT')
 }
@@ -1024,6 +1028,7 @@ function getDraftStorageKey(threadId: string): string {
 }
 
 function loadPersistedDraftForThread(threadId: string): ComposerDraftPayload | null {
+  if (props.remoteMode) return null
   if (typeof window === 'undefined') return null
   const normalizedThreadId = threadId.trim()
   if (!normalizedThreadId) return null
@@ -1066,6 +1071,7 @@ function loadPersistedDraftForThread(threadId: string): ComposerDraftPayload | n
 }
 
 function persistDraftForThread(threadId: string, payload: ComposerDraftPayload): void {
+  if (props.remoteMode) return
   if (typeof window === 'undefined') return
   const normalizedThreadId = threadId.trim()
   if (!normalizedThreadId) return
@@ -1828,6 +1834,7 @@ defineExpose<ThreadComposerExposed>({
   hydrateDraft,
   appendTextToDraft,
   hasUnsavedDraft: () => hasUnsavedDraft.value,
+  getDraft: getCurrentDraftPayload,
 })
 
 onBeforeUnmount(() => {

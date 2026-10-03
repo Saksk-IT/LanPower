@@ -9,16 +9,20 @@
     </aside>
     <main v-show="view === 'chat'" class="lp-conversation">
       <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表"><IconTablerLayoutSidebar /></button><button v-if="sidebarCollapsed" class="lp-expand lp-icon-button" @click="sidebarCollapsed = false" aria-label="展开侧栏"><IconTablerLayoutSidebar /></button><div><h1>{{ currentTitle }}</h1></div><button v-if="currentCwd" class="lp-header-pill" @click="openFiles(currentCwd)" aria-label="浏览项目文件"><IconTablerFolder /><span>{{ projectName(currentCwd) }}</span></button><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button :disabled="loadingAllHistory" @click="jumpToBeginning">跳至对话开头</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button><button :disabled="loadingAllHistory" @click="exportChat">导出完整会话</button></div></details></header>
-      <div class="lp-chat-status"><span>{{ !ready ? stateLabel : activeTurn ? '正在工作' : threadId ? '已同步' : stateLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
+      <div class="lp-chat-status" role="status"><span>{{ stateLabel }}</span><span>{{ taskLabel }}</span><span>{{ syncLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
       <p v-if="feedback" class="lp-feedback" role="status">{{ feedback }}<button @click="feedback = ''" aria-label="关闭提示">×</button></p>
       <template v-if="threadId">
-        <p v-if="loadingAllHistory" class="lp-history-progress" role="status">正在读取完整对话，已读取 {{ current?.turns?.length || 0 }} 轮…</p>
+        <p v-if="historyProgress" class="lp-history-progress" role="status">{{ historyProgress }} <button v-if="loadingAllHistory" @click="cancelHistory">取消读取</button><button v-else-if="historyResume" :disabled="!ready" @click="resumeHistory">继续读取</button></p>
+        <p v-if="beginningIndex >= 0" class="lp-history-progress">正在阅读对话开头 <button :disabled="loadingEarlier || beginningIndex === 0" @click="loadLater">读取后续消息</button><button :disabled="!ready" @click="returnLatest">返回最新消息</button></p>
+        <p v-for="item in largeItems" :key="item.reference" class="lp-large-item">超大内容 · {{ (item.bytes / 1048576).toFixed(1) }} MB <button :disabled="!ready || loadingAllHistory" @click="downloadLarge(item)">完整下载{{ item.wholeTurn ? '这一轮' : '内容' }}</button></p>
         <ThreadConversation ref="conversation" :messages="messages" :pending-requests="selectedApprovals" :live-overlay="liveOverlay" :is-loading="loadingChat" :active-thread-id="threadId" :cwd="currentCwd" :has-more-persisted-above="Boolean(historyCursor)" :is-loading-persisted-above="loadingEarlier" :load-earlier-messages="loadEarlier" :allow-file-actions="false" @fork-thread="forkThread($event.turnIndex)" @rollback="rollback($event.turnId)" @respond-server-request="respondApproval" @open-file="openFiles(currentCwd,$event)" />
         <div class="lp-compose-area">
           <p v-if="editingQueue" class="lp-edit-queue">正在修改排队消息 <button @click="cancelQueueEdit">取消</button></p>
-          <QueuedMessages :messages="queueRows" @edit="editQueue" @delete="deleteQueue" @steer="startQueue" @reorder="reorderQueue" />
+          <QueuedMessages :messages="queueRows" :disabled="!canControl || busy" @edit="editQueue" @delete="deleteQueue" @steer="startQueue" @reorder="reorderQueue" />
           <ThreadPendingRequestPanel v-if="selectedApprovals.length" :request="selectedApprovals[0]!" :request-count="selectedApprovals.length" :has-queue-above="queueRows.length > 0" :single-turn-only="true" :is-responding="respondingApproval" @respond-server-request="respondApproval" />
-          <ThreadComposer v-show="!selectedApprovals.length" :key="`${deviceId}:${threadId}`" ref="composer" :active-thread-id="threadId" :cwd="currentCwd" :models="models" :skills="skills" :supports-plan-mode="planSupported" :selected-model="selectedModel" :selected-reasoning-effort="selectedEffort" :selected-collaboration-mode="selectedMode" selected-speed-mode="standard" :is-turn-in-progress="Boolean(activeTurn)" :is-interrupting-turn="interrupting" :disabled="!canControl || busy || loadingChat" :has-queue-above="queueRows.length > 0" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressMode" :remote-mode="true" @submit="submit" @interrupt="interrupt" @update:selected-model="selectedModel = $event" @update:selected-reasoning-effort="selectedEffort = $event" @update:selected-collaboration-mode="selectedMode = $event" />
+          <p v-if="sendReceipt" class="lp-send-receipt" role="status">{{ receiptLabel }}<button v-if="sendReceipt.state === 'uncertain' || sendReceipt.state === 'sending'" :disabled="!ready || queryingReceipt" @click="queryReceipt">查询发送回执</button><button v-if="sendReceipt.state === 'uncertain'" @click="refreshCurrent">查阅原窗口会话</button><button v-if="sendReceipt.state === 'uncertain'" @click="confirmNotAccepted">确认未执行并恢复草稿</button></p>
+          <p v-if="settingsHint" class="lp-settings-hint">{{ settingsHint }}<button @click="inheritSettings">采用原窗口参数</button></p>
+          <ThreadComposer v-show="!selectedApprovals.length" :key="`${deviceId}:${threadId}`" ref="composer" :active-thread-id="threadId" :cwd="currentCwd" :models="models" :valid-reasoning-efforts="effortOptions" :skills="skills" :supports-plan-mode="planSupported" :selected-model="selectedModel" :selected-reasoning-effort="selectedEffort" :selected-collaboration-mode="selectedMode" selected-speed-mode="standard" :is-turn-in-progress="Boolean(activeTurn)" :is-interrupting-turn="interrupting" :disabled="!canControl || busy || loadingChat || sendBlocked" :has-queue-above="queueRows.length > 0" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressMode" :remote-mode="true" @submit="submit" @interrupt="interrupt" @update:selected-model="chooseSetting('model',$event)" @update:selected-reasoning-effort="chooseSetting('effort',$event)" @update:selected-collaboration-mode="chooseSetting('mode',$event)" />
           <p class="lp-compose-hint">{{ canControl ? '输入与操作同步到电脑上的同一会话' : ready ? '请在电脑的 LanPower 连接原 Codex 窗口后继续此会话' : stateHint }}</p>
         </div>
       </template>
@@ -33,7 +37,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import ThreadConversation from './components/content/ThreadConversation.vue'
-import ThreadComposer, { type SubmitPayload, type ThreadComposerExposed } from './components/content/ThreadComposer.vue'
+import ThreadComposer, { type ComposerDraftPayload, type SubmitPayload, type ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import QueuedMessages from './components/content/QueuedMessages.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
 import { normalizeThreadMessagesV2 } from './api/normalizers/v2'
@@ -43,12 +47,14 @@ import IconTablerLayoutSidebar from './components/icons/IconTablerLayoutSidebar.
 import IconTablerFolder from './components/icons/IconTablerFolder.vue'
 import RemoteFeaturePage from './components/content/RemoteFeaturePage.vue'
 import RemoteFilesPanel from './components/content/RemoteFilesPanel.vue'
-import { mergeHistory } from './lanpower/history'
+import { mergeHistory, readPage, readThread, newExport, exportHistory, newBeginning, findBeginning, newDownload, downloadItem, type ExportJob, type BeginningJob, type LargeDownload } from './lanpower/history'
+import { newSettings, observeSettings, effectiveSettings, modelId, validEfforts, type ModelCapability, type ThreadSettings, type SendSettings } from './lanpower/settings'
+import { StateClock } from './lanpower/state'
 import { reasoningSummary, timestampMs } from './lanpower/turnPresentation'
 import { defaultLibraryPreferences, type LibraryPreferences } from './lanpower/library'
 import { resetRemoteImages } from './lanpower/images'
 import type { ReasoningEffort, UiServerRequest, UiLiveOverlay } from './types/codex'
-import { connection, type RpcEvent } from './lanpower/connection'
+import { connection, RemoteError, type RpcEvent } from './lanpower/connection'
 
 const config = JSON.parse(document.getElementById('lanpower-codex-config')?.textContent || '{"devices":[]}')
 const devices: Array<{ id: string; name: string }> = config.devices
@@ -64,6 +70,33 @@ const projectCwd = ref(''), listCursor = ref(''), historyCursor = ref(''), model
 const selectedModel = ref(''), selectedEffort = ref<ReasoningEffort | ''>('')
 const desktopControl = ref(false), sharedControl = ref(false), queueSupported = ref(false)
 const planSupported = ref(false)
+const recovering = ref(false), lastSync = ref(0), syncFailed = ref(false)
+const nativeModels = ref<ModelCapability[]>([]), settingsVersion = ref(0), unsupportedMethods = ref<string[]>([])
+const clock = new StateClock(), settingsByThread = new Map<string,ThreadSettings>(), drafts = new Map<string,ComposerDraftPayload>(), queueEdits = new Map<string,string>()
+type Receipt = {submissionId:string;method:string;payload:SubmitPayload;settings:SendSettings;state:'sending'|'accepted'|'failed'|'uncertain';turnId?:string;message?:string}
+const receipts = new Map<string,Receipt>(), receiptVersion = ref(0), queryingReceipt = ref(false), receiptsSupported = ref(false)
+const historyProgress = ref(''), historyResume = ref<'beginning'|'export'|'item'|''>(''), beginningIndex = ref(-1)
+let historyAbort: AbortController | null = null, beginningJob: BeginningJob | null = null, exportJob: ExportJob | null = null, largeJob: {item:any;job:LargeDownload} | null = null
+function sessionKey(id = threadId.value): string { return `${deviceId.value}:${id}` }
+function threadSettings(): ThreadSettings { const key = sessionKey(); if (!settingsByThread.has(key)) settingsByThread.set(key,newSettings()); return settingsByThread.get(key)! }
+function displaySettings(): void { const options = effectiveSettings(threadSettings()); selectedModel.value = options.model; selectedEffort.value = options.effort; selectedMode.value = options.mode; settingsVersion.value++ }
+function chooseSetting(key: keyof SendSettings, value: any): void {
+  const options = threadSettings(); Object.assign(options.overrides,{[key]:value})
+  if (key === 'model') { const model = nativeModels.value.find(m => modelId(m) === value), efforts = validEfforts(model); if (!efforts.includes(effectiveSettings(options).effort as ReasoningEffort)) options.overrides.effort = model?.defaultReasoningEffort || '' }
+  displaySettings()
+}
+function inheritSettings(): void { threadSettings().overrides = {}; displaySettings() }
+const effortOptions = computed(() => validEfforts(nativeModels.value.find(m => modelId(m) === selectedModel.value)))
+const settingsHint = computed(() => { settingsVersion.value; const settings = threadSettings(); return Object.keys(settings.overrides).length ? `下次新任务使用已选参数；原窗口：${settings.native.model || '默认模型'} / ${settings.native.effort || '默认强度'} / ${settings.native.mode === 'plan' ? '计划模式' : '默认模式'}。排队和引导沿用当前任务参数。` : '' })
+const sendReceipt = computed(() => { receiptVersion.value; return receipts.get(sessionKey()) })
+const sendBlocked = computed(() => { receiptVersion.value; return ['sending','uncertain'].includes(sendReceipt.value?.state || '') })
+const receiptLabel = computed(() => { receiptVersion.value; return {sending:'发送中，正在等待电脑回执。',accepted:'原窗口已接受。',failed:'发送失败，输入已恢复。',uncertain:'发送结果待确认，请先查询回执或查阅原窗口；禁止直接重复发送。'}[sendReceipt.value?.state || 'accepted'] })
+const taskLabel = computed(() => !ready.value ? '任务状态待恢复' : selectedApprovals.value.length ? '等待审批或回复' : activeTurn.value ? '正在工作' : '当前无运行任务')
+const syncLabel = computed(() => !threadId.value ? '' : !ready.value ? `历史缓存${lastSync.value ? ' · 上次同步 ' + new Date(lastSync.value).toLocaleTimeString('zh-CN') : ''}` : recovering.value || loadingChat.value ? '正在恢复原窗口状态' : syncFailed.value ? '最近同步失败 · 显示历史缓存' : lastSync.value ? '最近同步 ' + new Date(lastSync.value).toLocaleTimeString('zh-CN') : '尚未同步')
+const largeItems = computed<any[]>(() => (current.value?.turns || []).flatMap((t:any) => (t.items || []).filter((i:any) => i.type === 'lanpowerLargeItem')))
+function saveDraft(): void { if (threadId.value && composer.value) { const key = sessionKey(); drafts.set(key,composer.value.getDraft()); if (editingQueue.value) queueEdits.set(key,editingQueue.value); else queueEdits.delete(key) } }
+async function hydrateSavedDraft(): Promise<void> { const key = sessionKey(), s = selection; await nextTick(); if (key === sessionKey() && s === selection) { editingQueue.value = queueEdits.get(key) || ''; composer.value?.hydrateDraft(drafts.get(key) || {text:'',imageUrls:[],skills:[],fileAttachments:[]}) } }
+function resetHistory(): void { historyAbort?.abort(); historyAbort = null; historyProgress.value = ''; historyResume.value = ''; loadingAllHistory.value = false; beginningIndex.value = -1; beginningJob = null; exportJob = null; largeJob = null }
 const activeTurns = ref<Record<string, string>>({}), approvals = ref<UiServerRequest[]>([])
 const queue = ref<any[]>([]), editingQueue = ref(''), composer = ref<ThreadComposerExposed | null>(null)
 const loadingChat = ref(false), loadingLibrary = ref(false), loadingEarlier = ref(false), busy = ref(false), interrupting = ref(false)
@@ -92,11 +125,12 @@ const labels: Record<string, string[]> = {
   runtime_starting: ['正在读取 Codex', '正在读取原窗口的项目与最近会话。'], runtime_ready: ['已连接', ''],
   runtime_error: ['Codex 未就绪', '请在电脑的 LanPower 点击「连接原 Codex 窗口」。'],
   disconnected: ['连接已断开', '正在重连；电脑上的任务会继续运行。'], controller_busy: ['另一页面正在控制', '关闭另一控制页面后点击重连。'],
+  revoked: ['开发授权已变化','请重新检查登录与开发权限后重连。'],
 }
 const stateLabel = computed(() => labels[state.value]?.[0] || '连接未就绪')
 const stateHint = computed(() => labels[state.value]?.[1] || '请检查电脑上的连接状态。')
 const activeTurn = computed(() => activeTurns.value[threadId.value] || '')
-const canControl = computed(() => ready.value && Boolean(threadId.value) && (sharedControl.value || current.value?.control === 'remote'))
+const canControl = computed(() => ready.value && !recovering.value && Boolean(threadId.value) && current.value?.id === threadId.value && (sharedControl.value || current.value?.control === 'remote'))
 const currentTitle = computed(() => current.value?.name || current.value?.preview?.slice(0, 60) || (threadId.value ? '新会话' : 'Codex Remote'))
 const currentCwd = computed(() => current.value?.cwd || '')
 const messages = computed(() => current.value ? normalizeThreadMessagesV2({ thread: {...current.value,turns:(current.value.turns || []).map((turn:any) => {
@@ -132,34 +166,46 @@ function addApproval(event: RpcEvent): void {
 }
 function onState(value: string): void {
   const wasReady = ready.value; state.value = value
-  if (!ready.value) { epoch++; busy.value = false; syncing = false; libraryDraft = null; resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' } }
+  if (!ready.value) { epoch++; busy.value = false; syncing = false; recovering.value = false; loadingLibrary.value = false; loadingChat.value = false; loadingEarlier.value = false; interrupting.value = false; historyAbort?.abort(); libraryDraft = null; resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }; clock.clear() }
   else if (!wasReady) void restore()
 }
 async function restore(): Promise<void> {
-  const e = epoch
+  const e = epoch, stamp = clock.capture(); recovering.value = true
   try {
     const [status, modelList, modes] = await Promise.all([connection.request('lanpower/status'), connection.request('model/list', { limit: 50 }), connection.request('collaborationMode/list').catch(() => ({data:[]}))])
     if (e !== epoch || !ready.value) return
-    applyStatus(status)
+    applyStatus(status,stamp)
     planSupported.value = (modes.data || []).some((mode:any) => mode.mode === 'plan')
-    models.value = (modelList.data || []).map((m: any) => m.id || m.model).filter(Boolean)
-    selectedModel.value = models.value.includes(selectedModel.value) ? selectedModel.value : (modelList.data || []).find((m: any) => m.isDefault)?.id || models.value[0] || ''
+    const allModels = [...(modelList.data || [])]; let modelCursor = modelList.nextCursor
+    const cursors = new Set<string>()
+    while (modelCursor && e === epoch) { if (cursors.has(modelCursor)) throw new Error('模型列表游标未推进。'); cursors.add(modelCursor); const page = await connection.request('model/list',{limit:50,cursor:modelCursor}); allModels.push(...(page.data || [])); modelCursor = page.nextCursor }
+    if (e !== epoch) return
+    nativeModels.value = allModels; models.value = [...new Set<string>(allModels.map(modelId).filter(Boolean))]
+    if (!threadId.value) selectedModel.value = modelId(allModels.find((m:any) => m.isDefault) || allModels[0] || {})
     await loadThreads()
     if (threadId.value) { if (current.value?.id === threadId.value) await refreshCurrent(); else await selectThread(threadId.value, true) }
+    if (e === epoch && threadId.value) await queryReceipt()
   } catch (error) { if (e === epoch) showError(error) }
+  finally { if (e === epoch) recovering.value = false }
 }
-function applyStatus(status: any): void {
+function applyStatus(status: any, stamp = clock.capture()): void {
   desktopControl.value = Boolean(status.desktopControl); sharedControl.value = Boolean(status.sharedControl); queueSupported.value = Boolean(status.queueSupported)
+  receiptsSupported.value = Boolean(status.submissionReceipts); unsupportedMethods.value = status.unsupportedMethods || []
   chatSupported.value = Boolean(status.chatSupported)
   if (status.library && !librarySaving && !libraryDraft) libraryState.value = status.library
   projects.value = status.projects || []; if (!projects.value.some(p => p.path === projectCwd.value)) projectCwd.value = projects.value[0]?.path || ''
-  activeTurns.value = Object.fromEntries((status.activeTurns || []).map((t: any) => [t.threadId, t.turnId]))
+  if (!clock.unchanged(stamp)) { scheduleReconcile(); return }
+  const active: Record<string,string> = Object.fromEntries((status.activeTurns || []).map((t: any) => [t.threadId, t.turnId]))
+  const next = {...activeTurns.value}
+  for (const id of new Set([...Object.keys(next),...Object.keys(active)])) if (clock.snapshot(id,status.lanpowerRevision)) { if (active[id]) next[id] = active[id]!; else delete next[id] }
+  activeTurns.value = next
   // Reconcile requests; a desktop reply can have arrived while the browser was disconnected.
   const incoming = new Set((status.pendingApprovals || []).map((request: RpcEvent) => JSON.stringify(request.id)))
   for (const [key, localId] of approvalKeys) if (!incoming.has(key)) { approvalKeys.delete(key); remoteApprovalIds.delete(localId) }
   approvals.value = approvals.value.filter(a => remoteApprovalIds.has(a.id))
   if (!approvals.value.length) respondingApproval.value = false
   for (const request of status.pendingApprovals || []) addApproval(request)
+  connection.reconcileApprovals((status.pendingApprovals || []).map((r:RpcEvent) => r.id))
 }
 async function loadThreads(more = false): Promise<void> {
   if (!ready.value || loadingLibrary.value) return
@@ -173,22 +219,26 @@ async function loadThreads(more = false): Promise<void> {
   } catch (error) { if (e === epoch) showError(error) } finally { if (e === epoch) loadingLibrary.value = false }
 }
 async function selectThread(id: string, restoring = false): Promise<void> {
-  if (!ready.value || busy.value) return
-  if (!restoring && id !== threadId.value && composer.value?.hasUnsavedDraft() && !confirm('切换会话将清空当前未发送的草稿，继续吗？')) return
+  if (!ready.value) return
+  if (id === threadId.value && current.value && !restoring) { chatOpen.value = true; await refreshCurrent(); return }
+  saveDraft(); resetHistory()
   const e = epoch, s = ++selection
+  const stamp = clock.capture(id)
   loadingEarlier.value = false; loadingAllHistory.value = false; syncing = false
+  busy.value = false; lastSync.value = 0; syncFailed.value = false
   threadId.value = id; chatOpen.value = true; loadingChat.value = true; current.value = null; queue.value = []; editingQueue.value = ''; historyCursor.value = ''
   overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }
   try {
-    const result = await connection.request('thread/read', { threadId: id, includeTurns: true })
+    const result = await readThread(connection,id)
     if (e !== epoch || s !== selection) return
     current.value = result.thread; historyCursor.value = result.thread.historyCursor || ''
-    applyThreadSettings(result.thread)
+    if (clock.unchanged(stamp,id) && clock.snapshot(id,result.thread.lanpowerRevision)) { applyThreadSettings(result.thread); observeTurn(result.thread); lastSync.value = Date.now() }
+    else scheduleReconcile()
+    displaySettings(); await hydrateSavedDraft()
     syncUrl(); void loadSkills(result.thread.cwd, e, s)
-    observeTurn(result.thread)
     await refreshQueue(id, e, s)
-    const status = await connection.request('lanpower/status')
-    if (e === epoch && s === selection) applyStatus(status)
+    const statusStamp = clock.capture(), status = await connection.request('lanpower/status')
+    if (e === epoch && s === selection) { applyStatus(status,statusStamp); await queryReceipt() }
   } catch (error) { if (e === epoch && s === selection) showError(error) } finally { if (s === selection) loadingChat.value = false }
 }
 function observeTurn(thread: any): void {
@@ -198,16 +248,14 @@ function observeTurn(thread: any): void {
   activeTurns.value = next
 }
 function applyThreadSettings(thread: any): void {
-  if (thread.model) selectedModel.value = thread.model
-  if ('reasoningEffort' in thread) selectedEffort.value = thread.reasoningEffort || ''
-  const mode = thread.collaborationMode?.mode || thread.collaborationMode
-  if (mode === 'default' || mode === 'plan') selectedMode.value = mode
+  if (thread.id !== threadId.value) return
+  observeSettings(threadSettings(),thread,modelId(nativeModels.value.find(m => m.isDefault) || nativeModels.value[0] || {})); displaySettings()
 }
 async function loadEarlier(id: string): Promise<void> {
   if (id !== threadId.value || !historyCursor.value || loadingEarlier.value || !ready.value) return
   const e = epoch, s = selection; loadingEarlier.value = true
   try {
-    const result = await connection.request('thread/turns/list', { threadId: id, cursor: historyCursor.value, limit: 8 })
+    const result = await readPage(connection,id,historyCursor.value)
     if (e !== epoch || s !== selection || !current.value) return
     const existing = new Set(current.value.turns.map((t: any) => t.id))
     const older = result.data.slice().reverse().filter((t: any) => !existing.has(t.id))
@@ -218,29 +266,36 @@ async function loadEarlier(id: string): Promise<void> {
 }
 async function refreshQueue(id = threadId.value, e = epoch, s = selection): Promise<void> {
   if (!queueSupported.value || !id) return
-  const result = await connection.request('thread/queue/list', { threadId: id, limit: 32 })
-  if (e === epoch && s === selection && id === threadId.value) queue.value = result.data || []
+  const stamp = clock.capture(id), all: any[] = [], cursors = new Set<string>(); let cursor = ''
+  try {
+    do { const result = await connection.request('thread/queue/list',{threadId:id,limit:32,...(cursor ? {cursor} : {})}); if (e !== epoch || s !== selection) return; all.push(...(result.data || [])); cursor = result.nextCursor || ''; if (cursor && cursors.has(cursor)) throw new Error('队列游标未推进。'); cursors.add(cursor) } while (cursor)
+    if (e === epoch && s === selection && id === threadId.value && clock.unchanged(stamp,id)) queue.value = [...new Map(all.map(entry => [entry.id,entry])).values()]
+  } catch (error) { if (error instanceof RemoteError && error.code === 'unsupported_method') queueSupported.value = false; throw error }
 }
 async function refreshCurrent(): Promise<void> {
   if (!ready.value || !threadId.value || loadingChat.value || loadingEarlier.value || loadingAllHistory.value || busy.value || syncing) return
-  const e = epoch, s = selection, id = threadId.value; syncing = true
+  if (beginningIndex.value >= 0) return
+  const e = epoch, s = selection, id = threadId.value, stamp = clock.capture(id), statusStamp = clock.capture(); syncing = true
   try {
-    const [result, status] = await Promise.all([connection.request('thread/read', { threadId: id, includeTurns: true }), connection.request('lanpower/status')])
+    const [result, status] = await Promise.all([readThread(connection,id), connection.request('lanpower/status')])
     if (e !== epoch || s !== selection) return
     let latest = result.thread.turns || [], cursor = result.thread.historyCursor || ''
     const previous = current.value?.turns || [], oldIds = new Set(previous.map((t: any) => t.id))
     // If many turns finished while disconnected, bridge the gap before merging.
     while (previous.length && latest.length && !latest.some((t: any) => oldIds.has(t.id)) && cursor) {
-      const page = await connection.request('thread/turns/list', {threadId:id,cursor,limit:8})
+      const page = await readPage(connection,id,cursor)
       if (e !== epoch || s !== selection) return
       const next = page.nextCursor || ''; if (next && next === cursor) throw new Error('历史游标未推进，请刷新会话。')
       latest = [...(page.data || []).slice().reverse(), ...latest]; cursor = next
     }
+    applyStatus(status,statusStamp)
+    if (!clock.unchanged(stamp,id) || !clock.snapshot(id,result.thread.lanpowerRevision)) { scheduleReconcile(); return }
     if (!previous.length || previous[0]?.id === latest[0]?.id || latest.some((t: any) => t.id === previous[0]?.id)) historyCursor.value = cursor
-    current.value = { ...result.thread, turns: mergeHistory(current.value?.turns || [], latest) }; applyStatus(status); observeTurn(current.value)
+    current.value = { ...result.thread, turns: mergeHistory(current.value?.turns || [], latest) }; observeTurn(current.value)
     applyThreadSettings(result.thread)
+    lastSync.value = Date.now(); syncFailed.value = false
     await refreshQueue(id, e, s)
-  } catch (error) { if (e === epoch && s === selection) showError(error) } finally { if (e === epoch && s === selection) syncing = false }
+  } catch (error) { if (e === epoch && s === selection) { syncFailed.value = true; showError(error) } } finally { if (e === epoch && s === selection) syncing = false }
 }
 async function newThread(cwd?: string): Promise<void> {
   if (!cwd || !ready.value || busy.value) return
@@ -249,39 +304,81 @@ async function newThread(cwd?: string): Promise<void> {
   catch (error) { showError(error) } finally { busy.value = false }
 }
 async function submit(payload: SubmitPayload): Promise<void> {
-  if (!canControl.value || busy.value) return
-  const e = epoch, s = selection, id = threadId.value
+  if (!canControl.value || busy.value || sendBlocked.value) return
+  const e = epoch, s = selection, id = threadId.value, key = sessionKey(), options = {...effectiveSettings(threadSettings())}
+  const receipt: Receipt = {submissionId:crypto.randomUUID(),method:'',payload:JSON.parse(JSON.stringify(payload)),settings:options,state:'sending'}
+  receipts.set(key,receipt); receiptVersion.value++
   busy.value = true; feedback.value = ''
   try {
+    if (editingQueue.value && !queue.value.some(row => row.id === editingQueue.value)) throw new RemoteError('not_sent','排队消息已被处理或删除，请取消编辑后重新输入。')
+    if (!activeTurn.value && !editingQueue.value) {
+      if (options.effort && nativeModels.value.find(m => modelId(m) === options.model)?.supportedReasoningEfforts && !effortOptions.value.includes(options.effort)) throw new RemoteError('not_sent','所选模型不支持该思考强度，请重新选择。')
+      if (options.mode === 'plan' && !planSupported.value) throw new RemoteError('not_sent','原窗口暂不支持计划模式，请采用原窗口参数。')
+    }
     const text = payload.fileAttachments.length ? `# Files mentioned by the user:\n${payload.fileAttachments.map(file => `## ${file.label}: ${file.fsPath}`).join('\n')}\n\n## My request for Codex:\n${payload.text.trim()}` : payload.text.trim()
     const input = [...(text ? [{ type: 'text', text }] : []), ...payload.imageUrls.map(url => ({ type: 'image', url })), ...payload.skills.map(skill => ({type:'skill',name:skill.name,path:skill.path}))]
-    if (editingQueue.value) await connection.request('thread/queue/update', { threadId: id, queuedSubmissionId: editingQueue.value, input })
-    else if (activeTurn.value && payload.mode === 'queue') await connection.request('thread/queue/add', { threadId: id, clientUserMessageId: crypto.randomUUID(), input })
-    else if (activeTurn.value) await connection.request('turn/steer', { threadId: id, expectedTurnId: activeTurn.value, input })
-    else {
-      const result = await connection.request('turn/start', { threadId: id, input, ...(sharedControl.value ? {mode:selectedMode.value} : {}), ...(selectedModel.value ? { model: selectedModel.value } : {}), ...(selectedEffort.value ? { effort: selectedEffort.value } : {}) })
-      if (e === epoch && s === selection && result.turn?.id) { rememberTiming(id,result.turn,true); overlay.value = {activityLabel:'Thinking',activityDetails:[],reasoningText:'',errorText:''}; activeTurns.value = { ...activeTurns.value, [id]: result.turn.id } }
+    let params: any = {threadId:id,input,...(receiptsSupported.value ? {submissionId:receipt.submissionId} : {})}
+    if (editingQueue.value) { receipt.method = 'thread/queue/update'; params.queuedSubmissionId = editingQueue.value }
+    else if (activeTurn.value && payload.mode === 'queue') { receipt.method = 'thread/queue/add'; params.clientUserMessageId = receipt.submissionId }
+    else if (activeTurn.value) { receipt.method = 'turn/steer'; params.expectedTurnId = activeTurn.value }
+    else { receipt.method = 'turn/start'; params = {...params,...(sharedControl.value ? {mode:options.mode} : {}),...(options.model ? {model:options.model} : {}),...(options.effort ? {effort:options.effort} : {})} }
+    const result = await connection.request(receipt.method,params)
+    receipt.state = result.receipt?.state === 'uncertain' || result.receipt?.state === 'sending' ? 'uncertain' : result.receipt?.state === 'failed' ? 'failed' : 'accepted'
+    receipt.turnId = result.receipt?.turnId || result.turn?.id || result.turnId
+    receiptVersion.value++
+    if (receipt.state !== 'accepted') throw new RemoteError(receipt.state === 'failed' ? 'submission_failed' : 'submission_uncertain','此提交已有记录，请查询回执确认结果。',receipt.state !== 'failed')
+    drafts.delete(key); queueEdits.delete(key)
+    if (e === epoch && s === selection && receipt.method === 'turn/start') {
+      threadSettings().overrides = {}; threadSettings().native = options; displaySettings()
+      if (result.turn?.id) { rememberTiming(id,result.turn,true); overlay.value = {activityLabel:'Thinking',activityDetails:[],reasoningText:'',errorText:''}; activeTurns.value = { ...activeTurns.value, [id]: result.turn.id } }
     }
     if (e === epoch && s === selection) { editingQueue.value = ''; await refreshQueue(id, e, s) }
-  } catch (error) { if (e === epoch && s === selection) { showError(error); composer.value?.hydrateDraft(payload) } }
-  finally { if (e === epoch) busy.value = false }
+  } catch (error) {
+    if (receipt.state !== 'accepted') {
+      receipt.state = error instanceof RemoteError && !error.uncertain ? 'failed' : 'uncertain'; receiptVersion.value++
+      if (receipt.state === 'failed') { drafts.set(key,payload); if (key === sessionKey()) await hydrateSavedDraft() }
+    }
+    if (key === sessionKey()) showError(error)
+  }
+  finally { if (e === epoch && s === selection) { busy.value = false; scheduleReconcile() } }
+}
+async function queryReceipt(): Promise<void> {
+  const receipt = sendReceipt.value, key = sessionKey(), e = epoch
+  if (!receipt || !ready.value || receipt.state === 'accepted' || receipt.state === 'failed' || queryingReceipt.value || !receiptsSupported.value) return
+  queryingReceipt.value = true
+  try {
+    const result = await connection.request('lanpower/submission/read',{threadId:threadId.value,submissionId:receipt.submissionId})
+    if (e !== epoch || key !== sessionKey()) return
+    receipt.state = result.state === 'accepted' ? 'accepted' : result.state === 'failed' ? 'failed' : 'uncertain'; receipt.turnId = result.turnId; receiptVersion.value++
+    if (receipt.state === 'accepted') { drafts.delete(key); queueEdits.delete(key); editingQueue.value = ''; feedback.value = '已查证：原窗口已接受，请勿重复发送。' }
+    if (receipt.state === 'failed') { drafts.set(key,receipt.payload); await hydrateSavedDraft(); feedback.value = '原窗口明确拒绝了提交，草稿已恢复，可以修改后重试。' }
+    if (receipt.state === 'uncertain') feedback.value = '电脑端尚不能确认提交结果，请查阅原窗口；确认未执行后才能恢复输入。'
+  } catch (error) { if (key === sessionKey()) showError(error) }
+  finally { queryingReceipt.value = false }
+}
+async function confirmNotAccepted(): Promise<void> {
+  const receipt = sendReceipt.value
+  if (!receipt || receipt.state !== 'uncertain' || !confirm('请先检查原窗口的消息、任务与队列。确认这条消息未执行，才恢复草稿；再次发送会生成新提交。已确认未执行吗？')) return
+  receipt.state = 'failed'; receiptVersion.value++; drafts.set(sessionKey(),receipt.payload); await hydrateSavedDraft()
 }
 async function interrupt(): Promise<void> {
   if (!activeTurn.value || interrupting.value || !canControl.value) return
+  const id = threadId.value, turnId = activeTurn.value, e = epoch, s = selection
+  if (unsupportedMethods.value.includes('turn/interrupt')) { feedback.value = '原窗口版本暂不支持停止任务，请在电脑处理。'; return }
   interrupting.value = true
-  try { await connection.request('turn/interrupt', { threadId: threadId.value, turnId: activeTurn.value }); await refreshCurrent() } catch (error) { showError(error) } finally { interrupting.value = false }
+  try { await connection.request('turn/interrupt', { threadId:id,turnId }); if (e === epoch && s === selection) await refreshCurrent() } catch (error) { if (e === epoch && s === selection) { showError(error); scheduleReconcile() } } finally { if (e === epoch && s === selection) interrupting.value = false }
 }
 function editQueue(id: string): void {
   const row = queueRows.value.find(q => q.id === id)
   if (!row || busy.value || !canControl.value) return
   if (composer.value?.hasUnsavedDraft() && !confirm('用排队消息替换当前未发送的草稿？')) return
-  editingQueue.value = id; composer.value?.hydrateDraft({ text: row.text, imageUrls: row.imageUrls, skills: [], fileAttachments: [] })
+  editingQueue.value = id; queueEdits.set(sessionKey(),id); composer.value?.hydrateDraft({ text: row.text, imageUrls: row.imageUrls, skills: [], fileAttachments: [] })
 }
-function cancelQueueEdit(): void { editingQueue.value = ''; composer.value?.hydrateDraft({ text: '', imageUrls: [], skills: [], fileAttachments: [] }) }
+function cancelQueueEdit(): void { editingQueue.value = ''; queueEdits.delete(sessionKey()); drafts.delete(sessionKey()); composer.value?.hydrateDraft({ text: '', imageUrls: [], skills: [], fileAttachments: [] }) }
 async function queueAction(method: string, params: any): Promise<void> {
   if (busy.value || !canControl.value) return
-  const e = epoch, s = selection; busy.value = true
-  try { await connection.request(method, { threadId: threadId.value, ...params }); await refreshQueue(threadId.value, e, s) } catch (error) { if (e === epoch) showError(error) } finally { if (e === epoch) busy.value = false }
+  const e = epoch, s = selection, id = threadId.value; busy.value = true
+  try { await connection.request(method, { threadId:id, ...params }); await refreshQueue(id, e, s) } catch (error) { if (e === epoch && s === selection) { showError(error); scheduleReconcile() } } finally { if (e === epoch && s === selection) busy.value = false }
 }
 async function deleteQueue(id: string): Promise<void> { await queueAction('thread/queue/delete', { queuedSubmissionId: id }); if (editingQueue.value === id && !queue.value.some(q => q.id === id)) cancelQueueEdit() }
 async function startQueue(id: string): Promise<void> { await queueAction('thread/queue/start', { queuedSubmissionId: id }) }
@@ -291,14 +388,20 @@ async function reorderQueue({ draggedId, targetId }: { draggedId: string; target
   ids.splice(from, 1); ids.splice(to, 0, draggedId)
   await queueAction('thread/queue/reorder', { queuedSubmissionIds: ids })
 }
-function respondApproval(reply: { id: number; result?: unknown; error?: unknown; followUpMessageText?: string }): void {
+async function respondApproval(reply: { id: number; result?: unknown; error?: unknown; followUpMessageText?: string }): Promise<void> {
   const remoteId = remoteApprovalIds.get(reply.id)
-  if (remoteId === undefined || !ready.value || respondingApproval.value) return
+  const request = selectedApprovals.value.find(r => r.id === reply.id), e = epoch, s = selection
+  if (respondingApproval.value) return
+  if (remoteId === undefined || !canControl.value || !request || request.turnId && request.turnId !== activeTurn.value) { feedback.value = '审批或任务已变化，请恢复会话后重新处理。'; scheduleReconcile(); return }
+  respondingApproval.value = true
   try {
     if (reply.error) throw new Error('请在原窗口取消此请求。')
-    connection.decide(remoteId, reply.result); respondingApproval.value = true
-    if (reply.followUpMessageText) void queueAction('thread/queue/add', { clientUserMessageId: crypto.randomUUID(), input: [{ type: 'text', text: reply.followUpMessageText }] })
-  } catch (error) { respondingApproval.value = false; showError(error) }
+    await connection.decide(remoteId, reply.result)
+    if (e !== epoch || s !== selection) return
+    if (reply.followUpMessageText) await submit({text:reply.followUpMessageText,imageUrls:[],skills:[],fileAttachments:[],mode:'queue'})
+    await refreshCurrent()
+  } catch (error) { if (e === epoch && s === selection) { showError(error); scheduleReconcile() } }
+  finally { if (e === epoch && s === selection) respondingApproval.value = false }
 }
 async function renameThread(): Promise<void> {
   if (!canControl.value) return; renameDraft.value = currentTitle.value; renameDialog.value = true
@@ -329,24 +432,47 @@ async function archiveThread(): Promise<void> {
   try { await connection.request('thread/archive', { threadId: threadId.value }); threads.value = threads.value.filter(t => t.id !== threadId.value); threadId.value = ''; current.value = null; chatOpen.value = false; syncUrl(); await loadThreads() } catch (error) { showError(error) }
 }
 async function exportChat(): Promise<void> {
-  if (!await loadAllHistory()) return
-  const url = URL.createObjectURL(new Blob([JSON.stringify(current.value,null,2)], { type: 'application/json;charset=utf-8' }))
-  const link = document.createElement('a'); link.href = url; link.download = 'codex-conversation.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+  if (!ready.value || !current.value || loadingAllHistory.value) return
+  const key = sessionKey(); exportJob ||= newExport(current.value)
+  historyAbort = new AbortController(); const controller = historyAbort; loadingAllHistory.value = true; historyResume.value = 'export'
+  try { const blob = await exportHistory(connection,threadId.value,exportJob,controller.signal,count => { historyProgress.value = `正在导出完整对话，已处理 ${count} 轮…` }); if (key === sessionKey()) { downloadBlob(blob,'codex-conversation.json'); historyProgress.value = `完整对话已导出，共 ${exportJob.turns.length} 轮。`; historyResume.value = ''; exportJob = null } }
+  catch (error) { if (key === sessionKey()) historyError(error) }
+  finally { if (key === sessionKey()) loadingAllHistory.value = false }
+}
+function downloadBlob(blob: Blob, filename: string): void { const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url),1000) }
+function cancelHistory(): void { historyAbort?.abort() }
+function historyError(error: unknown): void { historyProgress.value = error instanceof DOMException && error.name === 'AbortError' ? '读取已取消，可继续。' : `读取中断，可继续：${error instanceof Error ? error.message : '连接未完成'}` }
+function resumeHistory(): void { if (historyResume.value === 'export') void exportChat(); else if (historyResume.value === 'beginning') void jumpToBeginning(); else if (largeJob) void downloadLarge(largeJob.item) }
+async function downloadLarge(item:any): Promise<void> {
+  if (!ready.value || loadingAllHistory.value) return
+  const key = sessionKey(); if (largeJob?.item.reference !== item.reference) largeJob = {item,job:newDownload()}
+  historyAbort = new AbortController(); loadingAllHistory.value = true; historyResume.value = 'item'
+  try { const blob = await downloadItem(connection,threadId.value,item.reference,largeJob!.job,historyAbort.signal,count => { historyProgress.value = `正在读取超大内容，${Math.floor(count / item.characters * 100)}%…` }); if (key === sessionKey()) { downloadBlob(blob,'codex-content.json'); historyProgress.value = '超大内容已完整下载。'; historyResume.value = ''; largeJob = null } }
+  catch (error) { if (key === sessionKey()) historyError(error) }
+  finally { if (key === sessionKey()) loadingAllHistory.value = false }
 }
 function onEvent(event: RpcEvent): void {
   const p = event.params || {}, id = p.threadId || p.thread?.id
+  if (id && !clock.event(id,p.lanpowerRevision)) return
   if (event.id !== undefined) { addApproval(event); return }
   if (event.method === 'serverRequest/resolved') {
     const key = JSON.stringify(p.requestId), localId = approvalKeys.get(key)
     if (localId) { approvals.value = approvals.value.filter(a => a.id !== localId); approvalKeys.delete(key); remoteApprovalIds.delete(localId); respondingApproval.value = false }
     return
   }
-  if (event.method === 'lanpower/error' || event.method === 'lanpower/approvalError') { respondingApproval.value = false; feedback.value = '操作未完成，请刷新会话确认状态。'; return }
-  if (event.method === 'turn/started') { rememberTiming(id,p.turn,true); activeTurns.value = { ...activeTurns.value, [id]: p.turn?.id } }
-  if (event.method === 'turn/completed') { rememberTiming(id,p.turn,false); const next = { ...activeTurns.value }; delete next[id]; activeTurns.value = next }
+  if (event.method === 'lanpower/error' || event.method === 'lanpower/approvalError') { respondingApproval.value = false; feedback.value = p.message || '操作未完成，请刷新会话确认状态。'; scheduleReconcile(); return }
+  const oldTurn = event.method === 'turn/completed' && activeTurns.value[id] !== p.turn?.id
+  if (event.method === 'turn/started' && id && p.turn?.id) { rememberTiming(id,p.turn,true); activeTurns.value = { ...activeTurns.value, [id]: p.turn.id } }
+  if (event.method === 'turn/completed') { rememberTiming(id,p.turn,false); if (!oldTurn) { const next = { ...activeTurns.value }; delete next[id]; activeTurns.value = next } }
   if (event.method === 'thread/name/updated') { threads.value = threads.value.map(t => t.id === id ? { ...t, name: p.threadName || p.name } : t); if (current.value?.id === id) current.value = { ...current.value, name: p.threadName || p.name } }
   if (event.method === 'thread/started') { void loadThreads(); return }
   if (event.method === 'thread/status/changed') threads.value = threads.value.map(t => t.id === id ? {...t,status:p.status} : t)
+  if (id && event.method === 'thread/settings/updated') {
+    const key = sessionKey(id), settings = settingsByThread.get(key) || newSettings(); settingsByThread.set(key,settings)
+    observeSettings(settings,p.settings || p,models.value[0] || '')
+    if (id === threadId.value) displaySettings()
+  }
+  if (id && ['lanpower/historyChanged','lanpower/conversation/changed','lanpower/stream/changed','thread/status/changed'].includes(event.method) && id !== threadId.value) scheduleReconcile()
   if (id !== threadId.value || !current.value) return
   if (['lanpower/historyChanged','lanpower/conversation/changed','lanpower/stream/changed','thread/status/changed','thread/settings/updated'].includes(event.method)) { scheduleReconcile(); return }
   if (event.method === 'thread/queue/changed') { void refreshQueue().catch(showError); return }
@@ -354,7 +480,7 @@ function onEvent(event: RpcEvent): void {
   if (event.method === 'turn/started' || event.method === 'turn/completed') {
     let turn = turns.find((t: any) => t.id === p.turn?.id)
     if (!turn) { turn = { ...p.turn, items: p.turn?.items || [] }; turns.push(turn) } else Object.assign(turn, p.turn, { items: p.turn?.items?.length ? p.turn.items : turn.items })
-    overlay.value = { activityLabel: event.method === 'turn/started' ? 'Thinking' : '', activityDetails: [], reasoningText: '', errorText: p.turn?.error?.message || '' }
+    if (!oldTurn) overlay.value = { activityLabel: event.method === 'turn/started' ? 'Thinking' : '', activityDetails: [], reasoningText: '', errorText: p.turn?.error?.message || '' }
   } else if (event.method === 'item/started' || event.method === 'item/completed' || event.method.endsWith('/delta') || event.method.endsWith('/outputDelta') || event.method === 'item/reasoning/summaryTextDelta') {
     let turn = turns.find((t: any) => t.id === p.turnId)
     if (!turn) { turn = { id: p.turnId, status: 'inProgress', items: [] }; turns.push(turn) }
@@ -372,9 +498,9 @@ function onEvent(event: RpcEvent): void {
       item.summary ||= []; item.summary[index] = `${item.summary[index] || ''}${p.delta || ''}`
     }
     const phase = event.method === 'item/completed' ? 'Thinking' : item?.type === 'agentMessage' ? 'Writing response' : item?.type === 'commandExecution' ? 'Running command' : 'Thinking'
-    overlay.value = {...overlay.value,activityLabel:phase}
-  } else if (event.method === 'turn/plan/updated') overlay.value = { ...overlay.value, activityDetails: (p.plan || []).map((step: any) => `${step.status === 'completed' ? '✓' : '○'} ${step.step}`) }
-  else if (event.method === 'error') overlay.value = { ...overlay.value, errorText: p.error?.message || '任务出错，请查看原窗口。' }
+    if (!p.turnId || p.turnId === activeTurn.value) overlay.value = {...overlay.value,activityLabel:phase}
+  } else if (event.method === 'turn/plan/updated' && (!p.turnId || p.turnId === activeTurn.value)) overlay.value = { ...overlay.value, activityDetails: (p.plan || []).map((step: any) => `${step.status === 'completed' ? '✓' : '○'} ${step.step}`) }
+  else if (event.method === 'error' && (!p.turnId || p.turnId === activeTurn.value)) overlay.value = { ...overlay.value, errorText: p.error?.message || '任务出错，请查看原窗口。' }
   // Many token notifications share one render, keeping long conversations responsive.
   if (!streamFrame) streamFrame = requestAnimationFrame(() => { streamFrame = 0; if (current.value) current.value = { ...current.value, turns: [...current.value.turns] } })
   if (event.method === 'turn/completed') scheduleReconcile()
@@ -382,10 +508,18 @@ function onEvent(event: RpcEvent): void {
 function scheduleReconcile(): void {
   clearTimeout(reconcileTimer)
   reconcileTimer = setTimeout(() => {
-    if (!ready.value || !threadId.value) return
+    if (!ready.value) return
     if (busy.value || syncing || loadingChat.value || loadingEarlier.value || loadingAllHistory.value) { scheduleReconcile(); return }
-    void refreshCurrent()
+    void refreshCurrent(); void refreshStatus()
   }, 500)
+}
+let refreshingStatus = false
+async function refreshStatus(): Promise<void> {
+  if (!ready.value || refreshingStatus) return
+  const e = epoch, stamp = clock.capture(); refreshingStatus = true
+  try { const status = await connection.request('lanpower/status'); if (e === epoch) applyStatus(status,stamp) }
+  catch (error) { if (e === epoch) showError(error) }
+  finally { refreshingStatus = false }
 }
 function saveLibrary(preferences: LibraryPreferences): void {
   libraryDraft = preferences; libraryState.value = {...libraryState.value,preferences}
@@ -416,10 +550,11 @@ async function wake(): Promise<void> {
   try { const response = await fetch(`/api/v2/devices/${encodeURIComponent(deviceId.value)}/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': config.csrf }, body: '{"action":"wake"}' }); if (!response.ok) throw new Error('唤醒请求未被接收，请检查网关。'); feedback.value = '唤醒请求已发送，电脑上线并登录后会自动连接。' } catch (error) { showError(error) } finally { waking.value = false }
 }
 function changeDevice(id: string): void {
-  if (composer.value?.hasUnsavedDraft() && !confirm('切换电脑将清空当前未发送的草稿，继续吗？')) return
+  saveDraft(); resetHistory(); clock.clear()
   epoch++; selection++; deviceId.value = id; threadId.value = ''; current.value = null; threads.value = []; projects.value = []; models.value = []; queue.value = []; resetApprovals(); activeTurns.value = {}; editingQueue.value = ''; listCursor.value = ''; historyCursor.value = ''; powerText.value = ''; wakeAvailable.value = false; feedback.value = ''; chatOpen.value = false
   loadingChat.value = false; loadingLibrary.value = false; loadingEarlier.value = false; loadingAllHistory.value = false; busy.value = false; skills.value = []; filesCwd.value = ''; chatSupported.value = false; view.value = 'chat'; archivedView.value = false; newThreadDialog.value = false; renameDialog.value = false
   libraryDraft = null; libraryState.value = {revision:0,preferences:defaultLibraryPreferences()}; filePath.value = ''; clearTimeout(libraryTimer); clearTimeout(reconcileTimer); resetRemoteImages()
+  selectedModel.value = ''; selectedEffort.value = ''; selectedMode.value = 'default'; nativeModels.value = []; lastSync.value = 0; syncFailed.value = false; queryingReceipt.value = false; receiptVersion.value++; interrupting.value = false
   connection.connect(id); if (!id) state.value = 'idle'; else void updatePower()
 }
 function reconnect(): void { connection.connect(deviceId.value) }
@@ -436,8 +571,25 @@ async function createFromDialog(): Promise<void> { await newThread(projectCwd.va
 async function newChat(): Promise<void> { if (!ready.value || busy.value || !chatSupported.value) return; busy.value = true; try { const result = await connection.request('lanpower/chat/start',selectedModel.value ? {model:selectedModel.value} : {}); busy.value = false; view.value = 'chat'; await loadThreads(); await selectThread(result.thread.id) } catch(error) { showError(error) } finally { busy.value = false } }
 async function toggleArchived(): Promise<void> { if (loadingLibrary.value) return; archivedView.value = !archivedView.value; listCursor.value = ''; threads.value = []; await loadThreads() }
 async function sidebarThreadAction(action: string, id: string): Promise<void> { if (id !== threadId.value) await openThread(id); if (threadId.value !== id || loadingChat.value) return; if (action === 'rename') await renameThread(); else if (action === 'fork') await forkThread(); else if (action === 'export') await exportChat(); else if (action === 'archive') await archiveThread(); else if (action === 'unarchive') { try { await connection.request('thread/unarchive',{threadId:id}); await toggleArchived() } catch(error) { showError(error) } } }
-async function loadAllHistory(): Promise<boolean> { if (!threadId.value || !ready.value || loadingAllHistory.value || loadingEarlier.value) return false; const e = epoch, s = selection; loadingAllHistory.value = true; try { while (historyCursor.value && e === epoch && s === selection) { const cursor = historyCursor.value; await loadEarlier(threadId.value); if (historyCursor.value === cursor) return false }; return e === epoch && s === selection } finally { if (e === epoch && s === selection) loadingAllHistory.value = false } }
-async function jumpToBeginning(): Promise<void> { if (await loadAllHistory()) await conversation.value?.jumpToStart() }
+async function jumpToBeginning(): Promise<void> {
+  if (!ready.value || !threadId.value || loadingAllHistory.value || loadingEarlier.value) return
+  const key = sessionKey(); beginningJob ||= newBeginning(); historyAbort = new AbortController(); loadingAllHistory.value = true; historyResume.value = 'beginning'
+  try {
+    const page = await findBeginning(connection,threadId.value,beginningJob,historyAbort.signal,count => { historyProgress.value = `正在定位对话开头，已检查 ${count} 轮…` })
+    if (key !== sessionKey()) return
+    beginningIndex.value = beginningJob.pages.length - 1; historyCursor.value = ''; current.value = {...current.value,turns:(page.data || []).slice().reverse()}
+    historyProgress.value = `已定位对话开头，共 ${beginningJob.count} 轮。`; historyResume.value = ''; await nextTick(); await conversation.value?.jumpToStart()
+  } catch (error) { if (key === sessionKey()) historyError(error) }
+  finally { if (key === sessionKey()) loadingAllHistory.value = false }
+}
+async function loadLater(): Promise<void> {
+  if (!beginningJob || beginningIndex.value <= 0 || loadingEarlier.value || !ready.value) return
+  const key = sessionKey(), index = beginningIndex.value - 1; loadingEarlier.value = true
+  try { const page = await readPage(connection,threadId.value,beginningJob.pages[index]); if (key === sessionKey()) { current.value = {...current.value,turns:(page.data || []).slice().reverse()}; beginningIndex.value = index; await nextTick(); await conversation.value?.jumpToStart() } }
+  catch (error) { if (key === sessionKey()) showError(error) }
+  finally { if (key === sessionKey()) loadingEarlier.value = false }
+}
+async function returnLatest(): Promise<void> { resetHistory(); await refreshCurrent(); conversation.value?.jumpToLatest() }
 async function loadSkills(cwd: string, e = epoch, s = selection): Promise<void> { skills.value = []; if (!sharedControl.value || !cwd) return; try { const result = await connection.request('skills/list',{cwd}); if (e === epoch && s === selection) skills.value = [...new Map((result.data || []).flatMap((entry:any) => entry.skills || []).filter((skill:any) => skill.enabled !== false).map((skill:any) => [skill.path,skill])).values()] as any[] } catch {} }
 function openFiles(cwd: string, path = ''): void { filePath.value = path; filesCwd.value = cwd }
 async function attachProjectFile(path: string): Promise<void> { if (!threadId.value || !canControl.value) { feedback.value = '请先打开此项目的聊天，再添加文件。'; return }; view.value = 'chat'; chatOpen.value = true; await nextTick(); composer.value?.addProjectFile(path); filesCwd.value = '' }
@@ -447,7 +599,9 @@ onMounted(() => {
   connection.onEvent = onEvent; connection.onState = onState
   const route = location.hash.match(/^#\/device\/([^/]+)(?:\/thread\/([^/]+))?$/)
   if (devices.length) { const target = devices.find(d => d.id === decodeURIComponent(route?.[1] || '')); changeDevice(target?.id || devices[0]!.id); if (target && route?.[2]) { threadId.value = decodeURIComponent(route[2]); chatOpen.value = true } }
-  polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent(); void loadThreads() } }, 30000)
+  document.addEventListener('visibilitychange',restoreVisible)
+  polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent(); void refreshStatus(); void loadThreads(); void queryReceipt() } }, 30000)
 })
-onBeforeUnmount(() => { clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
+function restoreVisible(): void { if (document.visibilityState !== 'visible') return; if (ready.value) { void refreshCurrent(); void refreshStatus(); void queryReceipt() } else if (deviceId.value && state.value !== 'controller_busy' && state.value !== 'revoked') reconnect() }
+onBeforeUnmount(() => { document.removeEventListener('visibilitychange',restoreVisible); historyAbort?.abort(); drafts.clear(); queueEdits.clear(); settingsByThread.clear(); receipts.clear(); clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
 </script>

@@ -24,6 +24,7 @@ FIELDS = {
     "lanpower/files/list": {"cwd", "path", "cursor"}, "lanpower/files/read": {"cwd", "path"},
     "lanpower/files/search": {"cwd", "query"},
     "lanpower/library/update": {"revision", "preferences"}, "lanpower/image/read": {"threadId", "path"},
+    "lanpower/submission/read": {"threadId", "submissionId"}, "lanpower/history/item/read": {"threadId", "reference", "offset"},
     "plugin/list": {"cwd"}, "app/list": {"cursor", "limit", "threadId"}, "mcpServerStatus/list": {"cursor", "limit"},
     "config/mcpServer/reload": set(), "account/rateLimits/read": set(), "collaborationMode/list": set(),
     "lanpower/session/release": {"threadId"},
@@ -31,22 +32,22 @@ FIELDS = {
     "thread/list": {"cursor", "limit", "cwd", "archived"},
     "thread/start": {"cwd", "model"},
     "thread/resume": {"threadId"},
-    "thread/read": {"threadId", "includeTurns"},
+    "thread/read": {"threadId", "includeTurns", "historyLimit"},
     "thread/turns/list": {"threadId", "cursor", "limit"},
     "thread/fork": {"threadId"},
     "thread/rollback": {"threadId", "numTurns"},
     "thread/name/set": {"threadId", "name"},
     "thread/archive": {"threadId"},
     "thread/unarchive": {"threadId"},
-    "thread/queue/add": {"threadId", "input", "clientUserMessageId"},
+    "thread/queue/add": {"threadId", "input", "clientUserMessageId", "submissionId"},
     "thread/queue/list": {"threadId", "cursor", "limit"},
-    "thread/queue/update": {"threadId", "queuedSubmissionId", "input"},
+    "thread/queue/update": {"threadId", "queuedSubmissionId", "input", "submissionId"},
     "thread/queue/delete": {"threadId", "queuedSubmissionId"},
     "thread/queue/start": {"threadId", "queuedSubmissionId"},
     "thread/queue/reorder": {"threadId", "queuedSubmissionIds"},
-    "turn/start": {"threadId", "input", "model", "effort", "mode"},
+    "turn/start": {"threadId", "input", "model", "effort", "mode", "submissionId"},
     "turn/interrupt": {"threadId", "turnId"},
-    "turn/steer": {"threadId", "expectedTurnId", "input"},
+    "turn/steer": {"threadId", "expectedTurnId", "input", "submissionId"},
 }
 APPROVALS = {
     "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -114,6 +115,10 @@ def validate_request(payload: dict) -> str:
     if "threadId" in params and (not isinstance(params["threadId"],str) or not 1 <= len(params["threadId"]) <= 100): raise ProtocolError()
     if "limit" in params and (type(params["limit"]) is not int or not 1 <= params["limit"] <= 50):
         raise ProtocolError()
+    if "historyLimit" in params and (type(params["historyLimit"]) is not int or not 1 <= params["historyLimit"] <= 8): raise ProtocolError()
+    if "submissionId" in params and (not isinstance(params["submissionId"], str) or not 1 <= len(params["submissionId"]) <= 100): raise ProtocolError()
+    if method == "lanpower/submission/read" and not {"threadId", "submissionId"} <= params.keys(): raise ProtocolError()
+    if method == "lanpower/history/item/read" and (not isinstance(params.get("threadId"), str) or not isinstance(params.get("reference"), str) or not 1 <= len(params["reference"]) <= 100 or type(params.get("offset")) is not int or not 0 <= params["offset"] <= 64 * 1024 * 1024): raise ProtocolError()
     if method == "thread/rollback" and (type(params.get("numTurns")) is not int or not 1 <= params["numTurns"] <= 100000):
         raise ProtocolError()
     if method.startswith("lanpower/files/"):
@@ -139,7 +144,7 @@ def validate_request(payload: dict) -> str:
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
     if method == "turn/steer" and "expectedTurnId" not in params: raise ProtocolError()
     for key, required in (("clientUserMessageId", method == "thread/queue/add"),
-                          ("queuedSubmissionId", method in {"thread/queue/update", "thread/queue/delete"})):
+                          ("queuedSubmissionId", method in {"thread/queue/update", "thread/queue/delete", "thread/queue/start"})):
         if required or key in params:
             if not isinstance(params.get(key), str) or not 1 <= len(params[key]) <= 100: raise ProtocolError()
     if method == "thread/queue/reorder":

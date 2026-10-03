@@ -20,7 +20,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
       case 'collaborationMode/list': return {data:[{mode:'default'},{mode:'plan'}]};
       case 'thread/list': return {data:['native-long','other','independent'].map(metadata),nextCursor:null};
       case 'thread/read': return {thread:{...metadata(p.threadId),turns:turns.slice(-8),historyCursor:'8'}};
-      case 'thread/turns/list': {const offset=Number(p.cursor), data=turns.slice(Math.max(0,180-offset-8),180-offset).reverse();return {data,nextCursor:offset+8<180?String(offset+8):null};}
+      case 'thread/turns/list': {const offset=Number(p.cursor || 0), limit=p.limit || 8, data=turns.slice(Math.max(0,180-offset-limit),180-offset).reverse();return {data,nextCursor:offset+limit<180?String(offset+limit):null};}
       case 'thread/queue/list': return {data:[]};
       case 'lanpower/library/update': if(p.revision!==library.revision)return {...library,conflict:true}; library={revision:library.revision+1,preferences:p.preferences};return library;
       case 'lanpower/image/read': return {contentType:'image/png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=',size:68};
@@ -75,7 +75,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.getByRole('tab',{name:'MCP',exact:true}).click();await page.getByRole('heading',{name:'native-mcp'}).waitFor();
     await page.getByRole('tab',{name:'技能',exact:true}).click();await page.getByRole('button',{name:'添加到聊天',exact:true}).click();
     await page.locator('.thread-composer-input').fill('调用原窗口技能');await page.locator('.thread-composer-input').press('Enter');
-    await page.waitForFunction(()=>document.querySelector('.lp-chat-status span')?.textContent==='正在工作');
+    await page.waitForFunction(()=>document.querySelector('.lp-chat-status')?.textContent.includes('正在工作'));
     const sent=calls.find(c=>c.method==='turn/start');assert.ok(sent.params.input.some(i=>i.type==='skill'&&i.path==='D:/Skills/native/SKILL.md'));
     assert.equal(sent.params.model,'gpt-6.1-sol');assert.equal(sent.params.mode,'plan');
     await page.screenshot({path:path.join(output,'system-1440.png'),fullPage:true,animations:'disabled'});

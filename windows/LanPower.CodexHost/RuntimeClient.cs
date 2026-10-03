@@ -18,12 +18,15 @@ public sealed class RuntimeClient : IAsyncDisposable
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonObject>> _calls = new();
     private readonly ConcurrentDictionary<string, (JsonObject Request, DateTimeOffset Time, JsonNode NativeId)> _approvals = new();
     private readonly ConcurrentDictionary<string, JsonObject> _resolvedApprovals = new();
+    private readonly object _approvalSync = new();
     private readonly Dictionary<string, Dictionary<string, string>> _fileDiffs = new();
     private readonly HashSet<string> _aggregatedDiffs = new();
     private readonly Task _reader;
     private readonly Task _stderr;
     // History is paginated and large results are fragmented before crossing the relay.
-    private const int LocalFrameLimit = CodexRemoteFrames.MaxResultBytes;
+    private const int LocalFrameLimit = RemoteHistoryStore.MaxLocalBytes;
+    private long _stateRevision;
+    public long StateRevision => Interlocked.Read(ref _stateRevision);
     public event Action<JsonObject>? Message;
     public string? ActiveThread { get; private set; }
     public string? ActiveTurn { get; private set; }
@@ -119,7 +122,7 @@ public sealed class RuntimeClient : IAsyncDisposable
         _calls[id] = completion;
         try
         {
-            await SendAsync(new JsonObject { ["id"] = id, ["method"] = method, ["params"] = parameters.DeepClone() }, token);
+            await SendAsync(new JsonObject { ["id"] = id, ["method"] = Desktop && method == "thread/turns/list" ? "codex-web/local/history/page" : method, ["params"] = parameters.DeepClone() }, token);
             var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(30), token);
             return result;
         }
@@ -150,16 +153,20 @@ public sealed class RuntimeClient : IAsyncDisposable
                     // Independent session workers may receive the same native numeric request ID.
                     // Give Relay a unique ID and restore the native ID only on this connection.
                     var nativeId = message["id"]!.DeepClone();
-                    message["id"] = "lp-approval-" + Guid.NewGuid().ToString("N");
-                    _approvals[CodexRemoteProtocol.Id(message)] = (message, DateTimeOffset.UtcNow, nativeId);
+                    lock (_approvalSync)
+                    {
+                        var existing = _approvals.FirstOrDefault(p => p.Value.NativeId.ToJsonString() == nativeId.ToJsonString());
+                        message["id"] = existing.Key is not null ? existing.Value.Request["id"]!.DeepClone() : JsonValue.Create("lp-approval-" + Guid.NewGuid().ToString("N"));
+                        _approvals[CodexRemoteProtocol.Id(message)] = (message, existing.Key is not null ? existing.Value.Time : DateTimeOffset.UtcNow, nativeId);
+                    }
                 }
                 else if (!Notifications.Contains(method)) continue;
                 var parameters = message["params"] as JsonObject;
+                Interlocked.Increment(ref _stateRevision);
                 if (parameters?["item"] is JsonObject reasoning && reasoning["type"]?.GetValue<string>() == "reasoning")
                 { reasoning.Remove("content"); reasoning.Remove("encryptedContent"); }
                 var diffThread = parameters?["threadId"]?.GetValue<string>();
-                if (method == "lanpower/conversation/changed" && diffThread is not null && parameters?["active"]?.GetValue<bool>() == false)
-                    ActiveTurns.TryRemove(diffThread, out _);
+                // Conversation callbacks have no task identity. The next native read reconciles them.
                 if (method == "turn/started")
                 {
                     ActiveThread = parameters?["threadId"]?.GetValue<string>(); ActiveTurn = parameters?["turn"]?["id"]?.GetValue<string>();
@@ -248,8 +255,9 @@ public sealed class RuntimeClient : IAsyncDisposable
         }
     }
 
-    public void ObserveThread(JsonObject thread)
+    public void ObserveThread(JsonObject thread, long? expectedRevision = null)
     {
+        if (expectedRevision is not null && StateRevision != expectedRevision) return;
         if (thread["id"]?.GetValue<string>() is not { } id) return;
         var active = (thread["turns"] as JsonArray)?.OfType<JsonObject>().LastOrDefault(turn =>
             turn["status"]?.GetValue<string>() == "inProgress")?["id"]?.GetValue<string>();
@@ -259,6 +267,7 @@ public sealed class RuntimeClient : IAsyncDisposable
 
     public async Task DecideAsync(JsonObject response, CancellationToken token)
     {
+        if (Desktop) await RefreshApprovalsAsync(token);
         var key = CodexRemoteProtocol.Id(response);
         if (response.Count != 2 || response["result"] is not JsonObject result ||
             !_approvals.TryGetValue(key, out var pending)) throw new InvalidDataException("approval_unavailable");
@@ -297,6 +306,33 @@ public sealed class RuntimeClient : IAsyncDisposable
         var nativeResponse = (JsonObject)response.DeepClone();
         nativeResponse["id"] = pending.NativeId.DeepClone();
         await SendAsync(nativeResponse, token);
+    }
+
+    public async Task RefreshApprovalsAsync(CancellationToken token)
+    {
+        if (!Desktop) return;
+        var response = await CallAsync("codex-web/local/server-requests/pending", new(), token);
+        if (response["result"] is not JsonArray native) throw new IOException("approval_state_unavailable");
+        var nativeIds = native.OfType<JsonObject>().Select(p => p["id"]!.ToJsonString()).ToHashSet();
+        foreach (var pending in _approvals.Where(p => !nativeIds.Contains(p.Value.NativeId.ToJsonString())))
+        {
+            if (!_approvals.TryRemove(pending.Key, out _)) continue;
+            Message?.Invoke(new() { ["method"] = "serverRequest/resolved", ["params"] = new JsonObject {
+                ["requestId"] = pending.Value.Request["id"]!.DeepClone(), ["threadId"] = pending.Value.Request["params"]?["threadId"]?.DeepClone() } });
+        }
+        foreach (var pending in native.OfType<JsonObject>())
+        {
+            var nativeId = pending["id"]!;
+            JsonObject request;
+            lock (_approvalSync)
+            {
+                if (_approvals.Values.Any(p => p.NativeId.ToJsonString() == nativeId.ToJsonString()) || _resolvedApprovals.ContainsKey(nativeId.ToJsonString())) continue;
+                request = new JsonObject { ["id"] = "lp-approval-" + Guid.NewGuid().ToString("N"),
+                    ["method"] = pending["method"]?.DeepClone(), ["params"] = pending["params"]?.DeepClone() };
+                _approvals[CodexRemoteProtocol.Id(request)] = (request, DateTimeOffset.UtcNow, nativeId.DeepClone());
+            }
+            Message?.Invoke(request);
+        }
     }
 
     public async Task ExpireApprovalsAsync(CancellationToken token)

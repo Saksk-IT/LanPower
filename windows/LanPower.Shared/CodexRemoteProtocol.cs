@@ -18,23 +18,24 @@ public static class CodexRemoteProtocol
         ["lanpower/files/list"] = ["cwd", "path", "cursor"], ["lanpower/files/read"] = ["cwd", "path"],
         ["lanpower/files/search"] = ["cwd", "query"],
         ["lanpower/library/update"] = ["revision", "preferences"], ["lanpower/image/read"] = ["threadId", "path"],
+        ["lanpower/submission/read"] = ["threadId", "submissionId"], ["lanpower/history/item/read"] = ["threadId", "reference", "offset"],
         ["plugin/list"] = ["cwd"], ["app/list"] = ["cursor", "limit", "threadId"], ["mcpServerStatus/list"] = ["cursor", "limit"],
         ["config/mcpServer/reload"] = [], ["account/rateLimits/read"] = [], ["collaborationMode/list"] = [],
         ["thread/list"] = ["cursor", "limit", "cwd", "archived"],
         ["thread/start"] = ["cwd", "model"], ["thread/resume"] = ["threadId"],
-        ["thread/read"] = ["threadId", "includeTurns"], ["thread/name/set"] = ["threadId", "name"],
+        ["thread/read"] = ["threadId", "includeTurns", "historyLimit"], ["thread/name/set"] = ["threadId", "name"],
         ["thread/turns/list"] = ["threadId", "cursor", "limit"],
         ["thread/fork"] = ["threadId"], ["thread/rollback"] = ["threadId", "numTurns"],
         ["thread/archive"] = ["threadId"], ["thread/unarchive"] = ["threadId"],
-        ["thread/queue/add"] = ["threadId", "input", "clientUserMessageId"],
+        ["thread/queue/add"] = ["threadId", "input", "clientUserMessageId", "submissionId"],
         ["thread/queue/list"] = ["threadId", "cursor", "limit"],
-        ["thread/queue/update"] = ["threadId", "queuedSubmissionId", "input"],
+        ["thread/queue/update"] = ["threadId", "queuedSubmissionId", "input", "submissionId"],
         ["thread/queue/delete"] = ["threadId", "queuedSubmissionId"],
         ["thread/queue/start"] = ["threadId", "queuedSubmissionId"],
         ["thread/queue/reorder"] = ["threadId", "queuedSubmissionIds"],
-        ["turn/start"] = ["threadId", "input", "model", "effort", "mode"],
+        ["turn/start"] = ["threadId", "input", "model", "effort", "mode", "submissionId"],
         ["turn/interrupt"] = ["threadId", "turnId"],
-        ["turn/steer"] = ["threadId", "expectedTurnId", "input"]
+        ["turn/steer"] = ["threadId", "expectedTurnId", "input", "submissionId"]
     };
     public static readonly HashSet<string> ApprovalMethods = ["item/commandExecution/requestApproval",
         "item/fileChange/requestApproval", "item/permissions/requestApproval", "item/tool/requestUserInput",
@@ -98,9 +99,17 @@ public static class CodexRemoteProtocol
             CodexLibraryPreferences.Validate(args["preferences"]);
         }
         if (method == "lanpower/image/read") { ValidateString(args, "threadId", 100, true); ValidateString(args, "path", 1000, true); }
+        if (method is "lanpower/submission/read" or "lanpower/history/item/read") ValidateString(args, "threadId", 100, true);
+        ValidateString(args, "submissionId", 100, method == "lanpower/submission/read");
+        if (method == "lanpower/history/item/read")
+        {
+            ValidateString(args, "reference", 100, true);
+            if (args["offset"] is not JsonValue offset || !offset.TryGetValue<int>(out var position) || position < 0 || position > 64 * 1024 * 1024) throw new InvalidDataException("invalid_params");
+        }
+        if (args.ContainsKey("historyLimit") && (args["historyLimit"] is not JsonValue historyLimit || !historyLimit.TryGetValue<int>(out var historyCount) || historyCount is < 1 or > 8)) throw new InvalidDataException("invalid_params");
         if (method.StartsWith("lanpower/files/")) { ValidateString(args,"cwd",1000,true); if (method == "lanpower/files/read") ValidateString(args,"path",1000,true); if (method == "lanpower/files/search") ValidateString(args,"query",256,true); }
         if (args.ContainsKey("mode") && args["mode"]?.GetValue<string>() is not ("default" or "plan")) throw new InvalidDataException("invalid_params");
-        ValidateString(args, "queuedSubmissionId", 100, method is "thread/queue/delete" or "thread/queue/update");
+        ValidateString(args, "queuedSubmissionId", 100, method is "thread/queue/delete" or "thread/queue/update" or "thread/queue/start");
         if (method == "thread/queue/reorder" && (args["queuedSubmissionIds"] is not JsonArray { Count: > 0 and <= 32 } ids ||
             ids.Any(id => id is not JsonValue value || !value.TryGetValue<string>(out var text) || text.Length is < 1 or > 100) ||
             ids.Select(id => id!.GetValue<string>()).Distinct().Count() != ids.Count)) throw new InvalidDataException("invalid_params");

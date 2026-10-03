@@ -61,6 +61,9 @@ while (Console.ReadLine() is { } raw)
         Send(new() { ["id"] = 7, ["method"] = outside ? "item/fileChange/requestApproval" : "item/commandExecution/requestApproval", ["params"] = new JsonObject {
             ["threadId"] = thread, ["turnId"] = turn, ["itemId"] = "command", ["cwd"] = cwd, ["command"] = "fixture-only",
             ["grantRoot"] = outside ? Path.GetTempPath() : null } });
+        if (p["model"]?.GetValue<string>() == "fixture-duplicate-approval")
+            Send(new() { ["id"] = 7, ["method"] = "item/commandExecution/requestApproval", ["params"] = new JsonObject {
+                ["threadId"] = thread, ["turnId"] = turn, ["itemId"] = "command", ["cwd"] = cwd, ["command"] = "fixture-only" } });
     }
     if (method == "turn/interrupt")
     {
