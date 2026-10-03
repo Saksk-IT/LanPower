@@ -1,5 +1,7 @@
 # LanPower
 
+本机 Cloud 已支持局域网 HTTPS 访问，启动脚本会显示同一网段可用的地址并配置限定网段的防火墙规则。其他设备先信任公开开发证书，详见 [局域网访问指南](docs/local-lan-access.md)（部署配置 `1.0.0`）。
+
 微信小程序开发版与正式版独立保存授权和连接配置；开发版可在「连接 → 开发版 Cloud 地址」修改本机测试地址。使用步骤见 [开发版与正式版](docs/mini-program-environments.md)。
 
 当前源码版本：**v1.15.2**。Codex Remote 会话窗口支持两层收起：连续命令和文件操作合并为灰色活动摘要，整轮结束后通过「用时」收起中间回复、思考和工具记录，只保留最终内容；点击可展开完整过程。此前思考动画、小图片缩略图和逐条命令详情继续保留。详细行为与本机验证见 [会话窗口展示说明](docs/codex-conversation-ui.md)。此前完整历史、原窗口状态、项目组织与能力目录见 [系统对齐说明](docs/codex-system-parity.md)。Windows / Cloud / Web 为 `1.15.2`，小程序 `2.1.5`；公开版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。

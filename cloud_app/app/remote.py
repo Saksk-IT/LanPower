@@ -277,7 +277,7 @@ class CodexRelay:
                 valid = mobile_valid
                 if not valid(): raise PermissionError()
             else:
-                if socket.headers.get("origin") != self.platform.settings.public_url: raise PermissionError()
+                if socket.headers.get("origin") not in self.platform.settings.browser_origins: raise PermissionError()
                 def session():
                     with self.platform.sessions() as db: return current_session(socket, db)
                 identity = session()

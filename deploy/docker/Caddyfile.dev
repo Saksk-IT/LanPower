@@ -1,8 +1,9 @@
 {
 	auto_https disable_redirects
+	default_sni {$LANPOWER_DEV_DEFAULT_SNI:localhost}
 }
 
-https://localhost {
+{$LANPOWER_DEV_TLS_SITES:https://localhost} {
 	tls internal
 	reverse_proxy cloud:8765
 }

@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Build, [switch]$WebOnly)
+param([switch]$Build, [switch]$WebOnly, [switch]$LocalOnly, [string]$LanAddress)
 
 $ErrorActionPreference = 'Stop'
 $composeArgs = @('compose', '-p', 'lanpower-dev', '-f', (Join-Path $PSScriptRoot 'compose.dev.yml'))
@@ -24,6 +24,15 @@ function Test-Docker {
 }
 
 if ($env:OS -ne 'Windows_NT') { throw 'Run this script in Windows PowerShell.' }
+if ($LocalOnly -and $LanAddress) { throw 'Use either -LocalOnly or -LanAddress.' }
+. (Join-Path $PSScriptRoot 'dev-network.ps1')
+$network = if (-not $LocalOnly) { Get-DevLanConfiguration -LanAddress $LanAddress }
+New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
+if ($network) {
+    $networkEnvFile = Join-Path $privateDir 'dev-network.env'
+    [IO.File]::WriteAllText($networkEnvFile, "LANPOWER_DEV_LAN_IP=$($network.Address)`n", $utf8)
+    $composeArgs += @('--env-file', $networkEnvFile, '-f', (Join-Path $PSScriptRoot 'compose.dev.lan.yml'))
+}
 Get-Command docker -ErrorAction Stop | Out-Null
 if (-not (Test-Docker info --format '{{.OSType}}')) {
     Invoke-Docker desktop start
@@ -76,7 +85,31 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 Invoke-Docker @composeArgs up -d --no-build --wait --wait-timeout 120
 Invoke-Docker @composeArgs cp caddy:/data/caddy/pki/authorities/local/root.crt $certificateFile
 & (Join-Path $PSScriptRoot 'trust-dev-certificate.ps1') -WebOnly:$WebOnly
+if ($network -and -not (Test-DevLanFirewall -Network $network)) {
+    $firewallScript = Join-Path $PSScriptRoot 'configure-dev-firewall.ps1'
+    $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        & $firewallScript -LanAddress $network.Address
+    } else {
+        Write-Output 'LAN HTTPS needs a scoped firewall rule. Confirm the Windows administrator prompt.'
+        $powershell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        $process = Start-Process -FilePath $powershell -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $firewallScript + '"'), '-LanAddress', $network.Address)
+        if (-not $process.WaitForExit(60000)) { throw 'Firewall configuration is still running. Retry after it finishes.' }
+        if ($process.ExitCode -ne 0) { throw 'LAN firewall configuration failed or was declined.' }
+    }
+    if (-not (Test-DevLanFirewall -Network $network)) { throw 'The scoped LAN firewall rule is missing.' }
+}
 $health = Invoke-RestMethod -Uri 'https://localhost:8443/healthz' -TimeoutSec 15
 if (-not $health.ok) { throw 'The Cloud health check failed.' }
 Write-Output ('LanPower Cloud ' + $health.version + ' is ready: https://localhost:8443')
+if ($network) {
+    $lanUrl = 'https://' + $network.Address + ':8443'
+    $lanHealth = Invoke-RestMethod -Uri ($lanUrl + '/healthz') -TimeoutSec 15
+    if (-not $lanHealth.ok) { throw 'The LAN HTTPS health check failed.' }
+    Write-Output ('LAN HTTPS is ready: ' + $lanUrl + ' (network configuration 1.0.0)')
+    Write-Output ('Other LAN devices must trust the public development CA: ' + $certificateFile)
+} else {
+    Write-Output 'Local-only HTTPS: no physical private IPv4 network selected.'
+}
 Write-Output ('Local login details: ' + $loginFile)

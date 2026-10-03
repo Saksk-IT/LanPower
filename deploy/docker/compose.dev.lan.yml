@@ -1,0 +1,14 @@
+# LAN deployment configuration version: 1.0.0.
+# Use start-dev.ps1 to select a physical private IPv4 address.
+services:
+  cloud:
+    environment:
+      LANPOWER_ADDITIONAL_ORIGINS: https://${LANPOWER_DEV_LAN_IP:?Run start-dev.ps1 to select a LAN address}:8443
+  caddy:
+    environment:
+      LANPOWER_DEV_TLS_SITES: https://localhost https://${LANPOWER_DEV_LAN_IP:?Run start-dev.ps1 to select a LAN address}
+      LANPOWER_DEV_DEFAULT_SNI: ${LANPOWER_DEV_LAN_IP:?Run start-dev.ps1 to select a LAN address}
+    labels:
+      io.lanpower.dev.network-version: "1.0.0"
+    ports:
+      - ${LANPOWER_DEV_LAN_IP:?Run start-dev.ps1 to select a LAN address}:8443:443

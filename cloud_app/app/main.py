@@ -181,7 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def page(request: Request, name: str, session, **context):
         status = context.pop("status", 200)
         base = {"request": request, "page": name, "csrf": request.cookies.get("lp_csrf", ""),
-                "version": VERSION, "public_url": settings.public_url, "action_labels": ACTION_LABELS,
+                "version": VERSION, "public_url": settings.browser_url("https://" + request.url.netloc), "action_labels": ACTION_LABELS,
                 "client_action_labels": CLIENT_ACTION_LABELS}
         base.update(context)
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
@@ -286,7 +286,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 not hmac.compare_digest(digest(cookie), digest(supplied)) or
                 # Referrer-Policy: no-referrer can produce Origin: null on native
                 # form posts. The page token and SameSite cookie still bind them.
-                (origin not in (None, "null", settings.public_url.rstrip("/"))) or
+                (origin not in (None, "null") and origin not in settings.browser_origins) or
                 request.headers.get("sec-fetch-site") == "cross-site"):
             raise HTTPException(403, "请刷新页面后重试")
         return cookie
@@ -676,7 +676,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             code = platform.mobile.create_enrollment(session.owner_id, form.get("name", ""), actions)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
-        pairing = settings.public_url.rstrip("/") + "/#lanpower-client=" + code
+        pairing = settings.browser_url("https://" + request.url.netloc) + "/#lanpower-client=" + code
         svg = BytesIO()
         qrcode.make(pairing, image_factory=SvgPathImage, border=4, box_size=6).save(svg)
         return page(request, "clients", session, clients=platform.mobile.list(session.owner_id),

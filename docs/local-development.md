@@ -1,5 +1,7 @@
 # 本机 Docker 开发环境
 
+默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
+
 应用源码版本为 `1.15.2`，小程序 `2.1.5`，本地部署配置版本为 `1.15.2-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
@@ -14,7 +16,7 @@
 
 打开 https://localhost:8443，使用 `admin` 登录。密码保存在本机 `deploy/docker/private/dev-login.txt`；哈希保存在 `deploy/docker/.env.dev`。文件只允许当前 Windows 用户和 SYSTEM 访问，并被 Git 与 Docker 构建上下文排除。后续启动复用原密码；还可以在“设置”中添加本地 Passkey。
 
-首次使用密码登录已完成开发账户初始化，因此 `/setup` 关闭。正式部署仍按原有 Passkey 初始化流程。请始终使用 `localhost` 地址；替换为 IP 会改变登录来源和 Passkey 域名。
+首次使用密码登录已完成开发账户初始化，因此 `/setup` 关闭。正式部署仍按原有 Passkey 初始化流程。原有 Passkey 请继续使用 `localhost` 地址；同一网段的其他设备使用启动脚本输出的局域网 IP 地址和开发密码登录。
 
 ## 连接本机 Windows 应用
 
@@ -53,7 +55,7 @@ docker compose -p lanpower-dev -f deploy/docker/compose.dev.yml restart cloud
 docker compose -p lanpower-dev -f deploy/docker/compose.dev.yml stop
 ```
 
-Cloud 使用普通用户和只读根文件系统；宿主机只发布回环 `8443`。微信通知密钥和旧 Gateway 配置在此环境中置空。初始设备列表为空，可用于页面、授权和模拟设备接口测试。实际 Windows 应用已有的 Cloud 连接不会自动切换；手机、路由器或其他电脑无法访问本机 `localhost`，跨设备联调需单独配置受信任的 HTTPS 地址。
+Cloud 使用普通用户和只读根文件系统；基础配置只发布回环 `8443`，启动脚本默认叠加局域网配置，增加选定物理网卡地址的 `8443`，Windows 防火墙只允许同一网段访问。微信通知密钥和旧 Gateway 配置在此环境中置空。实际 Windows 应用已有的 Cloud 连接不会自动切换；其他电脑和手机需信任本机开发 CA，再使用局域网 HTTPS 地址。
 
 ## 数据、备份与证书
 

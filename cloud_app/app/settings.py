@@ -16,6 +16,14 @@ class Settings:
     public_url: str
     wx_app_id: str = field(default="", repr=False)
     wx_app_secret: str = field(default="", repr=False)
+    additional_origins: tuple[str, ...] = ()
+
+    @property
+    def browser_origins(self) -> frozenset[str]:
+        return frozenset(value.rstrip("/") for value in (self.public_url, *self.additional_origins))
+
+    def browser_url(self, origin: str) -> str:
+        return origin if origin in self.browser_origins else self.public_url
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -26,7 +34,9 @@ class Settings:
         public_url = os.environ["LANPOWER_PUBLIC_URL"].rstrip("/")
         settings = cls(legacy, database_url, admin_password_hash, public_url,
                        wx_app_id=os.environ.get("WX_APP_ID", ""),
-                       wx_app_secret=os.environ.get("WX_APP_SECRET", ""))
+                       wx_app_secret=os.environ.get("WX_APP_SECRET", ""),
+                       additional_origins=tuple(value.strip().rstrip("/") for value in
+                           os.environ.get("LANPOWER_ADDITIONAL_ORIGINS", "").split(",") if value.strip()))
         settings.validate()
         return settings
 
@@ -38,7 +48,11 @@ class Settings:
         if (self.admin_password_hash is not None and
                 (not self.admin_password_hash.startswith("scrypt$") or len(self.admin_password_hash.split("$")) != 3)):
             raise ValueError("invalid admin password hash")
-        origin = urlsplit(self.public_url)
-        if (origin.scheme != "https" or not origin.hostname or origin.username or origin.password or
-                origin.path not in ("", "/") or origin.query or origin.fragment):
-            raise ValueError("public URL must be an HTTPS origin")
+        for value in (self.public_url, *self.additional_origins):
+            origin = urlsplit(value)
+            if (origin.scheme != "https" or not origin.hostname or origin.username or origin.password or
+                    origin.path not in ("", "/") or origin.query or origin.fragment or
+                    "*" in origin.netloc or any(char.isspace() for char in value)):
+                raise ValueError("public URL and additional origins must be explicit HTTPS origins")
+            # Reject malformed ports before accepting an origin into the allowlist.
+            origin.port
