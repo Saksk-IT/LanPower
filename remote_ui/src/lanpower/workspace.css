@@ -175,8 +175,6 @@
   .lp-files-panel { width: 100vw; }
 }
 @media(prefers-reduced-motion:reduce) { .lp-thread-spinner { animation: none; } }
-.lp-remote-image { min-width: 120px; min-height: 80px; }
-.lp-image-placeholder { display: block; padding: 26px 16px; color: var(--lp-muted); background: var(--lp-surface); font-size: 13px; border: 1px solid var(--lp-border); border-radius: 12px; }
 .lp-library .lp-sidebar-footer { flex-direction: row; }
 .lp-directory-tabs { margin: 20px 0; flex-wrap: wrap; }
 .lp-skill-details ul { max-height: 45dvh; overflow: auto; padding: 0; list-style: none; }

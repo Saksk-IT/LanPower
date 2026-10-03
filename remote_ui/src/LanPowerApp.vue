@@ -9,7 +9,7 @@
     </aside>
     <main v-show="view === 'chat'" class="lp-conversation">
       <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表"><IconTablerLayoutSidebar /></button><button v-if="sidebarCollapsed" class="lp-expand lp-icon-button" @click="sidebarCollapsed = false" aria-label="展开侧栏"><IconTablerLayoutSidebar /></button><div><h1>{{ currentTitle }}</h1></div><button v-if="currentCwd" class="lp-header-pill" @click="openFiles(currentCwd)" aria-label="浏览项目文件"><IconTablerFolder /><span>{{ projectName(currentCwd) }}</span></button><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button :disabled="loadingAllHistory" @click="jumpToBeginning">跳至对话开头</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button><button :disabled="loadingAllHistory" @click="exportChat">导出完整会话</button></div></details></header>
-      <div class="lp-chat-status"><span>{{ activeTurn ? '正在工作' : threadId ? '已同步' : stateLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
+      <div class="lp-chat-status"><span>{{ !ready ? stateLabel : activeTurn ? '正在工作' : threadId ? '已同步' : stateLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
       <p v-if="feedback" class="lp-feedback" role="status">{{ feedback }}<button @click="feedback = ''" aria-label="关闭提示">×</button></p>
       <template v-if="threadId">
         <p v-if="loadingAllHistory" class="lp-history-progress" role="status">正在读取完整对话，已读取 {{ current?.turns?.length || 0 }} 轮…</p>
@@ -44,6 +44,7 @@ import IconTablerFolder from './components/icons/IconTablerFolder.vue'
 import RemoteFeaturePage from './components/content/RemoteFeaturePage.vue'
 import RemoteFilesPanel from './components/content/RemoteFilesPanel.vue'
 import { mergeHistory } from './lanpower/history'
+import { reasoningSummary, timestampMs } from './lanpower/turnPresentation'
 import { defaultLibraryPreferences, type LibraryPreferences } from './lanpower/library'
 import { resetRemoteImages } from './lanpower/images'
 import type { ReasoningEffort, UiServerRequest, UiLiveOverlay } from './types/codex'
@@ -71,6 +72,16 @@ const respondingApproval = ref(false)
 const libraryState = ref({revision:0, preferences:defaultLibraryPreferences()}), filePath = ref('')
 let libraryDraft: LibraryPreferences | null = null, librarySaving = false, libraryTimer: ReturnType<typeof setTimeout>, reconcileTimer: ReturnType<typeof setTimeout>
 const overlay = ref<UiLiveOverlay>({ activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' })
+const turnTimings = new Map<string, {startedAt:number;completedAt?:number}>()
+function timingKey(id:string, turnId:string): string { return `${deviceId.value}:${id}:${turnId}` }
+function rememberTiming(id:string, turn:any, started:boolean): void {
+  if (!id || !turn?.id) return
+  const key = timingKey(id,turn.id), previous = turnTimings.get(key)
+  const start = timestampMs(turn.startedAt) ?? previous?.startedAt ?? (started ? Date.now() : undefined)
+  if (start === undefined) return
+  turnTimings.set(key,{startedAt:start,...(!started ? {completedAt:timestampMs(turn.completedAt) ?? Date.now()} : {})})
+  if (turnTimings.size > 128) turnTimings.delete(turnTimings.keys().next().value!)
+}
 let epoch = 0, selection = 0, approvalSequence = 0, streamFrame = 0, syncing = false, polling: ReturnType<typeof setInterval>
 const remoteApprovalIds = new Map<number, string | number>()
 const approvalKeys = new Map<string, number>()
@@ -88,9 +99,23 @@ const activeTurn = computed(() => activeTurns.value[threadId.value] || '')
 const canControl = computed(() => ready.value && Boolean(threadId.value) && (sharedControl.value || current.value?.control === 'remote'))
 const currentTitle = computed(() => current.value?.name || current.value?.preview?.slice(0, 60) || (threadId.value ? '新会话' : 'Codex Remote'))
 const currentCwd = computed(() => current.value?.cwd || '')
-const messages = computed(() => current.value ? normalizeThreadMessagesV2({ thread: current.value } as any) : [])
+const messages = computed(() => current.value ? normalizeThreadMessagesV2({ thread: {...current.value,turns:(current.value.turns || []).map((turn:any) => {
+  const timing = turnTimings.get(timingKey(current.value.id,turn.id))
+  return timing ? {...turn,startedAt:turn.startedAt ?? timing.startedAt,completedAt:turn.completedAt ?? timing.completedAt} : turn
+})} } as any) : [])
 const selectedApprovals = computed(() => approvals.value.filter(a => a.threadId === threadId.value))
-const liveOverlay = computed(() => activeTurn.value || overlay.value.errorText ? overlay.value : null)
+const liveOverlay = computed<UiLiveOverlay | null>(() => {
+  if (!ready.value) return null
+  if (!activeTurn.value) return overlay.value.errorText ? {...overlay.value,running:false} : null
+  const turn = current.value?.turns?.find((t:any) => t.id === activeTurn.value)
+  const items:any[] = turn?.items || []
+  const runningCommand = items.some(item => item.type === 'commandExecution' && item.status === 'inProgress')
+  const summary = reasoningSummary(items.slice().reverse().find(item => item.type === 'reasoning') || {})
+  return {...overlay.value,running:!selectedApprovals.value.length && !interrupting.value,
+    activityLabel:selectedApprovals.value.length ? '等待你的回复' : interrupting.value ? '正在停止' : runningCommand ? 'Running command' : overlay.value.activityLabel || 'Thinking',
+    reasoningText:overlay.value.reasoningText || summary,
+    startedAtMs:timestampMs(turn?.startedAt) ?? timestampMs(current.value?.live?.startedAt) ?? turnTimings.get(timingKey(threadId.value,activeTurn.value))?.startedAt}
+})
 const queueRows = computed(() => queue.value.map(entry => ({ id: entry.id, text: (entry.input || []).filter((i: any) => i.type === 'text').map((i: any) => i.text).join('\n'), imageUrls: (entry.input || []).filter((i: any) => i.type === 'image').map((i: any) => i.url) })))
 function projectName(path: string): string { return projects.value.find(p => p.path === path)?.name || path.replace(/\\/g, '/').replace(/\/$/, '').split('/').pop() || '项目' }
 function dateLabel(value: string): string { return new Date(value).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) }
@@ -235,7 +260,7 @@ async function submit(payload: SubmitPayload): Promise<void> {
     else if (activeTurn.value) await connection.request('turn/steer', { threadId: id, expectedTurnId: activeTurn.value, input })
     else {
       const result = await connection.request('turn/start', { threadId: id, input, ...(sharedControl.value ? {mode:selectedMode.value} : {}), ...(selectedModel.value ? { model: selectedModel.value } : {}), ...(selectedEffort.value ? { effort: selectedEffort.value } : {}) })
-      if (e === epoch && s === selection && result.turn?.id) activeTurns.value = { ...activeTurns.value, [id]: result.turn.id }
+      if (e === epoch && s === selection && result.turn?.id) { rememberTiming(id,result.turn,true); overlay.value = {activityLabel:'Thinking',activityDetails:[],reasoningText:'',errorText:''}; activeTurns.value = { ...activeTurns.value, [id]: result.turn.id } }
     }
     if (e === epoch && s === selection) { editingQueue.value = ''; await refreshQueue(id, e, s) }
   } catch (error) { if (e === epoch && s === selection) { showError(error); composer.value?.hydrateDraft(payload) } }
@@ -317,8 +342,8 @@ function onEvent(event: RpcEvent): void {
     return
   }
   if (event.method === 'lanpower/error' || event.method === 'lanpower/approvalError') { respondingApproval.value = false; feedback.value = '操作未完成，请刷新会话确认状态。'; return }
-  if (event.method === 'turn/started') activeTurns.value = { ...activeTurns.value, [id]: p.turn?.id }
-  if (event.method === 'turn/completed') { const next = { ...activeTurns.value }; delete next[id]; activeTurns.value = next }
+  if (event.method === 'turn/started') { rememberTiming(id,p.turn,true); activeTurns.value = { ...activeTurns.value, [id]: p.turn?.id } }
+  if (event.method === 'turn/completed') { rememberTiming(id,p.turn,false); const next = { ...activeTurns.value }; delete next[id]; activeTurns.value = next }
   if (event.method === 'thread/name/updated') { threads.value = threads.value.map(t => t.id === id ? { ...t, name: p.threadName || p.name } : t); if (current.value?.id === id) current.value = { ...current.value, name: p.threadName || p.name } }
   if (event.method === 'thread/started') { void loadThreads(); return }
   if (event.method === 'thread/status/changed') threads.value = threads.value.map(t => t.id === id ? {...t,status:p.status} : t)
@@ -329,8 +354,8 @@ function onEvent(event: RpcEvent): void {
   if (event.method === 'turn/started' || event.method === 'turn/completed') {
     let turn = turns.find((t: any) => t.id === p.turn?.id)
     if (!turn) { turn = { ...p.turn, items: p.turn?.items || [] }; turns.push(turn) } else Object.assign(turn, p.turn, { items: p.turn?.items?.length ? p.turn.items : turn.items })
-    overlay.value = { activityLabel: event.method === 'turn/started' ? '正在工作' : '', activityDetails: [], reasoningText: '', errorText: p.turn?.error?.message || '' }
-  } else if (event.method === 'item/started' || event.method === 'item/completed' || event.method.endsWith('/delta') || event.method.endsWith('/outputDelta')) {
+    overlay.value = { activityLabel: event.method === 'turn/started' ? 'Thinking' : '', activityDetails: [], reasoningText: '', errorText: p.turn?.error?.message || '' }
+  } else if (event.method === 'item/started' || event.method === 'item/completed' || event.method.endsWith('/delta') || event.method.endsWith('/outputDelta') || event.method === 'item/reasoning/summaryTextDelta') {
     let turn = turns.find((t: any) => t.id === p.turnId)
     if (!turn) { turn = { id: p.turnId, status: 'inProgress', items: [] }; turns.push(turn) }
     const itemId = p.item?.id || p.itemId
@@ -341,8 +366,14 @@ function onEvent(event: RpcEvent): void {
       item.text = `${item.text || ''}${p.delta || ''}`
     } else if (event.method === 'item/commandExecution/outputDelta' && item) item.aggregatedOutput = `${item.aggregatedOutput || ''}${p.delta || ''}`
     else if (event.method === 'item/plan/delta') { if (!item) { item = {id:itemId,type:'plan',text:''}; turn.items.push(item) }; item.text = `${item.text || ''}${p.delta || ''}` }
+    else if (event.method === 'item/reasoning/summaryTextDelta') {
+      if (!item) { item = {id:itemId,type:'reasoning',summary:[]}; turn.items.push(item) }
+      const index = Number.isSafeInteger(p.summaryIndex) && p.summaryIndex >= 0 ? p.summaryIndex : 0
+      item.summary ||= []; item.summary[index] = `${item.summary[index] || ''}${p.delta || ''}`
+    }
+    const phase = event.method === 'item/completed' ? 'Thinking' : item?.type === 'agentMessage' ? 'Writing response' : item?.type === 'commandExecution' ? 'Running command' : 'Thinking'
+    overlay.value = {...overlay.value,activityLabel:phase}
   } else if (event.method === 'turn/plan/updated') overlay.value = { ...overlay.value, activityDetails: (p.plan || []).map((step: any) => `${step.status === 'completed' ? '✓' : '○'} ${step.step}`) }
-  else if (event.method === 'item/reasoning/summaryTextDelta') overlay.value = {...overlay.value,reasoningText:`${overlay.value.reasoningText}${p.delta || ''}`}
   else if (event.method === 'error') overlay.value = { ...overlay.value, errorText: p.error?.message || '任务出错，请查看原窗口。' }
   // Many token notifications share one render, keeping long conversations responsive.
   if (!streamFrame) streamFrame = requestAnimationFrame(() => { streamFrame = 0; if (current.value) current.value = { ...current.value, turns: [...current.value.turns] } })

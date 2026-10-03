@@ -18,6 +18,7 @@ import type {
   UiThread,
 } from '../../types/codex'
 import { normalizePathForComparison, normalizePathForUi, toProjectName } from '../../pathUtils.js'
+import { formatWorkDuration, reasoningSummary, turnDurationMs } from '../../lanpower/turnPresentation'
 
 function toIso(seconds: number): string {
   return new Date(seconds * 1000).toISOString()
@@ -49,7 +50,8 @@ function extractFileAttachments(value: string): UiFileAttachment[] {
     const trimmed = line.trim()
     if (!trimmed) continue
     const m = trimmed.match(FILE_ATTACHMENT_LINE)
-    if (!m) break
+    if (/^#{1,6}\s+my request(?: for codex)?\s*:/i.test(trimmed)) break
+    if (!m) continue
     const label = m[1]?.trim()
     const path = m[2]?.trim().replace(/\s+\((?:lines?\s+\d+(?:-\d+)?)\)\s*$/, '')
     if (label && path) attachments.push({ label, path })
@@ -58,7 +60,8 @@ function extractFileAttachments(value: string): UiFileAttachment[] {
 }
 
 function extractCodexUserRequestText(value: string): string {
-  const markerRegex = /(?:^|\n)\s{0,3}#{0,6}\s*my request for codex\s*:?\s*/giu
+  if (!value.split('\n').some(line => FILES_MENTIONED_MARKER.test(line.trim()))) return value.trim()
+  const markerRegex = /(?:^|\n)[ \t]{0,3}#{1,6}[ \t]+my request(?: for codex)?[ \t]*:[ \t]*(?:\r?\n|$)/giu
   const matches = Array.from(value.matchAll(markerRegex))
   if (matches.length === 0) {
     return value.trim()
@@ -170,7 +173,8 @@ function parseUserMessageContent(
   }
 
   const fullText = textChunks.join('\n')
-  const fileAttachments = extractFileAttachments(fullText)
+  const imagePaths = new Set(images.filter(image => image.startsWith('/codex-local-image?')).map(image => normalizePathForComparison(new URL(image,'https://localhost').searchParams.get('path') || '')))
+  const fileAttachments = extractFileAttachments(fullText).filter(file => !imagePaths.has(normalizePathForComparison(file.path)))
   const heartbeat = parseHeartbeatEnvelope(fullText)
 
   return {
@@ -460,7 +464,8 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   }
 
   if (item.type === 'reasoning') {
-    return []
+    const text = reasoningSummary(item)
+    return text ? [{ id:item.id, role:'system', text, messageType:'reasoning' }] : []
   }
 
 
@@ -627,8 +632,15 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
     const rawTurnId = typeof turn?.id === 'string' ? turn.id.trim() : ''
     const turnId = rawTurnId.length > 0 ? rawTurnId : undefined
     const items = Array.isArray(turn.items) ? turn.items : []
+    const duration = turn.status !== 'inProgress' ? turnDurationMs(turn as Turn & {durationMs?:number;startedAt?:number;completedAt?:number}) : undefined
+    let insertedDuration = false
     for (const item of items) {
       for (const msg of toUiMessages(item)) {
+        if (turn.status === 'inProgress' && msg.messageType === 'reasoning') continue
+        if (!insertedDuration && msg.role !== 'user' && duration !== undefined) {
+          messages.push({id:`${turnId ?? turnIndex}:worked`,role:'system',text:`已处理 ${formatWorkDuration(duration)}`,messageType:'worked',turnId,turnIndex})
+          insertedDuration = true
+        }
         messages.push({ ...msg, turnId, turnIndex })
       }
     }

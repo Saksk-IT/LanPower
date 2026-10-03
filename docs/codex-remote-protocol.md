@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.15.0 与小程序 2.1.3。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
+适用于 LanPower Windows / Cloud / Web 1.15.1 与小程序 2.1.4。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
 
 ## 认证与连接
 
@@ -94,7 +94,7 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 
 摘要返回 `control: desktop/available/remote/shared`、项目范围、`isChat` 及实际读取到的 model / reasoningEffort / collaborationMode。桌面仍持有独立写锁时，继续、引导、中断及其他修改操作被拒绝。`turn/steer` 的输入约束与 `turn/start` 相同，不能带模型、目录或策略覆盖；`expectedTurnId` 必须匹配当前任务。
 
-## 1.15.0 电脑端项目组织和资源
+## 1.15.1 电脑端项目组织和资源
 
 `lanpower/status.library` 为 `{revision, preferences}`。preferences 包含 `collapsed`、`pinned`、`hidden`、`order`、`aliases`、`sections`、`sort` 与 `chatsFirst`；总计最多 128 KiB，置顶最多 64 个编号，其他集合最多 1024 项，显示名最多 120 字符。更新须带已读取的 revision；冲突返回当前版本及 `conflict:true`，客户端合并后重试。Host 验证置顶会话仍在授权范围，串行写临时文件再替换 `%LOCALAPPDATA%/LanPower/codex-library.json`。该文件只保存组织元数据，不直接改写官方桌面全局状态。
 

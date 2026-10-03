@@ -22,113 +22,18 @@
       </li>
       <template v-for="message in visibleMessages" :key="message.id">
       <li
-        v-if="!hiddenGroupedCommandIds.has(message.id) && !hiddenFileChangeMessageIds.has(message.id)"
+        v-if="!hiddenFileChangeMessageIds.has(message.id)"
         class="conversation-item"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
       >
         <div v-if="isCommandMessage(message)" class="message-row" data-role="system">
-          <div class="message-stack" data-role="system">
-            <section
-              v-if="getGroupedCommandsForLatest(message).length > 0"
-              class="command-activity"
-              :class="commandGroupStatusClass(message)"
-            >
-              <button
-                type="button"
-                class="command-activity-header"
-                :aria-expanded="isCommandGroupExpanded(message)"
-                @click="toggleCommandGroup(message)"
-              >
-                <span class="command-activity-icon" aria-hidden="true">
-                  <IconTablerTerminal class="icon-svg" />
-                </span>
-                <span class="command-activity-meta">
-                  <span class="command-activity-title">命令活动</span>
-                  <span class="command-activity-count">{{ commandGroupCountLabel(message) }}</span>
-                  <span class="command-activity-composition">{{ commandGroupCompositionLabel(message) }}</span>
-                </span>
-                <span class="command-activity-state">
-                  <span class="command-activity-status-dot" aria-hidden="true" />
-                  <span class="command-activity-status">{{ commandGroupStatusLabel(message) }}</span>
-                  <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandGroupExpanded(message) }">▶</span>
-                </span>
-              </button>
-              <div
-                class="cmd-group-wrap"
-                :class="{ 'cmd-group-visible': isCommandGroupExpanded(message) }"
-              >
-                <div class="command-activity-body">
-                  <div
-                    v-for="cmd in getCommandBlockForLatest(message)"
-                    :key="`grouped-cmd-${cmd.id}`"
-                    class="command-activity-item"
-                  >
-                    <button
-                      type="button"
-                      class="command-activity-row"
-                      :class="commandStatusClass(cmd)"
-                      :aria-expanded="isCommandExpanded(cmd)"
-                      @click="toggleCommandExpand(cmd)"
-                    >
-                      <span class="command-activity-row-icon" aria-hidden="true">
-                        <IconTablerTerminal class="icon-svg" />
-                      </span>
-                      <span class="command-activity-tool-name">Shell</span>
-                      <code class="command-activity-command">{{ cmd.commandExecution?.command || '(command)' }}</code>
-                      <span class="command-activity-row-state">
-                        <span class="command-activity-status-dot" aria-hidden="true" />
-                        <span class="command-activity-status">{{ commandStatusLabel(cmd) }}</span>
-                        <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(cmd) }">▶</span>
-                      </span>
-                    </button>
-                    <div
-                      class="cmd-output-wrap command-activity-output"
-                      :class="{ 'cmd-output-visible': isCommandExpanded(cmd) }"
-                    >
-                      <div class="cmd-output-inner">
-                        <pre
-                          class="cmd-output"
-                          :class="{ 'cmd-output-condensed': isCommandOutputCondensed(cmd) }"
-                          v-text="cmd.commandExecution?.aggregatedOutput || '(no output)'"
-                        ></pre>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <template v-else>
-              <button
-                type="button"
-                class="cmd-row"
-                :class="[
-                  commandStatusClass(message),
-                  {
-                    'cmd-expanded': isCommandExpanded(message),
-                    'cmd-compact': isCommandCompact(message),
-                  },
-                ]"
-                @click="toggleCommandExpand(message)"
-              >
-                <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(message) }">▶</span>
-                <code class="cmd-label">{{ message.commandExecution?.command || '(command)' }}</code>
-                <span class="cmd-status">{{ commandStatusLabel(message) }}</span>
-              </button>
-              <div
-                class="cmd-output-wrap"
-                :class="{ 'cmd-output-visible': isCommandExpanded(message) }"
-              >
-                <div class="cmd-output-inner">
-                  <pre
-                    class="cmd-output"
-                    :class="{ 'cmd-output-condensed': isCommandOutputCondensed(message) }"
-                    v-text="message.commandExecution?.aggregatedOutput || '(no output)'"
-                  ></pre>
-                </div>
-              </div>
-            </template>
-          </div>
+          <ThreadCommand :execution="message.commandExecution!" />
+        </div>
+        <div v-else-if="message.messageType === 'reasoning'" class="message-row" data-role="system">
+          <ThreadWorkIndicator label="思考过程" :running="false" :reasoning-text="message.text">
+            <div v-html="renderMarkdownBlocksAsHtml(message.text)" />
+          </ThreadWorkIndicator>
         </div>
 
         <div
@@ -238,7 +143,7 @@
                 :data-role="message.role"
               >
                 <li v-for="imageUrl in message.images" :key="imageUrl" class="message-image-item">
-                  <RemoteMessageImage :source="imageUrl" :thread-id="activeThreadId" :cwd="cwd" :image-class="message.messageType === 'imageView' ? 'message-generated-image-preview' : ''" :alt="message.messageType === 'imageView' ? '生成的图片' : '消息图片'" @open="openImageModal" />
+                  <RemoteMessageImage :source="imageUrl" :thread-id="activeThreadId" :cwd="cwd" :thumbnail="message.role === 'user'" :image-class="message.messageType === 'imageView' ? 'message-generated-image-preview' : ''" :alt="message.messageType === 'imageView' ? '生成的图片' : '消息图片'" @open="openImageModal" />
                 </li>
               </ul>
 
@@ -275,49 +180,8 @@
                   <span>Sent via automation</span>
                   <code v-if="message.automationDisplayName">{{ message.automationDisplayName }}</code>
                 </div>
-                <div v-if="message.messageType === 'worked'" class="worked-separator-wrap" aria-live="polite">
-                  <button type="button" class="worked-separator" @click="toggleWorkedExpand(message)">
-                    <span class="worked-separator-line" aria-hidden="true" />
-                    <span class="worked-chevron" :class="{ 'worked-chevron-open': isWorkedExpanded(message) }">▶</span>
-                    <p class="worked-separator-text">{{ message.text }}</p>
-                    <span class="worked-separator-line" aria-hidden="true" />
-                  </button>
-                  <div v-if="isWorkedExpanded(message)" class="worked-details">
-                    <div
-                      v-for="cmd in getCommandsForWorked(messages, messages.indexOf(message))"
-                      :key="`worked-cmd-${cmd.id}`"
-                      class="worked-cmd-item"
-                    >
-                      <button
-                        type="button"
-                        class="cmd-row"
-                        :class="[
-                          commandStatusClass(cmd),
-                          {
-                            'cmd-expanded': isCommandExpanded(cmd),
-                            'cmd-compact': isCommandCompact(cmd),
-                          },
-                        ]"
-                        @click="toggleCommandExpand(cmd)"
-                      >
-                        <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(cmd) }">▶</span>
-                        <code class="cmd-label">{{ cmd.commandExecution?.command || '(command)' }}</code>
-                        <span class="cmd-status">{{ commandStatusLabel(cmd) }}</span>
-                      </button>
-                      <div
-                        class="cmd-output-wrap"
-                        :class="{ 'cmd-output-visible': isCommandExpanded(cmd) }"
-                      >
-                        <div class="cmd-output-inner">
-                          <pre
-                            class="cmd-output"
-                            :class="{ 'cmd-output-condensed': isCommandOutputCondensed(cmd) }"
-                            v-text="cmd.commandExecution?.aggregatedOutput || '(no output)'"
-                          ></pre>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                <div v-if="message.messageType === 'worked'" class="worked-separator-wrap">
+                  <p class="worked-separator-text">{{ message.text }}</p>
                 </div>
                 <div
                   v-else
@@ -551,7 +415,7 @@
                     </div>
                     <hr v-else-if="block.kind === 'thematicBreak'" class="message-divider" />
                     <p v-else-if="isMarkdownImageFailed(message.id, blockIndex)" class="message-text">{{ block.markdown }}</p>
-                    <RemoteMessageImage v-else :source="block.url" :thread-id="activeThreadId" :cwd="cwd" image-class="message-markdown-image" :alt="block.alt || '消息图片'" @open="openImageModal" />
+                    <RemoteMessageImage v-else :source="block.url" :thread-id="activeThreadId" :cwd="cwd" :thumbnail="message.role === 'user'" image-class="message-markdown-image" :alt="block.alt || '消息图片'" @open="openImageModal" />
                   </template>
                 </div>
                 <a
@@ -699,12 +563,9 @@
         <div class="message-row">
           <div class="message-stack">
             <article class="live-overlay-inline" aria-live="polite">
-              <p class="live-overlay-label">{{ localizedLiveActivityLabel }}</p>
-              <div
-                v-if="localizedLiveReasoningText"
-                class="live-overlay-reasoning"
-                v-html="renderMarkdownBlocksAsHtml(localizedLiveReasoningText)"
-              />
+              <ThreadWorkIndicator v-if="liveOverlay.activityLabel" :label="localizedLiveActivityLabel || '正在思考'" :running="Boolean(liveOverlay.running)" :started-at-ms="liveOverlay.startedAtMs" :reasoning-text="localizedLiveReasoningText">
+                <div v-html="renderMarkdownBlocksAsHtml(localizedLiveReasoningText)" />
+              </ThreadWorkIndicator>
               <div v-if="liveOverlay.errorText" class="live-overlay-error">
                 <span>{{ liveOverlay.errorText }}</span>
                 <a class="live-overlay-feedback" :href="feedbackMailto" @click="prepareLiveErrorFeedback($event, liveOverlay.errorText)">Send feedback</a>
@@ -727,7 +588,7 @@
       <IconTablerArrowUp class="icon-svg jump-to-latest-icon" />
     </button>
 
-    <div v-if="modalImageUrl.length > 0" class="image-modal-backdrop" @click="closeImageModal">
+    <div v-if="modalImageUrl.length > 0" ref="imageModalRef" class="image-modal-backdrop" role="dialog" aria-modal="true" aria-label="图片预览" tabindex="-1" @click="closeImageModal">
       <div class="image-modal-content" @click.stop>
         <button class="image-modal-close" type="button" aria-label="Close image preview" @click="closeImageModal">
           <IconTablerX class="icon-svg" />
@@ -880,6 +741,8 @@
 
 <script setup lang="ts">
 import RemoteMessageImage from './RemoteMessageImage.vue'
+import ThreadCommand from './ThreadCommand.vue'
+import ThreadWorkIndicator from './ThreadWorkIndicator.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { UiFileChange, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import { updateThreadFileChanges } from '../../api/codexGateway'
@@ -895,15 +758,10 @@ import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerCopy from '../icons/IconTablerCopy.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
-import IconTablerTerminal from '../icons/IconTablerTerminal.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 
 type HighlightJsModule = (typeof import('highlight.js/lib/common'))['default']
 
-const expandedCommandIds = ref<Set<string>>(new Set())
-const collapsedAutoCommandIds = ref<Set<string>>(new Set())
-const expandedCommandGroupIds = ref<Set<string>>(new Set())
-const expandedWorkedIds = ref<Set<string>>(new Set())
 const expandedFileChangeSummaryIds = ref<Set<string>>(new Set())
 const activeDiffViewerSummary = ref<TurnFileChangeSummary | null>(null)
 const activeDiffViewerChangeKey = ref('')
@@ -957,168 +815,6 @@ function isCopyableAssistantMessage(message: UiMessage): boolean {
     && !(message.messageType ?? '').endsWith('.live')
 }
 
-const activeCommandMessageId = computed(() => {
-  for (let index = props.messages.length - 1; index >= 0; index -= 1) {
-    const message = props.messages[index]
-    if (message.messageType === 'commandExecution' && message.commandExecution?.status === 'inProgress') {
-      return message.id
-    }
-  }
-  return ''
-})
-
-const hasLiveAssistantText = computed(() =>
-  props.messages.some((message) =>
-    message.role === 'assistant' &&
-    message.messageType === 'agentMessage.live' &&
-    message.text.trim().length > 0,
-  ),
-)
-
-const isLiveTurnRuntime = computed(() =>
-  Boolean(props.liveOverlay) || activeCommandMessageId.value.length > 0 || hasLiveAssistantText.value,
-)
-
-const groupedCommandsByLatestId = computed<Record<string, UiMessage[]>>(() => {
-  const next: Record<string, UiMessage[]> = {}
-  for (let index = 0; index < props.messages.length;) {
-    const message = props.messages[index]
-    if (!isCommandMessage(message)) {
-      index += 1
-      continue
-    }
-
-    const block: UiMessage[] = []
-    while (index < props.messages.length && isCommandMessage(props.messages[index])) {
-      block.push(props.messages[index])
-      index += 1
-    }
-
-    if (block.length <= 1) continue
-    const latest = block[block.length - 1]
-    next[latest.id] = block.slice(0, -1)
-  }
-  return next
-})
-
-const hiddenGroupedCommandIds = computed(() => {
-  const next = new Set<string>()
-  for (const commands of Object.values(groupedCommandsByLatestId.value)) {
-    for (const command of commands) {
-      next.add(command.id)
-    }
-  }
-  return next
-})
-
-function isCommandAutoExpanded(message: UiMessage): boolean {
-  return !hasLiveAssistantText.value && message.id === activeCommandMessageId.value
-}
-
-function isCommandExpanded(message: UiMessage): boolean {
-  if (!isCommandMessage(message)) return false
-  return expandedCommandIds.value.has(message.id)
-    || (!collapsedAutoCommandIds.value.has(message.id) && isCommandAutoExpanded(message))
-}
-
-function isCommandCompact(message: UiMessage): boolean {
-  return isCommandMessage(message) && isLiveTurnRuntime.value
-}
-
-function isCommandOutputCondensed(message: UiMessage): boolean {
-  return isCommandMessage(message) && (isLiveTurnRuntime.value || message.commandExecution?.status === 'inProgress')
-}
-
-function toggleCommandExpand(message: UiMessage): void {
-  if (!isCommandMessage(message)) return
-
-  const nextExpanded = new Set(expandedCommandIds.value)
-  const nextCollapsedAuto = new Set(collapsedAutoCommandIds.value)
-  const isAutoExpanded = isCommandAutoExpanded(message)
-  const isManuallyExpanded = nextExpanded.has(message.id)
-
-  if (isManuallyExpanded) {
-    nextExpanded.delete(message.id)
-    if (isAutoExpanded) nextCollapsedAuto.add(message.id)
-  } else if (isAutoExpanded && !nextCollapsedAuto.has(message.id)) {
-    nextCollapsedAuto.add(message.id)
-  } else {
-    nextExpanded.add(message.id)
-    nextCollapsedAuto.delete(message.id)
-  }
-
-  expandedCommandIds.value = nextExpanded
-  collapsedAutoCommandIds.value = nextCollapsedAuto
-}
-
-function getGroupedCommandsForLatest(message: UiMessage): UiMessage[] {
-  return groupedCommandsByLatestId.value[message.id] ?? []
-}
-
-function getCommandBlockForLatest(message: UiMessage): UiMessage[] {
-  if (!isCommandMessage(message)) return []
-  return [...getGroupedCommandsForLatest(message), message]
-}
-
-function toggleCommandGroup(message: UiMessage): void {
-  const groupedCommands = getGroupedCommandsForLatest(message)
-  if (groupedCommands.length === 0) return
-  const next = new Set(expandedCommandGroupIds.value)
-  if (next.has(message.id)) next.delete(message.id)
-  else next.add(message.id)
-  expandedCommandGroupIds.value = next
-}
-
-function isCommandGroupExpanded(message: UiMessage): boolean {
-  return expandedCommandGroupIds.value.has(message.id)
-}
-
-function commandGroupCountLabel(message: UiMessage): string {
-  return `${getCommandBlockForLatest(message).length} 条`
-}
-
-function commandGroupCompositionLabel(message: UiMessage): string {
-  return `Shell ${getCommandBlockForLatest(message).length}`
-}
-
-function commandGroupStatus(message: UiMessage): 'running' | 'ok' | 'error' | 'stopped' {
-  const commands = getCommandBlockForLatest(message)
-  if (commands.some((command) => command.commandExecution?.status === 'inProgress')) return 'running'
-  if (commands.some((command) => {
-    const execution = command.commandExecution
-    return execution?.status === 'failed'
-      || (execution?.status === 'completed' && execution.exitCode != null && execution.exitCode !== 0)
-  })) return 'error'
-  if (commands.some((command) => {
-    const status = command.commandExecution?.status
-    return status === 'declined' || status === 'interrupted'
-  })) return 'stopped'
-  return 'ok'
-}
-
-function commandGroupStatusLabel(message: UiMessage): string {
-  const status = commandGroupStatus(message)
-  if (status === 'running') return '运行中'
-  if (status === 'error') return '失败'
-  if (status === 'stopped') return '已停止'
-  return '成功'
-}
-
-function commandGroupStatusClass(message: UiMessage): string {
-  return `command-activity-${commandGroupStatus(message)}`
-}
-
-function toggleWorkedExpand(message: UiMessage): void {
-  const next = new Set(expandedWorkedIds.value)
-  if (next.has(message.id)) next.delete(message.id)
-  else next.add(message.id)
-  expandedWorkedIds.value = next
-}
-
-function isWorkedExpanded(message: UiMessage): boolean {
-  return expandedWorkedIds.value.has(message.id)
-}
-
 function toggleFileChangeSummary(message: UiMessage): void {
   const next = new Set(expandedFileChangeSummaryIds.value)
   if (next.has(message.id)) next.delete(message.id)
@@ -1162,26 +858,6 @@ function selectDiffViewerChange(change: UiFileChange): void {
   }
 }
 
-function commandStatusLabel(message: UiMessage): string {
-  const ce = message.commandExecution
-  if (!ce) return ''
-  switch (ce.status) {
-    case 'inProgress': return '运行中'
-    case 'completed': return ce.exitCode == null || ce.exitCode === 0 ? '成功' : `退出码 ${ce.exitCode}`
-    case 'failed': return '失败'
-    case 'declined': return '已拒绝'
-    case 'interrupted': return '已停止'
-    default: return ''
-  }
-}
-
-function commandStatusClass(message: UiMessage): string {
-  const s = message.commandExecution?.status
-  if (s === 'inProgress') return 'cmd-status-running'
-  if (s === 'completed' && (message.commandExecution?.exitCode == null || message.commandExecution.exitCode === 0)) return 'cmd-status-ok'
-  return 'cmd-status-error'
-}
-
 function pruneCommandIdSet(source: Set<string>, validIds: Set<string>): Set<string> {
   if (source.size === 0) return source
   const next = new Set<string>()
@@ -1189,16 +865,6 @@ function pruneCommandIdSet(source: Set<string>, validIds: Set<string>): Set<stri
     if (validIds.has(id)) next.add(id)
   }
   return next.size === source.size ? source : next
-}
-
-function getCommandsForWorked(messages: UiMessage[], workedIndex: number): UiMessage[] {
-  const result: UiMessage[] = []
-  for (let i = workedIndex - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.messageType === 'commandExecution') result.unshift(m)
-    else if (m.role === 'user' || m.messageType === 'worked') break
-  }
-  return result
 }
 
 const props = defineProps<{
@@ -1231,6 +897,8 @@ const localizedLiveReasoningText = computed(() => (
 const conversationListRef = ref<HTMLElement | null>(null)
 const bottomAnchorRef = ref<HTMLElement | null>(null)
 const modalImageUrl = ref('')
+const imageModalRef = ref<HTMLElement | null>(null)
+let imageReturnFocus: HTMLElement | null = null
 const copiedResponseAnchorId = ref('')
 const fileChangeActionState = ref<Record<string, 'idle' | 'undoing' | 'redoing' | 'undone' | 'redone'>>({})
 const fileChangeActionError = ref<Record<string, string>>({})
@@ -2861,6 +2529,7 @@ function onWindowBlurForFileLinkContextMenu(): void {
 
 function onWindowKeydownForFileLinkContextMenu(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
+  if (modalImageUrl.value) { event.preventDefault(); closeImageModal() }
   closeFileLinkContextMenu()
 }
 
@@ -4214,17 +3883,6 @@ watch(
   async (next, previous) => {
     if (props.isLoading) return
 
-    const commandIds = new Set(
-      next
-        .filter((message) => message.messageType === 'commandExecution' && message.commandExecution)
-        .map((message) => message.id),
-    )
-    expandedCommandIds.value = pruneCommandIdSet(expandedCommandIds.value, commandIds)
-    collapsedAutoCommandIds.value = pruneCommandIdSet(collapsedAutoCommandIds.value, commandIds)
-    expandedCommandGroupIds.value = pruneCommandIdSet(
-      expandedCommandGroupIds.value,
-      new Set(Object.keys(groupedCommandsByLatestId.value)),
-    )
     expandedFileChangeSummaryIds.value = pruneCommandIdSet(
       expandedFileChangeSummaryIds.value,
       new Set([
@@ -4257,17 +3915,6 @@ watch(
     void ensureHighlightJsLoaded()
   },
   { immediate: true },
-)
-
-watch(
-  activeCommandMessageId,
-  (nextId, prevId) => {
-    if (!prevId || prevId === nextId) return
-    if (!collapsedAutoCommandIds.value.has(prevId)) return
-    const nextCollapsedAuto = new Set(collapsedAutoCommandIds.value)
-    nextCollapsedAuto.delete(prevId)
-    collapsedAutoCommandIds.value = nextCollapsedAuto
-  },
 )
 
 watch(
@@ -4343,11 +3990,14 @@ function onMarkdownImageError(messageId: string, blockIndex: number): void {
 }
 
 function openImageModal(imageUrl: string): void {
+  imageReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   modalImageUrl.value = imageUrl
+  void nextTick(() => imageModalRef.value?.focus())
 }
 
 function closeImageModal(): void {
   modalImageUrl.value = ''
+  imageReturnFocus?.focus(); imageReturnFocus = null
 }
 
 onMounted(() => {
@@ -4680,9 +4330,12 @@ onBeforeUnmount(() => {
 }
 
 .message-text {
-  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap break-words text-slate-800;
+  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap break-words text-zinc-900;
   overflow-wrap: anywhere;
 }
+
+:global(.dark) .message-text { color: #e4e4e7; }
+:global(.dark) .message-card[data-role='user'] { background: #2b2b2e; }
 
 .message-heading {
   @apply m-0 text-slate-900 tracking-tight;
@@ -4848,7 +4501,7 @@ onBeforeUnmount(() => {
 }
 
 .message-card[data-role='user'] {
-  @apply rounded-2xl bg-slate-200 px-4 py-3 max-w-[min(560px,100%)];
+  @apply rounded-3xl bg-zinc-100 px-4 py-3 max-w-[min(560px,100%)];
   width: fit-content;
   margin-left: auto;
   align-self: flex-end;
@@ -4886,35 +4539,21 @@ onBeforeUnmount(() => {
 }
 
 .worked-separator-wrap {
-  @apply w-full flex flex-col gap-0;
-}
-
-.worked-separator {
-  @apply w-full flex items-center gap-3 bg-transparent border-none cursor-pointer p-0;
-}
-
-.worked-chevron {
-  @apply text-[9px] text-zinc-400 transition-transform duration-200 flex-shrink-0;
-}
-
-.worked-chevron-open {
-  transform: rotate(90deg);
-}
-
-.worked-separator-line {
-  @apply h-px bg-zinc-300/80 flex-1;
+  width: 100%;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--lp-border,#ececec);
 }
 
 .worked-separator-text {
-  @apply m-0 text-sm leading-relaxed font-normal text-slate-800;
+  margin: 0;
+  color: var(--lp-muted,#737373);
+  font-size: 14px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
 }
 
-.worked-details {
-  @apply flex flex-col gap-1.5 pt-2;
-}
-
-.worked-cmd-item {
-  @apply flex flex-col;
+.conversation-item[data-message-type='commandExecution'] + .conversation-item[data-message-type='commandExecution'] {
+  margin-top: -6px;
 }
 
 .image-modal-backdrop {
@@ -4935,214 +4574,6 @@ onBeforeUnmount(() => {
 
 .icon-svg {
   @apply w-5 h-5;
-}
-
-.command-activity {
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-  border: 1px solid #e4e4e7;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.command-activity-header {
-  display: grid;
-  width: 100%;
-  min-height: 42px;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  padding: 7px 10px;
-  color: #27272a;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.command-activity-header:hover {
-  background: #f4f4f5;
-}
-
-.command-activity-icon,
-.command-activity-row-icon {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: #f4f4f5;
-  color: #71717a;
-}
-
-.command-activity-icon .icon-svg,
-.command-activity-row-icon .icon-svg {
-  width: 14px;
-  height: 14px;
-}
-
-.command-activity-meta {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 7px;
-  white-space: nowrap;
-}
-
-.command-activity-title {
-  overflow: hidden;
-  color: #27272a;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-}
-
-.command-activity-count,
-.command-activity-composition {
-  color: #71717a;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.command-activity-count {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: #f4f4f5;
-}
-
-.command-activity-state,
-.command-activity-row-state {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.command-activity-status-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: 50%;
-  background: #a1a1aa;
-}
-
-.command-activity-status {
-  color: #71717a;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.command-activity-running > .command-activity-header .command-activity-status-dot,
-.command-activity-row.cmd-status-running .command-activity-status-dot {
-  background: #f59e0b;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14);
-}
-
-.command-activity-ok > .command-activity-header .command-activity-status-dot,
-.command-activity-row.cmd-status-ok .command-activity-status-dot {
-  background: #10b981;
-}
-
-.command-activity-error > .command-activity-header .command-activity-status-dot,
-.command-activity-row.cmd-status-error .command-activity-status-dot {
-  background: #f43f5e;
-}
-
-.command-activity-stopped > .command-activity-header .command-activity-status-dot {
-  background: #a1a1aa;
-}
-
-.command-activity-body {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-  border-top: 1px solid #e4e4e7;
-  padding: 6px;
-  background: #fafafa;
-}
-
-.command-activity-item {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.command-activity-row {
-  display: grid;
-  width: 100%;
-  min-height: 36px;
-  grid-template-columns: 24px 38px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  padding: 5px 7px;
-  color: #3f3f46;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease;
-}
-
-.command-activity-row:hover {
-  border-color: #e4e4e7;
-  background: #ffffff;
-}
-
-.command-activity-row[aria-expanded='true'] {
-  border-color: #d4d4d8;
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 0;
-  background: #ffffff;
-}
-
-.command-activity-tool-name {
-  color: #52525b;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.command-activity-command {
-  min-width: 0;
-  overflow: hidden;
-  color: #52525b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.command-activity-output.cmd-output-wrap {
-  border-radius: 0 0 6px 6px;
-}
-
-@media (max-width: 520px) {
-  .command-activity-composition {
-    display: none;
-  }
-
-  .command-activity-row {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-  }
-
-  .command-activity-tool-name {
-    display: none;
-  }
-
-  .command-activity-status {
-    max-width: 52px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 .cmd-row {

@@ -1,0 +1,112 @@
+// Browser acceptance uses isolated RPC fixtures; it never submits a real desktop task.
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+(async () => {
+  const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
+  const password = fs.readFileSync(path.resolve(__dirname,'../deploy/docker/private/dev-login.txt'),'utf8').match(/^Password: (.+)$/m)[1].trim();
+  const output = path.resolve(__dirname,'../private/codex-remote-1.15.1/browser'); fs.mkdirSync(output,{recursive:true});
+  const image = process.env.LANPOWER_CONVERSATION_FIXTURE_IMAGE ? fs.readFileSync(process.env.LANPOWER_CONVERSATION_FIXTURE_IMAGE) : Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=','base64');
+  const browser = await chromium.launch({headless:true}), context = await browser.newContext({viewport:{width:1440,height:900}});
+  const calls = [], errors = [], startedAt = Date.now()-18000;
+  let active = true;
+  const command = (id,exitCode=0) => ({id,type:'commandExecution',command:'Get-ChildItem -LiteralPath "D:/Projects/Demo"',cwd:'D:/Projects/Demo',status:'completed',aggregatedOutput:'README.md\nsrc\n完整输出末尾',exitCode});
+  const turn = {id:'native-turn',status:'inProgress',startedAt,items:[
+    {id:'user',type:'userMessage',content:[{type:'text',text:'# Files mentioned by the user:\n\n## native-one.png: D:/Images/native-one.png\nImage attachment: true\n\n## native-two.png: D:/Images/native-two.png\nImage attachment: true\n\n## My request:\n请参照这两张图，完善会话窗口的展示。'},{type:'localImage',path:'D:/Images/native-one.png'},{type:'localImage',path:'D:/Images/native-two.png'}]},
+    {id:'answer',type:'agentMessage',text:'我会对照原生窗口，检查思考状态、图片和命令的展示。'},
+    command('cmd-one'),command('cmd-two',2),command('cmd-three'),
+    {id:'reason-one',type:'reasoning',summary:['正在检查会话展示。']},
+  ]};
+  const thread = id => ({id,name:id==='native-chat'?'会话展示验收':'另一条工作会话',cwd:'D:/Projects/Demo',createdAt:1700000000,updatedAt:1700000100,control:'shared',status:{type:'active'},turns:id==='native-chat'?[{...turn,status:active?'inProgress':'completed'}]:[{id:'other-turn',status:'inProgress',items:[{id:'other-user',type:'userMessage',content:[{type:'text',text:'另一条任务'}]}]}]});
+  const rpc = request => {
+    calls.push(request); const p = request.params || {};
+    switch (request.method) {
+      case 'lanpower/status': return {projects:[{name:'Demo',path:'D:/Projects/Demo'}],desktopControl:true,sharedControl:true,queueSupported:true,activeTurns:[...(active?[{threadId:'native-chat',turnId:'native-turn'}]:[]),{threadId:'other-chat',turnId:'other-turn'}],pendingApprovals:[]};
+      case 'model/list': return {data:[{id:'gpt-6',isDefault:true}]};
+      case 'thread/list': return {data:['native-chat','other-chat'].map(thread),nextCursor:null};
+      case 'thread/read': return {thread:thread(p.threadId)};
+      case 'thread/queue/list': return {data:[]};
+      case 'lanpower/image/read': return {contentType:'image/png',base64:image.toString('base64'),size:image.length};
+      default: return {};
+    }
+  };
+  try {
+    await context.exposeBinding('__conversationRpc',(_,request)=>rpc(request));
+    await context.addInitScript(() => {
+      window.WebSocket=class {
+        static OPEN=1;readyState=1;
+        constructor(){window.__fixtureSocket=this;setTimeout(()=>{this.onopen?.({});this.frame({type:'state',state:'runtime_ready'});},20);}
+        frame(value){this.onmessage?.({data:JSON.stringify(value)});}
+        async send(raw){const frame=JSON.parse(raw);if(frame.type!=='rpc')return;const request=frame.payload,result=await window.__conversationRpc(request);this.frame({type:'rpc',payload:{id:request.id,result}});}
+        close(){this.readyState=3;setTimeout(()=>this.onclose?.({code:1000}),0);}
+      };
+    });
+    const page=await context.newPage(); page.on('pageerror',error=>errors.push(error.message));
+    const emit = payload => page.evaluate(value=>window.__fixtureSocket.frame({type:'rpc',payload:value}),payload);
+    await page.goto(base+'/login');await page.locator('[name=username]').fill('admin');await page.locator('[name=password]').fill(password);
+    await Promise.all([page.waitForURL('**/dashboard'),page.locator('form[action="/login"] button').click()]);
+    await page.goto(base+'/remote');await page.locator('[data-thread-id="native-chat"] .lp-thread-title').click();
+    await page.getByRole('status').filter({hasText:'正在思考'}).waitFor();
+    assert.equal(await page.locator('.native-command-toggle').count(),3);
+    assert.equal(await page.locator('.command-activity').count(),0,'commands must not disappear inside aggregate cards');
+    assert.equal(await page.locator('.native-command-output').count(),0,'collapsed commands avoid mounting full output');
+    assert.equal(await page.getByRole('button',{name:'命令运行失败',exact:true}).count(),1);
+    await page.locator('.native-command-toggle').first().click();
+    assert.ok((await page.locator('.native-command-details').first().textContent()).includes('完整输出末尾'));
+    assert.ok((await page.locator('.native-command-details').first().textContent()).includes('D:/Projects/Demo'));
+    await page.locator('.native-command-toggle').first().click();
+    const before = await page.locator('.thread-work-elapsed').textContent();
+    await page.waitForFunction(old=>document.querySelector('.thread-work-elapsed')?.textContent!==old,before);
+    assert.ok(!(await page.locator('.conversation-root').textContent()).includes('Files mentioned by the user'));
+    assert.equal(await page.locator('.message-file-chip').count(),0,'image metadata must not be duplicated as file chips');
+    await page.waitForFunction(()=>[...document.querySelectorAll('.lp-image-thumbnail img')].every(img=>img.naturalWidth>0));
+    assert.equal(await page.locator('.lp-image-thumbnail').count(),2);
+    await page.locator('.lp-image-thumbnail').first().click();await page.locator('.image-modal-image').waitFor();
+    await page.keyboard.press('Escape');assert.equal(await page.locator('.image-modal-image').count(),0);
+    await page.locator('.lp-image-thumbnail').first().evaluate(el=>el.blur());
+    for (const width of [1440,390,320]) {
+      await page.setViewportSize({width,height:900});await page.mouse.move(0,0);
+      const sizes = await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,thumbs:[...document.querySelectorAll('.lp-image-thumbnail')].map(img=>({width:img.getBoundingClientRect().width,height:img.getBoundingClientRect().height})),composer:document.querySelector('.thread-composer').getBoundingClientRect().bottom}));
+      assert.ok(sizes.scroll<=sizes.width+1,'horizontal overflow at '+width);
+      assert.ok(sizes.composer<=901,'composer remains visible');
+      assert.ok(sizes.thumbs.every(thumb=>thumb.width<=104 && thumb.width===thumb.height),'small square thumbnails at '+width);
+      await page.screenshot({path:path.join(output,'conversation-light-'+width+'.png'),fullPage:true,animations:'disabled'});
+      await page.evaluate(()=>document.documentElement.classList.add('dark'));
+      await page.screenshot({path:path.join(output,'conversation-dark-'+width+'.png'),fullPage:true,animations:'disabled'});
+      await page.evaluate(()=>document.documentElement.classList.remove('dark'));
+    }
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.equal(await page.locator('.is-working').evaluate(el=>getComputedStyle(el).animationName),'none');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await emit({method:'item/started',params:{threadId:'native-chat',turnId:'native-turn',item:{id:'cmd-running',type:'commandExecution',command:'fixture-running',status:'inProgress',aggregatedOutput:'',exitCode:null}}});
+    await page.getByRole('button',{name:'正在运行命令',exact:true}).waitFor();
+    await page.getByRole('status').filter({hasText:'正在运行命令'}).waitFor();
+    await emit({method:'item/completed',params:{threadId:'native-chat',turnId:'native-turn',item:{...command('cmd-running'),status:'completed'}}});
+    await emit({method:'item/reasoning/summaryTextDelta',params:{threadId:'native-chat',turnId:'native-turn',itemId:'reason-one',summaryIndex:0,delta:'正在确认响应式布局。'}});
+    await page.locator('.thread-work-reasoning summary').click();
+    assert.ok((await page.locator('.thread-work-summary').textContent()).includes('正在检查会话展示。正在确认响应式布局。'));
+    await emit({id:'approval-fixture',method:'item/tool/requestUserInput',params:{threadId:'native-chat',turnId:'native-turn',questions:[{id:'choice',header:'选择',question:'选择颜色',options:[{label:'浅色',description:'使用浅色'}]}]}});
+    await page.getByRole('status').filter({hasText:'等待你的回复'}).waitFor();
+    assert.equal(await page.locator('.is-working').count(),0,'approval waits must not look like active thinking');
+    await emit({method:'serverRequest/resolved',params:{threadId:'native-chat',requestId:'approval-fixture'}});
+    await page.getByRole('status').filter({hasText:'正在思考'}).waitFor();
+    await page.setViewportSize({width:1440,height:900});
+    await page.locator('[data-thread-id="other-chat"] .lp-thread-title').click();
+    await page.waitForFunction(()=>document.querySelector('.lp-chat-header h1')?.textContent==='另一条工作会话');
+    assert.equal(await page.locator('.thread-work-elapsed').count(),0,'missing native start time must not use another thread clock');
+    assert.equal(await page.locator('.thread-work-summary').count(),0,'reasoning stays within its conversation');
+    await page.locator('[data-thread-id="native-chat"] .lp-thread-title').click();
+    await page.getByRole('status').filter({hasText:'正在思考'}).waitFor();
+    await page.evaluate(()=>window.__fixtureSocket.onclose({code:1006}));
+    await page.waitForFunction(()=>!document.querySelector('.is-working'));
+    assert.ok(!(await page.locator('.lp-chat-status').textContent()).includes('已同步'));
+    await page.waitForFunction(()=>document.querySelector('.lp-connection')?.textContent.includes('已连接'));
+    await page.getByRole('status').filter({hasText:'正在思考'}).waitFor();
+    active=false;turn.completedAt=Date.now();
+    await emit({method:'turn/completed',params:{threadId:'native-chat',turn:{id:'native-turn',status:'completed',completedAt:turn.completedAt}}});
+    await page.waitForFunction(()=>!document.querySelector('.is-working'));
+    assert.ok((await page.locator('.worked-separator-text').textContent()).includes('已处理'));
+    assert.equal(calls.filter(call=>call.method==='turn/start').length,0,'presentation and reconnect must never submit a task');
+    assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({individualCommands:true,fullCommandDetails:true,thinkingAnimation:true,elapsedTimer:true,approvalWait:true,compactImages:true,imageModal:true,cleanUserText:true,threadIsolation:true,reconnectNoResend:true,completedDuration:true,reducedMotion:true,widths:[1440,390,320],lightAndDark:true,browserErrors:0}));
+  } finally {await browser.close();}
+})().catch(error=>{console.error(error.stack);process.exitCode=1;});

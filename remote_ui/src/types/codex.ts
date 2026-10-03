@@ -249,6 +249,8 @@ export type UiLiveOverlay = {
   activityDetails: string[]
   reasoningText: string
   errorText: string
+  running?: boolean
+  startedAtMs?: number
 }
 
 export type UiCreditsSnapshot = {
