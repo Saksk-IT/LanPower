@@ -4,7 +4,7 @@ param([switch]$Build, [switch]$WebOnly)
 
 $ErrorActionPreference = 'Stop'
 $composeArgs = @('compose', '-p', 'lanpower-dev', '-f', (Join-Path $PSScriptRoot 'compose.dev.yml'))
-$image = 'lanpower-cloud:1.13.1-dev.1'
+$image = 'lanpower-cloud:1.14.0-dev.1'
 $privateDir = Join-Path $PSScriptRoot 'private'
 $envFile = Join-Path $PSScriptRoot '.env.dev'
 $loginFile = Join-Path $privateDir 'dev-login.txt'

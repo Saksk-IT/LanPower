@@ -95,7 +95,8 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         var root = config.Workspaces.FirstOrDefault(config.Allows)
             ?? (config.AutoDiscover ? CodexProjects.FromState().FirstOrDefault()?.Path : null)
             ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (config.SharedControl)
+        if (config.DesktopControl) _runtime = await RuntimeClient.ConnectDesktopAsync(token);
+        else if (config.SharedControl)
         {
             if (sharedConnection is not null) _runtime = await sharedConnection(token);
             else
@@ -260,6 +261,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                 var recent = BoundedTurns(data); // Server lists newest first; preserve the newest items under the size cap.
                 thread["turns"] = new JsonArray(recent.Reverse().Select(item => item?.DeepClone()).ToArray());
                 thread["historyTruncated"] = turns["result"]?["nextCursor"] is not null || recent.Count < data.Count;
+                thread["historyCursor"] = turns["result"]?["nextCursor"]?.DeepClone();
             }
             else
             {
@@ -317,7 +319,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             return new JsonObject { ["id"] = requestId.DeepClone(), ["result"] = new JsonObject { ["thread"] = await ReadThreadAsync(id!, true, token) } };
         if (method == "thread/start") { parameters["approvalPolicy"] = "on-request"; parameters["sandbox"] = "workspace-write"; parameters["excludeTurns"] = true; }
         if (method == "thread/resume") parameters["excludeTurns"] = true;
-        if (method == "turn/start")
+        if (method == "turn/start" && !_runtime!.Desktop)
         {
             if (_runtime!.ActiveTurns.ContainsKey(id!)) throw new InvalidDataException("task_running");
             parameters["approvalPolicy"] = "on-request"; parameters["cwd"] = _threads[id!];
@@ -378,7 +380,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                 ["projects"] = new JsonArray(_projects.Select(project => (JsonNode)new JsonObject {
                     ["name"] = project.Name, ["path"] = project.Path, ["id"] = project.Id }).ToArray()),
                 ["autoDiscover"] = config.AutoDiscover, ["loggedIn"] = account["result"]?["account"] is not null, ["sessionHandoff"] = !_runtime.Shared,
-                ["sharedControl"] = _runtime.Shared, ["queueSupported"] = _runtime.Shared,
+                ["sharedControl"] = _runtime.Shared, ["queueSupported"] = _runtime.Shared, ["desktopControl"] = _runtime.Desktop,
                 ["pendingApprovals"] = PendingApprovals, ["activeThread"] = last,
                 ["activeTurn"] = _runtime.Shared && last is not null ? _runtime.ActiveTurns.GetValueOrDefault(last) : active.Key is null ? null : active.Value.Client.ActiveTurns.GetValueOrDefault(active.Key), ["diff"] = diff,
                 ["activeTurns"] = _runtime.Shared ? new JsonArray(_runtime.ActiveTurns.Where(pair => _threads.ContainsKey(pair.Key))
@@ -398,6 +400,13 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             _threads[threadId] = cwd!;
             if (method == "thread/read")
                 return Reply(new JsonObject { ["thread"] = await ReadThreadAsync(threadId, parameters["includeTurns"]?.GetValue<bool>() == true, token) });
+            if (method == "thread/turns/list")
+            {
+                parameters["itemsView"] = "full"; parameters["sortDirection"] = "desc";
+                var page = await _runtime!.CallAsync(method, parameters, token); page["id"] = request["id"]!.DeepClone();
+                if (page["result"]?["data"] is JsonArray turns) page["result"]!["data"] = BoundedTurns(turns);
+                return page;
+            }
             if (_runtime!.Shared) return await SharedRequestAsync(method, parameters, request["id"]!, token);
             if (method == "lanpower/session/release")
             {

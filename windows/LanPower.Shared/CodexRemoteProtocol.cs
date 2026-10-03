@@ -17,6 +17,8 @@ public static class CodexRemoteProtocol
         ["thread/list"] = ["cursor", "limit", "cwd", "archived"],
         ["thread/start"] = ["cwd", "model"], ["thread/resume"] = ["threadId"],
         ["thread/read"] = ["threadId", "includeTurns"], ["thread/name/set"] = ["threadId", "name"],
+        ["thread/turns/list"] = ["threadId", "cursor", "limit"],
+        ["thread/fork"] = ["threadId"], ["thread/rollback"] = ["threadId", "numTurns"],
         ["thread/archive"] = ["threadId"], ["thread/unarchive"] = ["threadId"],
         ["thread/queue/add"] = ["threadId", "input", "clientUserMessageId"],
         ["thread/queue/list"] = ["threadId", "cursor", "limit"],
@@ -89,14 +91,29 @@ public static class CodexRemoteProtocol
         if (args.ContainsKey("limit") && (args["limit"] is not JsonValue limit ||
             !limit.TryGetValue<int>(out var count) || count is < 1 or > 50))
             throw new InvalidDataException("invalid_params");
+        if (method == "thread/rollback" && (args["numTurns"] is not JsonValue turns ||
+            !turns.TryGetValue<int>(out var turnCount) || turnCount is < 1 or > 50))
+            throw new InvalidDataException("invalid_params");
         foreach (var name in new[] { "includeTurns", "archived" })
             if (args.ContainsKey(name) && (args[name] is not JsonValue value || !value.TryGetValue<bool>(out _)))
                 throw new InvalidDataException("invalid_params");
         if (method is "turn/start" or "turn/steer" or "thread/queue/add" or "thread/queue/update")
         {
-            if (args["input"] is not JsonArray { Count: 1 } input || input[0] is not JsonObject { Count: 2 } text ||
-                text["type"]?.GetValue<string>() != "text") throw new InvalidDataException("invalid_input");
-            ValidateString(text, "text", 16000, true);
+            if (args["input"] is not JsonArray { Count: > 0 and <= 5 } input) throw new InvalidDataException("invalid_input");
+            var textCount = 0; var imageCount = 0; var imageBytes = 0;
+            foreach (var entry in input)
+            {
+                if (entry is not JsonObject { Count: 2 } item) throw new InvalidDataException("invalid_input");
+                if (item["type"]?.GetValue<string>() == "text") { ValidateString(item, "text", 16000, true); if (++textCount > 1) throw new InvalidDataException("invalid_input"); }
+                else if (item["type"]?.GetValue<string>() == "image")
+                {
+                    ValidateString(item, "url", 700000, true); var url = item["url"]!.GetValue<string>(); imageBytes += url.Length;
+                    if (++imageCount > 4 || imageBytes > 850000 || !System.Text.RegularExpressions.Regex.IsMatch(url,
+                        @"\Adata:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+                        throw new InvalidDataException("invalid_input");
+                }
+                else throw new InvalidDataException("invalid_input");
+            }
         }
         return method;
     }

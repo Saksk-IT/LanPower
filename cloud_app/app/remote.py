@@ -5,6 +5,7 @@ import asyncio
 from contextlib import suppress
 from dataclasses import dataclass, field
 import json
+import re
 import time
 import uuid
 
@@ -24,6 +25,9 @@ FIELDS = {
     "thread/start": {"cwd", "model"},
     "thread/resume": {"threadId"},
     "thread/read": {"threadId", "includeTurns"},
+    "thread/turns/list": {"threadId", "cursor", "limit"},
+    "thread/fork": {"threadId"},
+    "thread/rollback": {"threadId", "numTurns"},
     "thread/name/set": {"threadId", "name"},
     "thread/archive": {"threadId"},
     "thread/unarchive": {"threadId"},
@@ -102,6 +106,8 @@ def validate_request(payload: dict) -> str:
             raise ProtocolError()
     if "limit" in params and (type(params["limit"]) is not int or not 1 <= params["limit"] <= 50):
         raise ProtocolError()
+    if method == "thread/rollback" and (type(params.get("numTurns")) is not int or not 1 <= params["numTurns"] <= 50):
+        raise ProtocolError()
     for key in ("includeTurns", "archived"):
         if key in params and type(params[key]) is not bool: raise ProtocolError()
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
@@ -116,10 +122,21 @@ def validate_request(payload: dict) -> str:
             raise ProtocolError()
     if method in {"turn/start", "turn/steer", "thread/queue/add", "thread/queue/update"}:
         inputs = params.get("input")
-        if (not isinstance(inputs, list) or len(inputs) != 1 or not isinstance(inputs[0], dict) or
-                set(inputs[0]) != {"type", "text"} or inputs[0]["type"] != "text" or
-                not isinstance(inputs[0]["text"], str) or not 1 <= len(inputs[0]["text"]) <= 16000):
+        if not isinstance(inputs, list) or not 1 <= len(inputs) <= 5:
             raise ProtocolError()
+        text_count = image_count = image_bytes = 0
+        for item in inputs:
+            if not isinstance(item, dict): raise ProtocolError()
+            if item.get("type") == "text":
+                text_count += 1
+                if set(item) != {"type", "text"} or text_count > 1 or not isinstance(item["text"], str) or not 1 <= len(item["text"]) <= 16000: raise ProtocolError()
+            elif item.get("type") == "image":
+                image_count += 1
+                url = item.get("url")
+                if set(item) != {"type", "url"} or not isinstance(url, str) or not 1 <= len(url) <= 700000: raise ProtocolError()
+                image_bytes += len(url)
+                if image_count > 4 or image_bytes > 850000 or re.fullmatch(r"data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}", url) is None: raise ProtocolError()
+            else: raise ProtocolError()
     return method
 
 

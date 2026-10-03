@@ -6,4 +6,5 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="..\LanPower.Shared\LanPower.Shared.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="DesktopRenderer.js" LogicalName="LanPower.DesktopRenderer.js" /></ItemGroup>
 </Project>

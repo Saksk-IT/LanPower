@@ -93,4 +93,25 @@ public partial class MainWindow
         }
         catch { CodexRemoteState.Text = "无法启动共享窗口，请检查 LanPower 安装和当前用户目录权限。"; }
     }
+
+    private async void ConnectCodexDesktop(object sender, RoutedEventArgs e)
+    {
+        var executable = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "CodexHost", "LanPower.CodexHost.exe"));
+        try
+        {
+            var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true };
+            start.ArgumentList.Add("--connect-desktop");
+            using var connection = Process.Start(start) ?? throw new IOException();
+            CodexRemoteState.Text = "正在连接当前官方 Codex 窗口…";
+            await connection.WaitForExitAsync();
+            if (connection.ExitCode != 0)
+            {
+                CodexRemoteState.Text = "原 Codex 窗口尚未开启本机连接。请在任务完成后关闭 Codex，再用 --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 启动。";
+                return;
+            }
+            LoadCodexRemoteSettings(); StartCodexHost();
+            CodexRemoteState.Text = "已连接原 Codex 窗口，网页可以继续同一会话。";
+        }
+        catch { CodexRemoteState.Text = "连接失败，请确认官方 Codex 正在运行并已登录。"; }
+    }
 }

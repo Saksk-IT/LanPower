@@ -12,6 +12,7 @@ public sealed class RuntimeClient : IAsyncDisposable
     private readonly Process? _process;
     private readonly RuntimeJob? _job;
     private readonly ClientWebSocket? _socket;
+    private readonly DesktopCdp? _desktop;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _write = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonObject>> _calls = new();
@@ -29,18 +30,24 @@ public sealed class RuntimeClient : IAsyncDisposable
     public ConcurrentDictionary<string, string> ActiveTurns { get; } = new();
     public ConcurrentDictionary<string, string> ThreadDiffs { get; } = new();
     public string Diff { get; private set; } = "";
-    public bool Shared => _socket is not null;
-    public bool Running => (_socket?.State == WebSocketState.Open || _process is { HasExited: false }) && !_reader.IsCompleted;
+    public bool Desktop => _desktop is not null;
+    public bool Shared => _socket is not null || Desktop;
+    public bool Running => (_desktop?.Running == true || _socket?.State == WebSocketState.Open || _process is { HasExited: false }) && !_reader.IsCompleted;
     public JsonArray PendingApprovals => new(_approvals.Values.Select(value => value.Request.DeepClone()).ToArray());
     private static readonly HashSet<string> Notifications = ["thread/started", "thread/status/changed", "turn/started",
         "turn/completed", "turn/diff/updated", "turn/plan/updated", "item/started", "item/completed",
         "item/agentMessage/delta", "item/plan/delta", "item/commandExecution/outputDelta",
-        "item/fileChange/outputDelta", "serverRequest/resolved", "thread/queue/changed", "error"];
+        "item/fileChange/outputDelta", "serverRequest/resolved", "thread/queue/changed", "thread/name/updated", "thread/tokenUsage/updated", "item/reasoning/summaryTextDelta", "error"];
 
     private RuntimeClient(ClientWebSocket socket)
     {
         _socket = socket; _stderr = Task.CompletedTask; _reader = ReadAsync();
     }
+
+    private RuntimeClient(DesktopCdp desktop)
+    { _desktop = desktop; _stderr = Task.CompletedTask; _reader = ReadAsync(); }
+
+    public static async Task<RuntimeClient> ConnectDesktopAsync(CancellationToken token) => new(await DesktopCdp.ConnectAsync(token));
 
     public static async Task<RuntimeClient> ConnectAsync(Uri endpoint, string bearer, CancellationToken token)
     {
@@ -223,6 +230,7 @@ public sealed class RuntimeClient : IAsyncDisposable
 
     private async Task<string?> ReadFrameAsync(CancellationToken token)
     {
+        if (_desktop is not null) return await _desktop.ReadAsync(token);
         if (_socket is null) return await CodexRemoteProtocol.ReadLineAsync(_process!.StandardOutput, token, LocalFrameLimit);
         using var data = new MemoryStream(); var buffer = new byte[16384];
         while (true)
@@ -305,6 +313,7 @@ public sealed class RuntimeClient : IAsyncDisposable
 
     private async Task SendAsync(JsonObject message, CancellationToken token)
     {
+        if (_desktop is not null) { await _desktop.SendAsync(message, token); return; }
         var raw = message.ToJsonString(CodexRemoteProtocol.JsonOptions);
         if (System.Text.Encoding.UTF8.GetByteCount(raw) > CodexRemoteProtocol.MaxFrame) throw new InvalidDataException("frame_too_large");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -321,6 +330,7 @@ public sealed class RuntimeClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
+        if (_desktop is not null) await _desktop.DisposeAsync();
         _socket?.Abort();
         if (_process is { HasExited: false }) _process.Kill(true);
         _job?.Dispose();

@@ -10,12 +10,46 @@ using LanPower.Shared;
 using Microsoft.Win32.SafeHandles;
 
 if (!Environment.UserInteractive || WindowsIdentity.GetCurrent().IsSystem) return;
+if (args.Contains("--check-desktop"))
+{
+    try
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        await using var desktop = await RuntimeClient.ConnectDesktopAsync(deadline.Token);
+        await desktop.InitializeAsync(deadline.Token);
+        var threads = await desktop.CallAsync("thread/list", new JsonObject { ["limit"] = 1 }, deadline.Token);
+        var loaded = await desktop.CallAsync("thread/loaded/list", new(), deadline.Token);
+        var first = (threads["result"]?["data"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault();
+        var history = first is null ? null : await desktop.CallAsync("thread/turns/list", new() { ["threadId"] = first["id"]!.DeepClone(), ["limit"] = 2, ["itemsView"] = "full", ["sortDirection"] = "desc" }, deadline.Token);
+        var queue = first is null ? null : await desktop.CallAsync("thread/queue/list", new() { ["threadId"] = first["id"]!.DeepClone(), ["limit"] = 2 }, deadline.Token);
+        if (threads["error"] is not null || loaded["error"] is not null) throw new IOException("desktop_request_failed");
+        Console.WriteLine(JsonSerializer.Serialize(new { connected = desktop.Running, originalWindow = desktop.Desktop,
+            recentThreads = (threads["result"]?["data"] as JsonArray)?.Count ?? 0,
+            loadedThreads = (loaded["result"]?["data"] as JsonArray)?.Count ?? 0,
+            historySupported = history?["error"] is null, historyTurns = (history?["result"]?["data"] as JsonArray)?.Count ?? 0,
+            queueSupported = queue?["error"] is null, queueError = queue?["error"]?["code"]?.GetValue<int>() }));
+    }
+    catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException)
+    { Console.WriteLine("{\"connected\":false}"); Environment.ExitCode = 6; }
+    return;
+}
+if (args.Contains("--connect-desktop"))
+{
+    try
+    {
+        await using var desktop = await DesktopCdp.ConnectAsync(CancellationToken.None);
+        var config = CodexHostSettings.Load(); (config with { DesktopControl = true, SharedControl = false }).Save();
+    }
+    catch (Exception error) when (error is IOException or UnauthorizedAccessException or TimeoutException or OperationCanceledException)
+    { Environment.ExitCode = error is UnauthorizedAccessException ? 5 : 6; }
+    return;
+}
 if (args.Contains("--open-shared-desktop"))
 {
     try
     {
         await SharedCodexServer.OpenDesktopAsync(CancellationToken.None);
-        var config = CodexHostSettings.Load(); (config with { SharedControl = true }).Save();
+        var config = CodexHostSettings.Load(); (config with { SharedControl = true, DesktopControl = false }).Save();
     }
     catch (Exception error) when (error is IOException or UnauthorizedAccessException or TimeoutException or InvalidOperationException or System.ComponentModel.Win32Exception)
     {
@@ -76,8 +110,8 @@ async Task WatchLocal()
             if (current != previous)
             {
                 // A mode change waits for existing independent tasks to finish. Revocation still takes effect immediately.
-                if (config.SharedControl != previousConfig.SharedControl &&
-                    JsonSerializer.Serialize(config with { SharedControl = previousConfig.SharedControl }) == previous &&
+                if ((config.SharedControl != previousConfig.SharedControl || config.DesktopControl != previousConfig.DesktopControl) &&
+                    JsonSerializer.Serialize(config with { SharedControl = previousConfig.SharedControl, DesktopControl = previousConfig.DesktopControl }) == previous &&
                     !await runtime.CanSwitchModeAsync(lifetime.Token)) continue;
                 await runtime.DisposeAsync(); previous = current; previousConfig = config; running = false;
                 Emit(new { type = "hello", protocol = 1, state = config.Enabled ? "host_ready" : "disabled" });

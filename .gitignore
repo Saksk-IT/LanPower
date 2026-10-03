@@ -39,6 +39,8 @@ private/
 /deploy/docker/backups/
 /AGENTS.md
 **/AGENTS.md
+
+/remote_ui/node_modules/
 **/.env
 **/.env.*
 !**/.env.example

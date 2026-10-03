@@ -1,1 +1,4 @@
 /router_gateway/scripts/*.sh text eol=lf
+# Generated bundles contain significant whitespace in syntax-highlighter strings.
+/cloud_app/static/codex-ui/** text eol=lf -whitespace linguist-generated=true
+/remote_ui/documentation/app-server-schemas/** -whitespace linguist-generated=true

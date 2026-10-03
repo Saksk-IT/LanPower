@@ -229,7 +229,8 @@
                   <Button Content="清空手动目录" Click="ClearCodexWorkspaces" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
                   <Button Content="保存授权" Click="SaveCodexRemote" Margin="0,0,8,8"/>
                   <Button Content="打开远程开发" Click="OpenCodexRemote" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
-                  <Button Content="打开 Codex 双端控制" Click="OpenSharedCodex" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
+                  <Button Content="连接原 Codex 窗口" Click="ConnectCodexDesktop" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8"/>
+                  <Button Content="打开备用共享窗口" Click="OpenSharedCodex" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/>
                 </WrapPanel>
                 <TextBlock Text="Windows 用户未登录时 Runtime 不可用；唤醒、电源与 Cloud Direct 继续独立运行。关闭授权会停止远程 Runtime。" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
               </StackPanel>

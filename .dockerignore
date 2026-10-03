@@ -11,6 +11,7 @@ private
 LanPower
 windows
 mini_program
+remote_ui
 router_gateway
 docs
 tests

@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-应用源码版本为 `1.13.1`，小程序 `2.1.1`，本地部署配置版本为 `1.13.1-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.14.0`，小程序 `2.1.2`，本地部署配置版本为 `1.14.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**。此入口仅供当前电脑使用；Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 启动与登录
 
@@ -134,3 +134,7 @@ Windows HTTPS 检查与 Chromium 浏览器均通过正常证书校验。实际�
 开发配置 `1.7.0-dev.1` 只验证并配置了当前用户的证书信任，实际 `LocalSystem` 服务在请求本机配对接口时出现 `HttpRequestException:SecureConnectionError -> AuthenticationException`。现场核对发现开发 CA 存在于 `CurrentUser\Root`，但不在 `LocalMachine\Root`。
 
 `1.7.0-dev.2` 增加独立的证书修复脚本，并由启动入口默认调用；管理员权限仅用于导入计算机证书。补齐同一张开发 CA 后，无需修改 Windows 程序或重启服务，通过实际服务 IPC 调用配对接口成功获得短码和正确的本机批准地址，验证用等待状态随后取消。此检查没有兑换新设备凭据；正式转到本机 Cloud 仍需用户在网页批准。原服务身份、Cloud 连接和 LAN 配对保持不变，未执行电源动作。更新后的开发启动脚本在 Windows PowerShell 5.1 下通过，运行前备份测试库，Cloud 和代理均保持健康。
+
+## 本机 1.14.0 原窗口整合（2026-10-03）
+
+本机镜像更新为 `lanpower-cloud:1.14.0-dev.1`，访问 [本机 Codex Remote](https://localhost:8443/remote) 查看新 Vue 网页。升级前使用 SQLite backup API 检查备份；原开发卷、登录配置和 CA 保留。Windows Setup 就地更新到 1.14.0，Service、Desktop、Host 和版本化备用服务与构建匹配，设备身份、Cloud 地址、LAN 配置和用户项目授权保留。Host 已切换为原窗口接入；官方工作窗口未重启。真实任务、原服务审批回复与原生队列操作通过，详见 [原窗口整合说明](codex-original-window.md)。远程仓库和正式云服务器本轮未同步。
