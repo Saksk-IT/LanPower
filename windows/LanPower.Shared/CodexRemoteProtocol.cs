@@ -14,6 +14,12 @@ public static class CodexRemoteProtocol
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
         ["lanpower/status"] = [], ["lanpower/session/release"] = ["threadId"], ["model/list"] = ["cursor", "limit"],
+        ["lanpower/chat/start"] = ["model"], ["skills/list"] = ["cwd"], ["lanpower/automations/list"] = [],
+        ["lanpower/files/list"] = ["cwd", "path", "cursor"], ["lanpower/files/read"] = ["cwd", "path"],
+        ["lanpower/files/search"] = ["cwd", "query"],
+        ["lanpower/library/update"] = ["revision", "preferences"], ["lanpower/image/read"] = ["threadId", "path"],
+        ["plugin/list"] = ["cwd"], ["app/list"] = ["cursor", "limit", "threadId"], ["mcpServerStatus/list"] = ["cursor", "limit"],
+        ["config/mcpServer/reload"] = [], ["account/rateLimits/read"] = [], ["collaborationMode/list"] = [],
         ["thread/list"] = ["cursor", "limit", "cwd", "archived"],
         ["thread/start"] = ["cwd", "model"], ["thread/resume"] = ["threadId"],
         ["thread/read"] = ["threadId", "includeTurns"], ["thread/name/set"] = ["threadId", "name"],
@@ -26,7 +32,7 @@ public static class CodexRemoteProtocol
         ["thread/queue/delete"] = ["threadId", "queuedSubmissionId"],
         ["thread/queue/start"] = ["threadId", "queuedSubmissionId"],
         ["thread/queue/reorder"] = ["threadId", "queuedSubmissionIds"],
-        ["turn/start"] = ["threadId", "input", "model", "effort"],
+        ["turn/start"] = ["threadId", "input", "model", "effort", "mode"],
         ["turn/interrupt"] = ["threadId", "turnId"],
         ["turn/steer"] = ["threadId", "expectedTurnId", "input"]
     };
@@ -80,10 +86,20 @@ public static class CodexRemoteProtocol
             throw new InvalidDataException("method_not_allowed");
         if ((method.StartsWith("thread/") && method is not "thread/list" and not "thread/start") ||
             method.StartsWith("turn/") || method == "lanpower/session/release") ValidateString(args, "threadId", 100, true);
-        foreach (var name in new[] { "cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId" })
+        foreach (var name in new[] { "cwd", "path", "query", "model", "cursor", "name", "effort", "turnId", "expectedTurnId" })
             ValidateString(args, name, 1000, method == "turn/interrupt" && name == "turnId" ||
                 method == "turn/steer" && name == "expectedTurnId");
         ValidateString(args, "clientUserMessageId", 100, method == "thread/queue/add");
+        if (method == "app/list") ValidateString(args, "threadId", 100);
+        if (method == "lanpower/library/update")
+        {
+            if (args["revision"] is not JsonValue version || !version.TryGetValue<long>(out var revision) || revision < 0 || revision >= 9007199254740991)
+                throw new InvalidDataException("invalid_library");
+            CodexLibraryPreferences.Validate(args["preferences"]);
+        }
+        if (method == "lanpower/image/read") { ValidateString(args, "threadId", 100, true); ValidateString(args, "path", 1000, true); }
+        if (method.StartsWith("lanpower/files/")) { ValidateString(args,"cwd",1000,true); if (method == "lanpower/files/read") ValidateString(args,"path",1000,true); if (method == "lanpower/files/search") ValidateString(args,"query",256,true); }
+        if (args.ContainsKey("mode") && args["mode"]?.GetValue<string>() is not ("default" or "plan")) throw new InvalidDataException("invalid_params");
         ValidateString(args, "queuedSubmissionId", 100, method is "thread/queue/delete" or "thread/queue/update");
         if (method == "thread/queue/reorder" && (args["queuedSubmissionIds"] is not JsonArray { Count: > 0 and <= 32 } ids ||
             ids.Any(id => id is not JsonValue value || !value.TryGetValue<string>(out var text) || text.Length is < 1 or > 100) ||
@@ -92,22 +108,23 @@ public static class CodexRemoteProtocol
             !limit.TryGetValue<int>(out var count) || count is < 1 or > 50))
             throw new InvalidDataException("invalid_params");
         if (method == "thread/rollback" && (args["numTurns"] is not JsonValue turns ||
-            !turns.TryGetValue<int>(out var turnCount) || turnCount is < 1 or > 50))
+            !turns.TryGetValue<int>(out var turnCount) || turnCount is < 1 or > 100000))
             throw new InvalidDataException("invalid_params");
         foreach (var name in new[] { "includeTurns", "archived" })
             if (args.ContainsKey(name) && (args[name] is not JsonValue value || !value.TryGetValue<bool>(out _)))
                 throw new InvalidDataException("invalid_params");
         if (method is "turn/start" or "turn/steer" or "thread/queue/add" or "thread/queue/update")
         {
-            if (args["input"] is not JsonArray { Count: > 0 and <= 5 } input) throw new InvalidDataException("invalid_input");
-            var textCount = 0; var imageCount = 0; var imageBytes = 0;
+            if (args["input"] is not JsonArray { Count: > 0 and <= 13 } input) throw new InvalidDataException("invalid_input");
+            var textCount = 0; var imageCount = 0; var imageBytes = 0; var skillCount = 0;
             foreach (var entry in input)
             {
-                if (entry is not JsonObject { Count: 2 } item) throw new InvalidDataException("invalid_input");
-                if (item["type"]?.GetValue<string>() == "text") { ValidateString(item, "text", 16000, true); if (++textCount > 1) throw new InvalidDataException("invalid_input"); }
+                if (entry is not JsonObject item) throw new InvalidDataException("invalid_input");
+                if (item["type"]?.GetValue<string>() == "skill") { if (item.Count != 3 || ++skillCount > 8) throw new InvalidDataException("invalid_input"); ValidateString(item,"name",120,true); ValidateString(item,"path",1000,true); }
+                else if (item["type"]?.GetValue<string>() == "text") { if (item.Count != 2) throw new InvalidDataException("invalid_input"); ValidateString(item, "text", 16000, true); if (++textCount > 1) throw new InvalidDataException("invalid_input"); }
                 else if (item["type"]?.GetValue<string>() == "image")
                 {
-                    ValidateString(item, "url", 700000, true); var url = item["url"]!.GetValue<string>(); imageBytes += url.Length;
+                    if (item.Count != 2) throw new InvalidDataException("invalid_input"); ValidateString(item, "url", 700000, true); var url = item["url"]!.GetValue<string>(); imageBytes += url.Length;
                     if (++imageCount > 4 || imageBytes > 850000 || !System.Text.RegularExpressions.Regex.IsMatch(url,
                         @"\Adata:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
                         throw new InvalidDataException("invalid_input");

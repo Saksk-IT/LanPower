@@ -1,10 +1,10 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.14.0`，新增微信小程序专用 Codex Remote WSS 入口和独立手机开发权限，沿用已有长期授权与用户 Host。Cloud 200 项测试通过，内存 Relay 不保存正文。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.15.0`，新增微信小程序专用 Codex Remote WSS 入口和独立手机开发权限，沿用已有长期授权与用户 Host。Cloud 200 项测试通过，内存 Relay 不保存正文。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
 小程序 `2.1.0` 的首次使用及界面截图见 [第一版说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
 
-1.14.0 的 `/remote` 复用成熟 Vue 会话、输入、审批与队列组件，Windows Host 直接连接原官方窗口。新增原生历史翻页、分支与回退白名单；Cloud 继续内存转发。真实本机审批后命令执行及原生队列增删改/排序通过，见 [原窗口整合说明](../docs/codex-original-window.md)。
+原窗口整合的 `/remote` 复用成熟 Vue 会话、输入、审批与队列组件，Windows Host 直接连接原官方窗口。新增原生历史翻页、分支与回退白名单；Cloud 继续内存转发。真实本机审批后命令执行及原生队列增删改/排序通过，见 [原窗口整合说明](../docs/codex-original-window.md)。
 
 ## Codex Remote Relay
 
@@ -96,3 +96,5 @@ Windows 状态上报的响应额外提供该电脑的 `wake_gateway` 和 `wake_a
 总览、我的电脑和远程唤醒页每 5 秒自动更新状态，失败时显示“状态未知”并禁用远程电源按钮。Windows 每 10 秒独立上报心跳，新服务失联 35 秒后判定直连离线；旧服务仍按 75 秒处理。非局域网模式的小程序采用同一 Cloud 设备状态，网络切换后的旧响应不能覆盖新结果。
 
 电脑可由有效的 Windows 心跳或网关局域网观察确认为在线，备用控制仍需单独授权。已上报的电源过渡或离线状态不会被网关的旧观察覆盖。状态同步功能引入时的 97 项 Cloud 测试及网页状态脚本回归通过；Cloud `1.6.0` 更新后共 119 项测试通过，升级顺序、协议兼容和验收边界见 [三端状态同步](../docs/status-sync.md) 与 [界面指南](../docs/cloud-ui.md)。
+
+本轮 Codex Remote 系统对齐见 [1.15 系统说明](../docs/codex-system-parity.md)：完整历史分段传输、原窗口状态与模型同步、电脑端项目/聊天组织、文件图片及能力目录。小程序保持原生简化界面，已支持同一大响应协议。

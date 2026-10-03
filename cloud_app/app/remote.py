@@ -17,8 +17,15 @@ from cloud_app.app.auth import current_session
 
 MAX_FRAME = 1024 * 1024
 MAX_PENDING = 64
+MAX_RESULT = 16 * MAX_FRAME
 FIELDS = {
     "lanpower/status": set(),
+    "lanpower/chat/start": {"model"}, "skills/list": {"cwd"}, "lanpower/automations/list": set(),
+    "lanpower/files/list": {"cwd", "path", "cursor"}, "lanpower/files/read": {"cwd", "path"},
+    "lanpower/files/search": {"cwd", "query"},
+    "lanpower/library/update": {"revision", "preferences"}, "lanpower/image/read": {"threadId", "path"},
+    "plugin/list": {"cwd"}, "app/list": {"cursor", "limit", "threadId"}, "mcpServerStatus/list": {"cursor", "limit"},
+    "config/mcpServer/reload": set(), "account/rateLimits/read": set(), "collaborationMode/list": set(),
     "lanpower/session/release": {"threadId"},
     "model/list": {"cursor", "limit"},
     "thread/list": {"cursor", "limit", "cwd", "archived"},
@@ -37,7 +44,7 @@ FIELDS = {
     "thread/queue/delete": {"threadId", "queuedSubmissionId"},
     "thread/queue/start": {"threadId", "queuedSubmissionId"},
     "thread/queue/reorder": {"threadId", "queuedSubmissionIds"},
-    "turn/start": {"threadId", "input", "model", "effort"},
+    "turn/start": {"threadId", "input", "model", "effort", "mode"},
     "turn/interrupt": {"threadId", "turnId"},
     "turn/steer": {"threadId", "expectedTurnId", "input"},
 }
@@ -101,13 +108,32 @@ def validate_request(payload: dict) -> str:
     if method.startswith("thread/") and method not in {"thread/list", "thread/start"} or method.startswith("turn/") or method == "lanpower/session/release":
         if not isinstance(params.get("threadId"), str) or not 1 <= len(params["threadId"]) <= 100:
             raise ProtocolError()
-    for key in ("cwd", "model", "cursor", "name", "effort", "turnId", "expectedTurnId"):
+    for key in ("cwd", "path", "query", "model", "cursor", "name", "effort", "turnId", "expectedTurnId"):
         if key in params and (not isinstance(params[key], str) or not 1 <= len(params[key]) <= 1000):
             raise ProtocolError()
+    if "threadId" in params and (not isinstance(params["threadId"],str) or not 1 <= len(params["threadId"]) <= 100): raise ProtocolError()
     if "limit" in params and (type(params["limit"]) is not int or not 1 <= params["limit"] <= 50):
         raise ProtocolError()
-    if method == "thread/rollback" and (type(params.get("numTurns")) is not int or not 1 <= params["numTurns"] <= 50):
+    if method == "thread/rollback" and (type(params.get("numTurns")) is not int or not 1 <= params["numTurns"] <= 100000):
         raise ProtocolError()
+    if method.startswith("lanpower/files/"):
+        if not isinstance(params.get("cwd"), str) or not params["cwd"]: raise ProtocolError()
+        if method == "lanpower/files/read" and (not isinstance(params.get("path"), str) or not params["path"]): raise ProtocolError()
+        if method == "lanpower/files/search" and (not isinstance(params.get("query"), str) or not 1 <= len(params["query"]) <= 256): raise ProtocolError()
+    if method == "lanpower/image/read" and (not isinstance(params.get("threadId"), str) or not 1 <= len(params["threadId"]) <= 100 or not isinstance(params.get("path"), str) or not params["path"]): raise ProtocolError()
+    if method == "lanpower/library/update":
+        if type(params.get("revision")) is not int or not 0 <= params["revision"] < 2**53 - 1: raise ProtocolError()
+        prefs = params.get("preferences")
+        if not isinstance(prefs, dict) or len(json.dumps(prefs).encode()) > 128 * 1024 or set(prefs) - {"collapsed", "pinned", "hidden", "order", "aliases", "sections", "sort", "chatsFirst"}: raise ProtocolError()
+        for key in ("collapsed", "pinned", "hidden", "order"):
+            values = prefs.get(key, [])
+            if not isinstance(values, list) or len(values) > (64 if key == "pinned" else 1024) or any(not isinstance(v, str) or not 1 <= len(v) <= (100 if key == "pinned" else 1000) for v in values) or len(set(values)) != len(values): raise ProtocolError()
+        aliases = prefs.get("aliases", {})
+        if not isinstance(aliases, dict) or len(aliases) > 1024 or any(not 1 <= len(k) <= 1000 or not isinstance(v, str) or not 1 <= len(v) <= 120 for k, v in aliases.items()): raise ProtocolError()
+        sections = prefs.get("sections", {})
+        if not isinstance(sections, dict) or set(sections) - {"projects", "chats", "pinned"} or any(type(v) is not bool for v in sections.values()): raise ProtocolError()
+        if prefs.get("sort", "updated") not in ("updated", "created") or type(prefs.get("chatsFirst", False)) is not bool: raise ProtocolError()
+    if "mode" in params and params["mode"] not in ("default", "plan"): raise ProtocolError()
     for key in ("includeTurns", "archived"):
         if key in params and type(params[key]) is not bool: raise ProtocolError()
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
@@ -122,12 +148,15 @@ def validate_request(payload: dict) -> str:
             raise ProtocolError()
     if method in {"turn/start", "turn/steer", "thread/queue/add", "thread/queue/update"}:
         inputs = params.get("input")
-        if not isinstance(inputs, list) or not 1 <= len(inputs) <= 5:
+        if not isinstance(inputs, list) or not 1 <= len(inputs) <= 13:
             raise ProtocolError()
-        text_count = image_count = image_bytes = 0
+        text_count = image_count = image_bytes = skill_count = 0
         for item in inputs:
             if not isinstance(item, dict): raise ProtocolError()
-            if item.get("type") == "text":
+            if item.get("type") == "skill":
+                skill_count += 1
+                if set(item) != {"type", "name", "path"} or skill_count > 8 or not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 120 or not isinstance(item["path"], str) or not 1 <= len(item["path"]) <= 1000: raise ProtocolError()
+            elif item.get("type") == "text":
                 text_count += 1
                 if set(item) != {"type", "text"} or text_count > 1 or not isinstance(item["text"], str) or not 1 <= len(item["text"]) <= 16000: raise ProtocolError()
             elif item.get("type") == "image":
@@ -175,6 +204,13 @@ class Peer:
     deciding: set[str] = field(default_factory=set)
     last_seen: float = field(default_factory=time.monotonic)
     incoming: list[float] = field(default_factory=list)
+    fragments: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    drained: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def wait_for_capacity(self):
+        while self.queued_bytes > 2 * MAX_FRAME or self.queue.qsize() >= 16:
+            self.drained.clear()
+            await asyncio.wait_for(self.drained.wait(), 10)
 
     def send(self, payload: dict):
         raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -189,6 +225,7 @@ class Peer:
         while True:
             raw, size = await self.queue.get()
             self.queued_bytes -= size
+            self.drained.set()
             await asyncio.wait_for(self.socket.send_text(raw), 10)
 
 
@@ -264,7 +301,7 @@ class CodexRelay:
             self.states[device] = "host_offline"
             client = self.clients.get(device)
             if client:
-                client.requests.clear(); client.approvals.clear(); client.deciding.clear()
+                client.requests.clear(); client.fragments.clear(); client.approvals.clear(); client.deciding.clear()
                 client.send({"type": "state", "state": "runtime_starting"})
                 peer.send({"type": "open", "session": client.session})
         else:
@@ -295,7 +332,10 @@ class CodexRelay:
                     message = parse_frame(raw)
                     if message == {"type": "pong"}: continue
                     if message == {"type": "ping"}: peer.send({"type": "pong"}); continue
-                    if agent: self.from_agent(peer, message)
+                    if agent:
+                        if message["type"] == "rpc_chunk" and (client := self.clients.get(device)):
+                            await client.wait_for_capacity()
+                        self.from_agent(peer, message)
                     else:
                         if not valid(): raise ProtocolError("remote_revoked")
                         now = time.monotonic()
@@ -324,7 +364,7 @@ class CodexRelay:
                 if agent and self.agents.get(device) is peer:
                     self.agents.pop(device, None); self.states.pop(device, None)
                     if (client := self.clients.get(device)):
-                        client.requests.clear(); client.approvals.clear(); client.deciding.clear()
+                        client.requests.clear(); client.fragments.clear(); client.approvals.clear(); client.deciding.clear()
                         with suppress(ProtocolError): client.send({"type": "state", "state": "cloud_offline"})
                 elif not agent and self.clients.get(device) is peer:
                     self.clients.pop(device, None)
@@ -332,7 +372,7 @@ class CodexRelay:
                         with suppress(ProtocolError): upstream.send({"type": "close", "session": peer.session})
                 for task in tasks: task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
-                peer.requests.clear(); peer.approvals.clear(); peer.deciding.clear()
+                peer.requests.clear(); peer.fragments.clear(); peer.approvals.clear(); peer.deciding.clear()
                 with suppress(RuntimeError, anyio.ClosedResourceError, anyio.BrokenResourceError): await socket.close(1000)
 
     def from_client(self, peer: Peer, frame: dict):
@@ -373,10 +413,27 @@ class CodexRelay:
             return
         client = self.clients.get(peer.device)
         if client is None or frame.get("session") != client.session: return
+        if kind == "rpc_chunk":
+            if set(frame) != {"type", "session", "id", "index", "count", "data"}: raise ProtocolError()
+            key = rpc_id(frame)
+            if key not in client.requests: return
+            index, count, data = frame["index"], frame["count"], frame["data"]
+            if (type(index) is not int or type(count) is not int or not 1 <= count <= 512 or
+                    not 0 <= index < count or not isinstance(data, str) or not 1 <= len(data) <= 65536):
+                raise ProtocolError("invalid_chunk")
+            previous_index, previous_count, size = client.fragments.get(key, (0, count, 0))
+            size += len(data.encode("utf-8"))
+            if index != previous_index or count != previous_count or size > MAX_RESULT or (key not in client.fragments and len(client.fragments) >= 4):
+                raise ProtocolError("invalid_chunk")
+            client.send({k: v for k, v in frame.items() if k != "session"})
+            if index + 1 == count:
+                client.fragments.pop(key, None); client.requests.pop(key, None)
+            else: client.fragments[key] = (index + 1, count, size)
+            return
         if kind == "state":
             if set(frame) != {"type", "session", "state"} or frame["state"] not in STATES: raise ProtocolError()
             self.states[peer.device] = frame["state"]
-            if frame["state"] != "runtime_ready": client.requests.clear(); client.approvals.clear(); client.deciding.clear()
+            if frame["state"] != "runtime_ready": client.requests.clear(); client.fragments.clear(); client.approvals.clear(); client.deciding.clear()
             client.send({"type": "state", "state": frame["state"]}); return
         if kind != "rpc" or set(frame) != {"type", "session", "payload"} or not isinstance(frame["payload"], dict):
             raise ProtocolError()
@@ -388,7 +445,7 @@ class CodexRelay:
                 if set(payload) != {"id", "method", "params"} or not isinstance(payload["params"], dict): raise ProtocolError()
                 client.approvals[key] = payload["method"]
             elif key in client.requests:
-                client.requests.pop(key)
+                client.requests.pop(key); client.fragments.pop(key, None)
             elif key in client.deciding and "error" in payload:
                 client.deciding.discard(key)
             else: return

@@ -116,6 +116,47 @@ def test_recent_sessions_do_not_require_workspace_filter():
     assert validate_request({"id": "recent", "method": "thread/list", "params": {"limit": 50}}) == "thread/list"
 
 
+def test_long_history_fragments_stream_without_cloud_assembly_or_persistence(remote):
+    client, app, creds, _, temp = remote
+    sentinel = "lossless-private-fragment-sentinel"
+    body = json.dumps({"id": "long-history", "result": {"text": ("中文🎨" * 90000) + sentinel}}, ensure_ascii=False)
+    pieces = [body[i:i + 16000] for i in range(0, len(body), 16000)]
+    with connected(client, creds) as (up, down, session):
+        down.send_json({"type": "rpc", "payload": {"id": "long-history", "method": "thread/turns/list", "params": {"threadId": "native", "limit": 8}}})
+        assert up.receive_json()["payload"]["method"] == "thread/turns/list"
+        received = []
+        for index, data in enumerate(pieces):
+            up.send_json({"type": "rpc_chunk", "session": session, "id": "long-history", "index": index, "count": len(pieces), "data": data})
+            frame = down.receive_json()
+            assert frame == {"type": "rpc_chunk", "id": "long-history", "index": index, "count": len(pieces), "data": data}
+            received.append(frame["data"])
+            peer = app.state.codex_relay.clients[creds["device_id"]]
+            assert all(isinstance(n, int) for state in peer.fragments.values() for n in state)
+        assert "".join(received) == body
+        assert not peer.requests and not peer.fragments
+    assert sentinel not in (temp / "platform.db").read_bytes().decode("latin1")
+
+
+def test_fragment_order_and_request_identity_are_checked(remote):
+    client, _, creds, _, _ = remote
+    with connected(client, creds) as (up, down, session):
+        down.send_json({"type": "rpc", "payload": {"id": "page", "method": "thread/read", "params": {"threadId": "native"}}})
+        up.receive_json()
+        up.send_json({"type": "rpc_chunk", "session": session, "id": "page", "index": 1, "count": 2, "data": "bad-order"})
+        assert up.receive_json()["code"] == "invalid_chunk"
+
+
+def test_host_library_and_native_directory_requests_keep_strict_fields():
+    draft = {"collapsed": ["d:/demo"], "aliases": {"d:/demo": "项目"}, "sections": {"chats": True}, "sort": "updated"}
+    assert validate_request({"id": "save", "method": "lanpower/library/update", "params": {"revision": 1, "preferences": draft}})
+    for invalid in [{"revision": -1, "preferences": draft}, {"revision": 0, "preferences": {"pinned": ["same", "same"]}},
+                    {"revision": 0, "preferences": {"sections": {"chats": "yes"}}}, {"revision": 0, "preferences": {"execute": "injected"}}]:
+        with pytest.raises(ProtocolError): validate_request({"id": "bad", "method": "lanpower/library/update", "params": invalid})
+    for method in ("plugin/list", "mcpServerStatus/list", "app/list", "collaborationMode/list", "config/mcpServer/reload"):
+        assert validate_request({"id": "read", "method": method, "params": {}}) == method
+        with pytest.raises(ProtocolError): validate_request({"id": "bad", "method": method, "params": {"approvalPolicy": "never"}})
+
+
 @pytest.mark.parametrize("method", ["command/exec", "account/login/start", "account/logout", "config/write", "fs/writeFile", "plugin/install"])
 def test_forbidden_methods(remote, method):
     client, _, creds, _, _ = remote

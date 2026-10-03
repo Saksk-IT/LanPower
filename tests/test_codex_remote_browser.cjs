@@ -5,7 +5,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 (async () => {
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
   const password = fs.readFileSync(process.env.LANPOWER_DEV_LOGIN_FILE || path.resolve(__dirname, '../deploy/docker/private/dev-login.txt'), 'utf8').match(/^Password: (.+)$/m)[1].trim();
-  const output = path.resolve(__dirname, '../private/codex-remote-1.14/browser'); fs.mkdirSync(output, {recursive:true});
+  const output = path.resolve(__dirname, '../private/codex-remote-1.15/browser'); fs.mkdirSync(output, {recursive:true});
   const browser = await chromium.launch({headless:true});
   try {
     const context = await browser.newContext(), page = await context.newPage(), errors = [];

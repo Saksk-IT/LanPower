@@ -1,14 +1,14 @@
 # Windows 应用
 
-当前源码版本：Windows `1.14.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。小程序 `2.1.2` 通过 Cloud `1.14.0` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用，新增官方桌面共享控制入口，详见 [小程序第一版](../docs/codex-remote-mini-program.md)。本轮安装包构建和 17 项相关 Windows 测试通过；本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.15.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。小程序 `2.1.3` 通过 Cloud `1.15.0` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用，新增官方桌面共享控制入口，详见 [小程序第一版](../docs/codex-remote-mini-program.md)。本轮安装包构建和 22 项相关 Windows 测试通过；本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
-1.14.0 新增「连接原 Codex 窗口」，直接连接当前用户的官方窗口并沿用它的服务。无需另开工作窗口；原生任务、审批与队列共享。原服务审批回复已经通过真实任务验证，备用服务入口保留为「打开备用共享窗口」。见 [原窗口整合说明](../docs/codex-original-window.md)。
+原窗口整合新增「连接原 Codex 窗口」，直接连接当前用户的官方窗口并沿用它的服务。无需另开工作窗口；原生任务、审批与队列共享。原服务审批回复已经通过真实任务验证，备用服务入口保留为「打开备用共享窗口」。见 [原窗口整合说明](../docs/codex-original-window.md)。
 
 本目录是 .NET 10 Windows 服务、WPF 桌面端和安装包的源码。服务同时提供 LAN Direct 与可选的 Cloud Direct，旧版 Python 实现继续保留。局域网控制不依赖 Cloud 或 Wake Gateway。
 
 ## Codex Remote
 
-Setup 和便携包包含用户 Host 及 `CodexServer/1.14.0/LanPower.CodexServer.exe`。保存远程授权后，优先点击「连接原 Codex 窗口」。若使用「打开备用共享窗口」，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 LanPower Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
+Setup 和便携包包含用户 Host 及 `CodexServer/1.15.0/LanPower.CodexServer.exe`。保存远程授权后，优先点击「连接原 Codex 窗口」。若使用「打开备用共享窗口」，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 LanPower Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
 
 本地授权保存在 `%LOCALAPPDATA%\LanPower\codex-remote.json`，最多 32 个普通本机目录，拒绝 UNC、符号链接和目录联接。关闭授权立即断开远程访问；共享模式保留桌面任务，独立模式结束自有执行进程。共享凭据仅通过当前用户管道传递，私有目录仅允许当前用户及 SYSTEM 访问。浏览器断线不重发任务，重新连接读取活动编号、历史、队列与审批。完整步骤见 [Codex Remote](../docs/codex-remote.md)。
 
@@ -108,3 +108,5 @@ Setup 在文件复制后、创建快捷方式前验证后台服务，使用原�
 2026-09-30 自动配置更新：55 项 Windows 单元测试、36 项桌面检查及 Release 构建通过。使用 `1.5.0` Setup 在用户现有安装目录完成就地升级，升级前备份程序与数据，LAN 配对和 Cloud 连接保留，组件哈希匹配。本机服务与 Cloud 实际运行 `1.5.0`，真实路由器运行 `2.1.0`，自动配置完成后桌面显示“远程唤醒可用”。本轮未执行真实电源动作，详见 [自动配置验收](../docs/wake-gateway.md#自动配置验收2026-09-30)。
 
 本次首次安装由用户明确授权删除旧数据且不备份；后续旧版迁移使用仓库保留的 Python 分发程序重现实机升级。真实网卡变化和防火墙随地址变化仍待验收，真实电源动作由用户另行手动测试。
+
+本轮 Codex Remote 系统对齐见 [1.15 系统说明](../docs/codex-system-parity.md)：完整历史分段传输、原窗口状态与模型同步、电脑端项目/聊天组织、文件图片及能力目录。小程序保持原生简化界面，已支持同一大响应协议。

@@ -22,8 +22,8 @@ public sealed class RuntimeClient : IAsyncDisposable
     private readonly HashSet<string> _aggregatedDiffs = new();
     private readonly Task _reader;
     private readonly Task _stderr;
-    // Local history may be larger than a Relay frame; RemoteRuntime returns a bounded recent view.
-    private const int LocalFrameLimit = 8 * 1024 * 1024;
+    // History is paginated and large results are fragmented before crossing the relay.
+    private const int LocalFrameLimit = CodexRemoteFrames.MaxResultBytes;
     public event Action<JsonObject>? Message;
     public string? ActiveThread { get; private set; }
     public string? ActiveTurn { get; private set; }
@@ -37,7 +37,8 @@ public sealed class RuntimeClient : IAsyncDisposable
     private static readonly HashSet<string> Notifications = ["thread/started", "thread/status/changed", "turn/started",
         "turn/completed", "turn/diff/updated", "turn/plan/updated", "item/started", "item/completed",
         "item/agentMessage/delta", "item/plan/delta", "item/commandExecution/outputDelta",
-        "item/fileChange/outputDelta", "serverRequest/resolved", "thread/queue/changed", "thread/name/updated", "thread/tokenUsage/updated", "item/reasoning/summaryTextDelta", "error"];
+        "item/fileChange/outputDelta", "serverRequest/resolved", "thread/queue/changed", "thread/name/updated", "thread/settings/updated", "thread/tokenUsage/updated", "item/reasoning/summaryTextDelta", "error",
+        "lanpower/conversation/changed", "lanpower/stream/changed", "lanpower/historyChanged"];
 
     private RuntimeClient(ClientWebSocket socket)
     {
@@ -154,8 +155,11 @@ public sealed class RuntimeClient : IAsyncDisposable
                 }
                 else if (!Notifications.Contains(method)) continue;
                 var parameters = message["params"] as JsonObject;
-                if (parameters?["item"]?["type"]?.GetValue<string>() == "reasoning") continue;
+                if (parameters?["item"] is JsonObject reasoning && reasoning["type"]?.GetValue<string>() == "reasoning")
+                { reasoning.Remove("content"); reasoning.Remove("encryptedContent"); }
                 var diffThread = parameters?["threadId"]?.GetValue<string>();
+                if (method == "lanpower/conversation/changed" && diffThread is not null && parameters?["active"]?.GetValue<bool>() == false)
+                    ActiveTurns.TryRemove(diffThread, out _);
                 if (method == "turn/started")
                 {
                     ActiveThread = parameters?["threadId"]?.GetValue<string>(); ActiveTurn = parameters?["turn"]?["id"]?.GetValue<string>();

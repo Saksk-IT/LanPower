@@ -34,6 +34,10 @@ async function main() {
   assert.deepEqual(handshake.protocols, ['lanpower.codex.v1']); assert.equal(handshake.header.Authorization, 'Bearer fixture-only');
   const request = connection.request('thread/list'); const rpc = socket.frames.at(-1).payload;
   socket.frame({type: 'rpc', payload: {id: rpc.id, result: {data: []}}}); assert.deepEqual(await request, {data: []});
+  const large = connection.request('thread/turns/list', {threadId: 'native'}), largeId = socket.frames.at(-1).payload.id;
+  const fullText = '完整历史🎨'.repeat(90000), body = JSON.stringify({id: largeId, result: {text: fullText}}), chunks = body.match(/[\s\S]{1,16000}/g);
+  chunks.forEach((data, index) => socket.frame({type: 'rpc_chunk', id: largeId, index, count: chunks.length, data}));
+  assert.equal((await large).text, fullText); assert.equal(connection.fragments.parts.size, 0);
   socket.frame({type: 'ping'}); assert.deepEqual(socket.frames.at(-1), {type: 'pong'});
   const lostTask = connection.request('turn/start', {threadId: 'chat', input: [{type: 'text', text: 'change'}]});
   socket.closeHandler({code: 1006}); await assert.rejects(lostTask, {code: 'CONNECTION'});

@@ -1,5 +1,5 @@
 <template>
-  <section class="conversation-root" @contextmenu.capture="onConversationContextMenu">
+  <section class="conversation-root" @contextmenu.capture="onConversationContextMenu" @click.capture="onConversationFileClick">
     <p v-if="isLoading" class="conversation-loading">正在读取消息…</p>
 
     <p
@@ -238,15 +238,7 @@
                 :data-role="message.role"
               >
                 <li v-for="imageUrl in message.images" :key="imageUrl" class="message-image-item">
-                  <button class="message-image-button" type="button" @click="openImageModal(toRenderableImageUrl(imageUrl))">
-                    <img
-                      class="message-image-preview"
-                      :class="{ 'message-generated-image-preview': message.messageType === 'imageView' }"
-                      :src="toRenderableImageUrl(imageUrl)"
-                      :alt="message.messageType === 'imageView' ? 'Generated image' : 'Message image preview'"
-                      loading="lazy"
-                    />
-                  </button>
+                  <RemoteMessageImage :source="imageUrl" :thread-id="activeThreadId" :cwd="cwd" :image-class="message.messageType === 'imageView' ? 'message-generated-image-preview' : ''" :alt="message.messageType === 'imageView' ? '生成的图片' : '消息图片'" @open="openImageModal" />
                 </li>
               </ul>
 
@@ -559,20 +551,7 @@
                     </div>
                     <hr v-else-if="block.kind === 'thematicBreak'" class="message-divider" />
                     <p v-else-if="isMarkdownImageFailed(message.id, blockIndex)" class="message-text">{{ block.markdown }}</p>
-                    <button
-                      v-else
-                      class="message-image-button"
-                      type="button"
-                      @click="openImageModal(toRenderableImageUrl(block.url))"
-                    >
-                      <img
-                        class="message-image-preview message-markdown-image"
-                        :src="toRenderableImageUrl(block.url)"
-                        :alt="block.alt || 'Embedded message image'"
-                        loading="lazy"
-                        @error="onMarkdownImageError(message.id, blockIndex)"
-                      />
-                    </button>
+                    <RemoteMessageImage v-else :source="block.url" :thread-id="activeThreadId" :cwd="cwd" image-class="message-markdown-image" :alt="block.alt || '消息图片'" @open="openImageModal" />
                   </template>
                 </div>
                 <a
@@ -900,6 +879,7 @@
 </template>
 
 <script setup lang="ts">
+import RemoteMessageImage from './RemoteMessageImage.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { UiFileChange, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import { updateThreadFileChanges } from '../../api/codexGateway'
@@ -1238,6 +1218,7 @@ const emit = defineEmits<{
   forkThread: [payload: { threadId: string; turnIndex: number }]
   rollback: [payload: { turnId: string }]
   respondServerRequest: [payload: { id: number; result?: unknown; error?: { code?: number; message: string } }]
+  openFile: [path: string]
 }>()
 
 const localizedLiveActivityLabel = computed(() => (
@@ -2816,6 +2797,20 @@ function onConversationContextMenu(event: MouseEvent): void {
   isFileLinkContextMenuVisible.value = true
 }
 
+function browseFilePath(href: string): string | null {
+  try {
+    const url = new URL(href,location.href)
+    if (url.origin !== location.origin || !url.pathname.startsWith('/codex-local-browse/')) return null
+    return decodeURIComponent(url.pathname.slice('/codex-local-browse'.length)).replace(/^\/([A-Za-z]:[\\/])/u,'$1')
+  } catch { return null }
+}
+function onConversationFileClick(event: MouseEvent): void {
+  const anchor = event.target instanceof Element ? event.target.closest('a.message-file-link') : null
+  if (!(anchor instanceof HTMLAnchorElement)) return
+  const path = browseFilePath(anchor.href)
+  if (path) { event.preventDefault(); emit('openFile',path) }
+}
+
 function closeFileLinkContextMenu(): void {
   if (!isFileLinkContextMenuVisible.value) return
   isFileLinkContextMenuVisible.value = false
@@ -2825,7 +2820,8 @@ function openFileLinkContextBrowse(): void {
   const href = fileLinkContextBrowseUrl.value
   closeFileLinkContextMenu()
   if (!href || href === '#') return
-  window.open(href, '_blank', 'noopener,noreferrer')
+  const path = browseFilePath(href)
+  if (path) emit('openFile',path)
 }
 
 function openFileLinkContextEdit(): void {
@@ -4169,6 +4165,7 @@ async function loadMoreAbove(): Promise<void> {
 
 defineExpose({
   jumpToLatest,
+  async jumpToStart() { autoFollowOutput.value = false; renderWindowStart.value = 0; await nextTick(); if (conversationListRef.value) conversationListRef.value.scrollTop = 0 },
 })
 
 function bindPendingImageHandlers(): void {
@@ -4214,7 +4211,7 @@ function clearRenderCaches(): void {
 
 watch(
   () => props.messages,
-  async (next) => {
+  async (next, previous) => {
     if (props.isLoading) return
 
     const commandIds = new Set(
@@ -4244,7 +4241,9 @@ watch(
     if (autoFollowOutput.value) {
       renderWindowStart.value = Math.max(0, next.length - RENDER_WINDOW_SIZE)
     } else {
-      renderWindowStart.value = Math.min(renderWindowStart.value, Math.max(0, next.length - 1))
+      const anchorId = !isLoadingMore.value ? previous?.[renderWindowStart.value]?.id : undefined
+      const anchor = anchorId ? next.findIndex(message => message.id === anchorId) : -1
+      renderWindowStart.value = anchor >= 0 ? anchor : Math.min(renderWindowStart.value, Math.max(0, next.length - 1))
     }
 
     await scheduleConversationScroll()

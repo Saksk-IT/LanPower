@@ -13,7 +13,7 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
     private StreamWriter? _writer;
     private string? _session;
     public string State { get; private set; } = "host_offline";
-    public event Action<string>? Message;
+    public event Func<string, Task>? Message;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -51,24 +51,25 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
                             frame["state"]?.GetValue<string>() is not ("host_ready" or "disabled"))
                             throw new InvalidDataException("invalid_host");
                         State = frame["state"]!.GetValue<string>();
-                        Message?.Invoke(raw);
+                        if (Message is { } hello) await hello(raw);
                         if (_session is { } session) await SendAsync(new { type = "open", session }, stoppingToken);
                     }
-                    else if (frame["session"]?.GetValue<string>() == _session && kind is "state" or "rpc")
+                    else if (frame["session"]?.GetValue<string>() == _session && kind is "state" or "rpc" or "rpc_chunk")
                     {
                         if (kind == "state") State = frame["state"]!.GetValue<string>();
-                        Message?.Invoke(raw);
+                        if (Message is { } forward) await forward(raw);
                     }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { }
+            catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException or
+                UnauthorizedAccessException or OperationCanceledException) { }
             finally
             {
                 await _write.WaitAsync(CancellationToken.None);
                 try { _writer = null; State = "host_offline"; }
                 finally { _write.Release(); }
-                if (_session is { } session) Message?.Invoke(System.Text.Json.JsonSerializer.Serialize(
+                if (_session is { } session && Message is { } offline) await offline(System.Text.Json.JsonSerializer.Serialize(
                     new { type = "state", session, state = "host_offline" }));
             }
             await Task.Delay(1000, stoppingToken);
@@ -88,7 +89,7 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
             else if (rpc.Count != 2 || !rpc.ContainsKey("result")) throw new InvalidDataException("invalid_response");
         }
         else if (kind != "close" || frame.Count != 2) throw new InvalidDataException("invalid_frame");
-        if (!await SendAsync(frame, token)) Message?.Invoke(System.Text.Json.JsonSerializer.Serialize(
+        if (!await SendAsync(frame, token) && Message is { } offline) await offline(System.Text.Json.JsonSerializer.Serialize(
             new { type = "state", session, state = "host_offline" }));
         if (kind == "close") _session = null;
     }

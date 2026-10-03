@@ -1,68 +1,75 @@
 <template>
-  <div class="lp-codex" :class="{ 'lp-chat-open': chatOpen }">
+  <div class="lp-codex" :class="{ 'lp-chat-open': chatOpen, 'lp-sidebar-collapsed': sidebarCollapsed }">
     <aside class="lp-library" aria-label="电脑、项目和会话">
-      <header class="lp-library-heading"><a href="/dashboard" aria-label="返回 LanPower">‹</a><strong>Codex</strong><button @click="toggleTheme" aria-label="切换明暗主题">◐</button></header>
-      <label class="lp-device-label" for="lp-device">开发电脑</label>
-      <select id="lp-device" :value="deviceId" @change="changeDevice(($event.target as HTMLSelectElement).value)">
-        <option value="">选择电脑</option><option v-for="d in devices" :key="d.id" :value="d.id">{{ d.name }}</option>
-      </select>
+      <LanPowerThreadTree :device-id="deviceId" :projects="projects" :threads="threads" :selected-thread-id="threadId" :active-turns="activeTurns" :approval-threads="approvals.map(a => a.threadId)" :ready="ready" :loading="loadingLibrary" :next-cursor="listCursor" :archived="archivedView" :chat-supported="chatSupported" :saved-preferences="libraryState.preferences" @update-library="saveLibrary" @select="openThread" @new-thread="openNewThread" @new-chat="newChat" @toggle-sidebar="toggleSidebar" @load-more="loadThreads(true)" @toggle-archived="toggleArchived" @navigate="navigate" @thread-action="sidebarThreadAction" @browse-files="openFiles">
+      <template #connection><div class="lp-device-context"><ComposerDropdown class="lp-device-picker" :model-value="deviceId" :options="devices.map(d => ({value:d.id,label:d.name}))" placeholder="选择开发电脑" enable-search search-placeholder="搜索电脑" @update:model-value="changeDevice" />
       <div class="lp-connection" role="status"><span :class="{ 'is-ready': ready }" />{{ stateLabel }}<button v-if="!ready && deviceId" @click="reconnect">重连</button></div>
-      <p class="lp-power"><span>{{ powerText }}</span><button v-if="wakeAvailable" :disabled="waking" @click="wake">唤醒</button></p>
-      <input v-model="search" class="lp-search" placeholder="搜索会话或项目" aria-label="搜索会话或项目" maxlength="120" />
-      <div class="lp-thread-list">
-        <section v-for="group in groups" :key="group.projectName" class="lp-project">
-          <header><span :title="group.threads[0]?.cwd">{{ group.projectName }}</span><button :disabled="!ready" @click="newThread(group.threads[0]?.cwd)" aria-label="在此项目新建会话">＋</button></header>
-          <button v-for="t in group.threads" :key="t.id" class="lp-thread" :class="{ selected: t.id === threadId }" @click="selectThread(t.id)">
-            <span class="lp-thread-title">{{ t.title }}</span><span v-if="activeTurns[t.id]" class="lp-working" aria-label="正在工作" /><small>{{ dateLabel(t.updatedAtIso) }}</small>
-          </button>
-        </section>
-        <p v-if="!groups.length" class="lp-library-empty">{{ loadingLibrary ? '正在读取原窗口的项目和会话…' : ready ? '选择项目，开始新会话。' : stateHint }}</p>
-        <button v-if="listCursor" class="lp-more" :disabled="loadingLibrary" @click="loadThreads(true)">加载更早的会话</button>
-      </div>
-      <footer><select v-model="projectCwd" aria-label="新会话所在项目"><option value="">选择项目</option><option v-for="p in projects" :key="p.path" :value="p.path">{{ p.name }}</option></select><button class="lp-new" :disabled="!ready || !projectCwd || busy" @click="newThread(projectCwd)">＋ 新会话</button></footer>
+      <p v-if="wakeAvailable" class="lp-power"><span>{{ powerText }}</span><button :disabled="waking" @click="wake">唤醒</button></p></div></template>
+      </LanPowerThreadTree>
     </aside>
-    <main class="lp-conversation">
-      <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表">‹</button><div><h1>{{ currentTitle }}</h1><p>{{ currentCwd ? projectName(currentCwd) : '在电脑与手机间继续同一会话' }}</p></div><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button><button @click="exportChat">导出会话</button></div></details></header>
+    <main v-show="view === 'chat'" class="lp-conversation">
+      <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表"><IconTablerLayoutSidebar /></button><button v-if="sidebarCollapsed" class="lp-expand lp-icon-button" @click="sidebarCollapsed = false" aria-label="展开侧栏"><IconTablerLayoutSidebar /></button><div><h1>{{ currentTitle }}</h1></div><button v-if="currentCwd" class="lp-header-pill" @click="openFiles(currentCwd)" aria-label="浏览项目文件"><IconTablerFolder /><span>{{ projectName(currentCwd) }}</span></button><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button :disabled="loadingAllHistory" @click="jumpToBeginning">跳至对话开头</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button><button :disabled="loadingAllHistory" @click="exportChat">导出完整会话</button></div></details></header>
       <div class="lp-chat-status"><span>{{ activeTurn ? '正在工作' : threadId ? '已同步' : stateLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
       <p v-if="feedback" class="lp-feedback" role="status">{{ feedback }}<button @click="feedback = ''" aria-label="关闭提示">×</button></p>
       <template v-if="threadId">
-        <ThreadConversation :messages="messages" :pending-requests="selectedApprovals" :live-overlay="liveOverlay" :is-loading="loadingChat" :active-thread-id="threadId" :cwd="currentCwd" :has-more-persisted-above="Boolean(historyCursor)" :is-loading-persisted-above="loadingEarlier" :load-earlier-messages="loadEarlier" :allow-file-actions="false" @fork-thread="forkThread($event.turnIndex)" @rollback="rollback($event.turnId)" @respond-server-request="respondApproval" />
+        <p v-if="loadingAllHistory" class="lp-history-progress" role="status">正在读取完整对话，已读取 {{ current?.turns?.length || 0 }} 轮…</p>
+        <ThreadConversation ref="conversation" :messages="messages" :pending-requests="selectedApprovals" :live-overlay="liveOverlay" :is-loading="loadingChat" :active-thread-id="threadId" :cwd="currentCwd" :has-more-persisted-above="Boolean(historyCursor)" :is-loading-persisted-above="loadingEarlier" :load-earlier-messages="loadEarlier" :allow-file-actions="false" @fork-thread="forkThread($event.turnIndex)" @rollback="rollback($event.turnId)" @respond-server-request="respondApproval" @open-file="openFiles(currentCwd,$event)" />
         <div class="lp-compose-area">
           <p v-if="editingQueue" class="lp-edit-queue">正在修改排队消息 <button @click="cancelQueueEdit">取消</button></p>
           <QueuedMessages :messages="queueRows" @edit="editQueue" @delete="deleteQueue" @steer="startQueue" @reorder="reorderQueue" />
           <ThreadPendingRequestPanel v-if="selectedApprovals.length" :request="selectedApprovals[0]!" :request-count="selectedApprovals.length" :has-queue-above="queueRows.length > 0" :single-turn-only="true" :is-responding="respondingApproval" @respond-server-request="respondApproval" />
-          <ThreadComposer v-show="!selectedApprovals.length" :key="`${deviceId}:${threadId}`" ref="composer" :active-thread-id="threadId" :cwd="currentCwd" :models="models" :selected-model="selectedModel" :selected-reasoning-effort="selectedEffort" selected-collaboration-mode="default" selected-speed-mode="standard" :is-turn-in-progress="Boolean(activeTurn)" :is-interrupting-turn="interrupting" :disabled="!canControl || busy || loadingChat" :has-queue-above="queueRows.length > 0" :send-with-enter="true" in-progress-submit-mode="queue" :remote-mode="true" @submit="submit" @interrupt="interrupt" @update:selected-model="selectedModel = $event" @update:selected-reasoning-effort="selectedEffort = $event" />
+          <ThreadComposer v-show="!selectedApprovals.length" :key="`${deviceId}:${threadId}`" ref="composer" :active-thread-id="threadId" :cwd="currentCwd" :models="models" :skills="skills" :supports-plan-mode="planSupported" :selected-model="selectedModel" :selected-reasoning-effort="selectedEffort" :selected-collaboration-mode="selectedMode" selected-speed-mode="standard" :is-turn-in-progress="Boolean(activeTurn)" :is-interrupting-turn="interrupting" :disabled="!canControl || busy || loadingChat" :has-queue-above="queueRows.length > 0" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressMode" :remote-mode="true" @submit="submit" @interrupt="interrupt" @update:selected-model="selectedModel = $event" @update:selected-reasoning-effort="selectedEffort = $event" @update:selected-collaboration-mode="selectedMode = $event" />
           <p class="lp-compose-hint">{{ canControl ? '输入与操作同步到电脑上的同一会话' : ready ? '请在电脑的 LanPower 连接原 Codex 窗口后继续此会话' : stateHint }}</p>
         </div>
       </template>
-      <div v-else class="lp-welcome"><div>✳</div><h2>继续你的工作</h2><p>选择最近会话，或在项目中新建会话。</p><p v-if="!ready">{{ stateHint }}</p></div>
+      <div v-else class="lp-welcome"><div>✳</div><h2>继续你的工作</h2><p>选择最近聊天，或在项目中新建聊天。</p><button class="lp-primary" :disabled="!ready" @click="openNewThread()">＋ 新聊天</button><p v-if="!ready">{{ stateHint }}</p></div>
     </main>
+    <RemoteFeaturePage v-if="view !== 'chat'" :view="view" :ready="ready" :projects="projects" :cwd="currentCwd || projectCwd" :send-with-enter="sendWithEnter" :in-progress-mode="inProgressMode" @back="chatOpen = false" @close="view = 'chat'; chatOpen = true" @use-skill="useSkill" @theme="setTheme" @update:send-with-enter="setSendWithEnter" @update:in-progress-mode="setInProgressMode" />
+    <RemoteFilesPanel v-if="filesCwd" :key="`${deviceId}:${filesCwd}:${filePath}`" :cwd="filesCwd" :ready="ready" :initial-path="filePath" @close="filesCwd = ''; filePath = ''" @attach="attachProjectFile" />
+    <Teleport to="body"><div v-if="newThreadDialog" class="lp-dialog-overlay" @click.self="newThreadDialog = false"><form class="lp-dialog" role="dialog" aria-modal="true" aria-label="新建聊天" @submit.prevent="createFromDialog"><h2>新建聊天</h2><p>选择已授权的项目目录。</p><ComposerDropdown v-model="projectCwd" :options="projects.filter(p => p.kind !== 'chat').map(p => ({value:p.path,label:p.name}))" placeholder="选择项目" enable-search search-placeholder="搜索项目" /><footer><button type="button" @click="newThreadDialog = false">取消</button><button class="lp-primary" :disabled="!projectCwd || busy">创建聊天</button></footer></form></div><div v-if="renameDialog" class="lp-dialog-overlay" @click.self="renameDialog = false"><form class="lp-dialog" role="dialog" aria-modal="true" aria-label="重命名聊天" @submit.prevent="saveThreadName"><h2>重命名聊天</h2><input v-model="renameDraft" aria-label="聊天名称" autofocus maxlength="1000" /><footer><button type="button" @click="renameDialog = false">取消</button><button class="lp-primary" :disabled="!renameDraft.trim()">保存</button></footer></form></div></Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer, { type SubmitPayload, type ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import QueuedMessages from './components/content/QueuedMessages.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
-import { normalizeThreadGroupsV2, normalizeThreadMessagesV2 } from './api/normalizers/v2'
+import { normalizeThreadMessagesV2 } from './api/normalizers/v2'
+import LanPowerThreadTree from './components/sidebar/LanPowerThreadTree.vue'
+import ComposerDropdown from './components/content/ComposerDropdown.vue'
+import IconTablerLayoutSidebar from './components/icons/IconTablerLayoutSidebar.vue'
+import IconTablerFolder from './components/icons/IconTablerFolder.vue'
+import RemoteFeaturePage from './components/content/RemoteFeaturePage.vue'
+import RemoteFilesPanel from './components/content/RemoteFilesPanel.vue'
+import { mergeHistory } from './lanpower/history'
+import { defaultLibraryPreferences, type LibraryPreferences } from './lanpower/library'
+import { resetRemoteImages } from './lanpower/images'
 import type { ReasoningEffort, UiServerRequest, UiLiveOverlay } from './types/codex'
 import { connection, type RpcEvent } from './lanpower/connection'
 
 const config = JSON.parse(document.getElementById('lanpower-codex-config')?.textContent || '{"devices":[]}')
 const devices: Array<{ id: string; name: string }> = config.devices
-const deviceId = ref(''), state = ref('idle'), threadId = ref(''), search = ref(''), chatOpen = ref(false)
+const deviceId = ref(''), state = ref('idle'), threadId = ref(''), chatOpen = ref(false)
+const sidebarCollapsed = ref(false), view = ref('chat'), archivedView = ref(false), chatSupported = ref(false), filesCwd = ref('')
+const newThreadDialog = ref(false), renameDialog = ref(false), renameDraft = ref(''), loadingAllHistory = ref(false)
+const sendWithEnter = ref(true), inProgressMode = ref<'queue' | 'steer'>('queue'), selectedMode = ref<'default' | 'plan'>('default')
+const skills = ref<Array<{name:string;path:string;description:string;scope?:string;enabled?:boolean}>>([])
+const conversation = ref<{jumpToStart:()=>Promise<void>;jumpToLatest:()=>void} | null>(null)
 const ready = computed(() => state.value === 'runtime_ready')
-const threads = shallowRef<any[]>([]), current = shallowRef<any>(null), projects = ref<Array<{ name: string; path: string }>>([])
+const threads = shallowRef<any[]>([]), current = shallowRef<any>(null), projects = ref<Array<{ name: string; path: string; kind?:string }>>([])
 const projectCwd = ref(''), listCursor = ref(''), historyCursor = ref(''), models = ref<string[]>([])
 const selectedModel = ref(''), selectedEffort = ref<ReasoningEffort | ''>('')
 const desktopControl = ref(false), sharedControl = ref(false), queueSupported = ref(false)
+const planSupported = ref(false)
 const activeTurns = ref<Record<string, string>>({}), approvals = ref<UiServerRequest[]>([])
 const queue = ref<any[]>([]), editingQueue = ref(''), composer = ref<ThreadComposerExposed | null>(null)
 const loadingChat = ref(false), loadingLibrary = ref(false), loadingEarlier = ref(false), busy = ref(false), interrupting = ref(false)
 const feedback = ref(''), powerText = ref(''), wakeAvailable = ref(false), waking = ref(false)
 const respondingApproval = ref(false)
+const libraryState = ref({revision:0, preferences:defaultLibraryPreferences()}), filePath = ref('')
+let libraryDraft: LibraryPreferences | null = null, librarySaving = false, libraryTimer: ReturnType<typeof setTimeout>, reconcileTimer: ReturnType<typeof setTimeout>
 const overlay = ref<UiLiveOverlay>({ activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' })
 let epoch = 0, selection = 0, approvalSequence = 0, streamFrame = 0, syncing = false, polling: ReturnType<typeof setInterval>
 const remoteApprovalIds = new Map<number, string | number>()
@@ -81,7 +88,6 @@ const activeTurn = computed(() => activeTurns.value[threadId.value] || '')
 const canControl = computed(() => ready.value && Boolean(threadId.value) && (sharedControl.value || current.value?.control === 'remote'))
 const currentTitle = computed(() => current.value?.name || current.value?.preview?.slice(0, 60) || (threadId.value ? '新会话' : 'Codex Remote'))
 const currentCwd = computed(() => current.value?.cwd || '')
-const groups = computed(() => normalizeThreadGroupsV2({ data: threads.value.filter(t => !search.value || `${t.name || ''} ${t.preview || ''} ${t.cwd || ''}`.toLowerCase().includes(search.value.toLowerCase())), nextCursor: null } as any))
 const messages = computed(() => current.value ? normalizeThreadMessagesV2({ thread: current.value } as any) : [])
 const selectedApprovals = computed(() => approvals.value.filter(a => a.threadId === threadId.value))
 const liveOverlay = computed(() => activeTurn.value || overlay.value.errorText ? overlay.value : null)
@@ -101,23 +107,26 @@ function addApproval(event: RpcEvent): void {
 }
 function onState(value: string): void {
   const wasReady = ready.value; state.value = value
-  if (!ready.value) { epoch++; busy.value = false; syncing = false; resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' } }
+  if (!ready.value) { epoch++; busy.value = false; syncing = false; libraryDraft = null; resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' } }
   else if (!wasReady) void restore()
 }
 async function restore(): Promise<void> {
   const e = epoch
   try {
-    const [status, modelList] = await Promise.all([connection.request('lanpower/status'), connection.request('model/list', { limit: 50 })])
+    const [status, modelList, modes] = await Promise.all([connection.request('lanpower/status'), connection.request('model/list', { limit: 50 }), connection.request('collaborationMode/list').catch(() => ({data:[]}))])
     if (e !== epoch || !ready.value) return
     applyStatus(status)
+    planSupported.value = (modes.data || []).some((mode:any) => mode.mode === 'plan')
     models.value = (modelList.data || []).map((m: any) => m.id || m.model).filter(Boolean)
     selectedModel.value = models.value.includes(selectedModel.value) ? selectedModel.value : (modelList.data || []).find((m: any) => m.isDefault)?.id || models.value[0] || ''
     await loadThreads()
-    if (threadId.value) await selectThread(threadId.value, true)
+    if (threadId.value) { if (current.value?.id === threadId.value) await refreshCurrent(); else await selectThread(threadId.value, true) }
   } catch (error) { if (e === epoch) showError(error) }
 }
 function applyStatus(status: any): void {
   desktopControl.value = Boolean(status.desktopControl); sharedControl.value = Boolean(status.sharedControl); queueSupported.value = Boolean(status.queueSupported)
+  chatSupported.value = Boolean(status.chatSupported)
+  if (status.library && !librarySaving && !libraryDraft) libraryState.value = status.library
   projects.value = status.projects || []; if (!projects.value.some(p => p.path === projectCwd.value)) projectCwd.value = projects.value[0]?.path || ''
   activeTurns.value = Object.fromEntries((status.activeTurns || []).map((t: any) => [t.threadId, t.turnId]))
   // Reconcile requests; a desktop reply can have arrived while the browser was disconnected.
@@ -131,23 +140,26 @@ async function loadThreads(more = false): Promise<void> {
   if (!ready.value || loadingLibrary.value) return
   const e = epoch; loadingLibrary.value = true
   try {
-    const result = await connection.request('thread/list', { limit: 50, ...(more && listCursor.value ? { cursor: listCursor.value } : {}) })
+    const result = await connection.request('thread/list', { limit: 50, archived: archivedView.value, ...(more && listCursor.value ? { cursor: listCursor.value } : {}) })
     if (e !== epoch) return
-    const all = more ? [...threads.value, ...result.data] : result.data
-    threads.value = [...new Map(all.map((t: any) => [t.id, t])).values()].slice(0, 500)
-    listCursor.value = threads.value.length < 500 ? result.nextCursor || '' : ''
-  } catch (error) { if (e === epoch) showError(error) } finally { loadingLibrary.value = false }
+    const all = [...threads.value, ...result.data]
+    threads.value = [...new Map(all.map((t: any) => [t.id, t])).values()]
+    if (more || threads.value.length <= result.data.length) listCursor.value = result.nextCursor || ''
+  } catch (error) { if (e === epoch) showError(error) } finally { if (e === epoch) loadingLibrary.value = false }
 }
 async function selectThread(id: string, restoring = false): Promise<void> {
   if (!ready.value || busy.value) return
   if (!restoring && id !== threadId.value && composer.value?.hasUnsavedDraft() && !confirm('切换会话将清空当前未发送的草稿，继续吗？')) return
   const e = epoch, s = ++selection
+  loadingEarlier.value = false; loadingAllHistory.value = false; syncing = false
   threadId.value = id; chatOpen.value = true; loadingChat.value = true; current.value = null; queue.value = []; editingQueue.value = ''; historyCursor.value = ''
   overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }
   try {
     const result = await connection.request('thread/read', { threadId: id, includeTurns: true })
     if (e !== epoch || s !== selection) return
     current.value = result.thread; historyCursor.value = result.thread.historyCursor || ''
+    applyThreadSettings(result.thread)
+    syncUrl(); void loadSkills(result.thread.cwd, e, s)
     observeTurn(result.thread)
     await refreshQueue(id, e, s)
     const status = await connection.request('lanpower/status')
@@ -160,6 +172,12 @@ function observeTurn(thread: any): void {
   if (turn) next[thread.id] = turn.id; else if (thread.status?.type !== 'active') delete next[thread.id]
   activeTurns.value = next
 }
+function applyThreadSettings(thread: any): void {
+  if (thread.model) selectedModel.value = thread.model
+  if ('reasoningEffort' in thread) selectedEffort.value = thread.reasoningEffort || ''
+  const mode = thread.collaborationMode?.mode || thread.collaborationMode
+  if (mode === 'default' || mode === 'plan') selectedMode.value = mode
+}
 async function loadEarlier(id: string): Promise<void> {
   if (id !== threadId.value || !historyCursor.value || loadingEarlier.value || !ready.value) return
   const e = epoch, s = selection; loadingEarlier.value = true
@@ -169,8 +187,9 @@ async function loadEarlier(id: string): Promise<void> {
     const existing = new Set(current.value.turns.map((t: any) => t.id))
     const older = result.data.slice().reverse().filter((t: any) => !existing.has(t.id))
     current.value = { ...current.value, turns: [...older, ...current.value.turns] }
-    historyCursor.value = current.value.turns.length < 128 ? result.nextCursor || '' : ''
-  } catch (error) { if (e === epoch && s === selection) showError(error) } finally { loadingEarlier.value = false }
+    if (result.nextCursor && result.nextCursor === historyCursor.value) throw new Error('历史游标未推进，请刷新会话。')
+    historyCursor.value = result.nextCursor || ''
+  } catch (error) { if (e === epoch && s === selection) showError(error) } finally { if (e === epoch && s === selection) loadingEarlier.value = false }
 }
 async function refreshQueue(id = threadId.value, e = epoch, s = selection): Promise<void> {
   if (!queueSupported.value || !id) return
@@ -178,17 +197,25 @@ async function refreshQueue(id = threadId.value, e = epoch, s = selection): Prom
   if (e === epoch && s === selection && id === threadId.value) queue.value = result.data || []
 }
 async function refreshCurrent(): Promise<void> {
-  if (!ready.value || !threadId.value || loadingChat.value || busy.value || syncing) return
+  if (!ready.value || !threadId.value || loadingChat.value || loadingEarlier.value || loadingAllHistory.value || busy.value || syncing) return
   const e = epoch, s = selection, id = threadId.value; syncing = true
   try {
     const [result, status] = await Promise.all([connection.request('thread/read', { threadId: id, includeTurns: true }), connection.request('lanpower/status')])
     if (e !== epoch || s !== selection) return
-    const latest = result.thread.turns || [], latestIds = new Set(latest.map((t: any) => t.id))
-    const previous = current.value?.turns || [], boundary = previous.findIndex((t: any) => t.id === latest[0]?.id)
-    const older = boundary > 0 ? previous.slice(0, boundary).filter((t: any) => !latestIds.has(t.id)) : []
-    current.value = { ...result.thread, turns: [...older, ...latest].slice(-128) }; applyStatus(status); observeTurn(current.value)
+    let latest = result.thread.turns || [], cursor = result.thread.historyCursor || ''
+    const previous = current.value?.turns || [], oldIds = new Set(previous.map((t: any) => t.id))
+    // If many turns finished while disconnected, bridge the gap before merging.
+    while (previous.length && latest.length && !latest.some((t: any) => oldIds.has(t.id)) && cursor) {
+      const page = await connection.request('thread/turns/list', {threadId:id,cursor,limit:8})
+      if (e !== epoch || s !== selection) return
+      const next = page.nextCursor || ''; if (next && next === cursor) throw new Error('历史游标未推进，请刷新会话。')
+      latest = [...(page.data || []).slice().reverse(), ...latest]; cursor = next
+    }
+    if (!previous.length || previous[0]?.id === latest[0]?.id || latest.some((t: any) => t.id === previous[0]?.id)) historyCursor.value = cursor
+    current.value = { ...result.thread, turns: mergeHistory(current.value?.turns || [], latest) }; applyStatus(status); observeTurn(current.value)
+    applyThreadSettings(result.thread)
     await refreshQueue(id, e, s)
-  } catch (error) { if (e === epoch && s === selection) showError(error) } finally { syncing = false }
+  } catch (error) { if (e === epoch && s === selection) showError(error) } finally { if (e === epoch && s === selection) syncing = false }
 }
 async function newThread(cwd?: string): Promise<void> {
   if (!cwd || !ready.value || busy.value) return
@@ -201,13 +228,13 @@ async function submit(payload: SubmitPayload): Promise<void> {
   const e = epoch, s = selection, id = threadId.value
   busy.value = true; feedback.value = ''
   try {
-    if (payload.fileAttachments.length || payload.skills.length) throw new Error('请在原窗口添加电脑文件或技能。')
-    const input = [...(payload.text.trim() ? [{ type: 'text', text: payload.text.trim() }] : []), ...payload.imageUrls.map(url => ({ type: 'image', url }))]
+    const text = payload.fileAttachments.length ? `# Files mentioned by the user:\n${payload.fileAttachments.map(file => `## ${file.label}: ${file.fsPath}`).join('\n')}\n\n## My request for Codex:\n${payload.text.trim()}` : payload.text.trim()
+    const input = [...(text ? [{ type: 'text', text }] : []), ...payload.imageUrls.map(url => ({ type: 'image', url })), ...payload.skills.map(skill => ({type:'skill',name:skill.name,path:skill.path}))]
     if (editingQueue.value) await connection.request('thread/queue/update', { threadId: id, queuedSubmissionId: editingQueue.value, input })
     else if (activeTurn.value && payload.mode === 'queue') await connection.request('thread/queue/add', { threadId: id, clientUserMessageId: crypto.randomUUID(), input })
     else if (activeTurn.value) await connection.request('turn/steer', { threadId: id, expectedTurnId: activeTurn.value, input })
     else {
-      const result = await connection.request('turn/start', { threadId: id, input, ...(selectedModel.value ? { model: selectedModel.value } : {}), ...(selectedEffort.value ? { effort: selectedEffort.value } : {}) })
+      const result = await connection.request('turn/start', { threadId: id, input, ...(sharedControl.value ? {mode:selectedMode.value} : {}), ...(selectedModel.value ? { model: selectedModel.value } : {}), ...(selectedEffort.value ? { effort: selectedEffort.value } : {}) })
       if (e === epoch && s === selection && result.turn?.id) activeTurns.value = { ...activeTurns.value, [id]: result.turn.id }
     }
     if (e === epoch && s === selection) { editingQueue.value = ''; await refreshQueue(id, e, s) }
@@ -249,8 +276,11 @@ function respondApproval(reply: { id: number; result?: unknown; error?: unknown;
   } catch (error) { respondingApproval.value = false; showError(error) }
 }
 async function renameThread(): Promise<void> {
-  const name = prompt('会话名称', currentTitle.value)?.trim(); if (!name || !canControl.value) return
-  try { await connection.request('thread/name/set', { threadId: threadId.value, name: name.slice(0, 1000) }); await refreshCurrent(); await loadThreads() } catch (error) { showError(error) }
+  if (!canControl.value) return; renameDraft.value = currentTitle.value; renameDialog.value = true
+}
+async function saveThreadName(): Promise<void> {
+  const name = renameDraft.value.trim(); if (!name || !canControl.value) return
+  try { await connection.request('thread/name/set', { threadId: threadId.value, name }); renameDialog.value = false; await refreshCurrent(); await loadThreads() } catch (error) { showError(error) }
 }
 async function forkThread(turnIndex?: number): Promise<void> {
   if (!canControl.value || busy.value) return
@@ -267,16 +297,16 @@ async function rollback(turnId: string): Promise<void> {
   const index = current.value.turns.findIndex((t: any) => t.id === turnId)
   if (index < 0 || !confirm('移除这轮及后续对话？已修改的文件会保留。')) return
   busy.value = true
-  try { const result = await connection.request('thread/rollback', { threadId: threadId.value, numTurns: current.value.turns.length - index }); current.value = result.thread; historyCursor.value = ''; feedback.value = '对话已回退，已有文件修改保留。' } catch (error) { showError(error) } finally { busy.value = false }
+  try { const result = await connection.request('thread/rollback', { threadId: threadId.value, numTurns: current.value.turns.length - index }); current.value = result.thread; historyCursor.value = result.thread.historyCursor || ''; feedback.value = '对话已回退，已有文件修改保留。' } catch (error) { showError(error) } finally { busy.value = false }
 }
 async function archiveThread(): Promise<void> {
   if (!canControl.value || activeTurn.value || !confirm('归档当前会话？')) return
-  try { await connection.request('thread/archive', { threadId: threadId.value }); threadId.value = ''; current.value = null; chatOpen.value = false; await loadThreads() } catch (error) { showError(error) }
+  try { await connection.request('thread/archive', { threadId: threadId.value }); threads.value = threads.value.filter(t => t.id !== threadId.value); threadId.value = ''; current.value = null; chatOpen.value = false; syncUrl(); await loadThreads() } catch (error) { showError(error) }
 }
-function exportChat(): void {
-  const data = messages.value.map(m => `${m.role === 'user' ? '你' : 'Codex'}：\n${m.text}`).join('\n\n')
-  const url = URL.createObjectURL(new Blob([`${currentTitle.value}\n\n${data}`], { type: 'text/plain;charset=utf-8' }))
-  const link = document.createElement('a'); link.href = url; link.download = 'codex-conversation.txt'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+async function exportChat(): Promise<void> {
+  if (!await loadAllHistory()) return
+  const url = URL.createObjectURL(new Blob([JSON.stringify(current.value,null,2)], { type: 'application/json;charset=utf-8' }))
+  const link = document.createElement('a'); link.href = url; link.download = 'codex-conversation.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 function onEvent(event: RpcEvent): void {
   const p = event.params || {}, id = p.threadId || p.thread?.id
@@ -290,7 +320,10 @@ function onEvent(event: RpcEvent): void {
   if (event.method === 'turn/started') activeTurns.value = { ...activeTurns.value, [id]: p.turn?.id }
   if (event.method === 'turn/completed') { const next = { ...activeTurns.value }; delete next[id]; activeTurns.value = next }
   if (event.method === 'thread/name/updated') { threads.value = threads.value.map(t => t.id === id ? { ...t, name: p.threadName || p.name } : t); if (current.value?.id === id) current.value = { ...current.value, name: p.threadName || p.name } }
+  if (event.method === 'thread/started') { void loadThreads(); return }
+  if (event.method === 'thread/status/changed') threads.value = threads.value.map(t => t.id === id ? {...t,status:p.status} : t)
   if (id !== threadId.value || !current.value) return
+  if (['lanpower/historyChanged','lanpower/conversation/changed','lanpower/stream/changed','thread/status/changed','thread/settings/updated'].includes(event.method)) { scheduleReconcile(); return }
   if (event.method === 'thread/queue/changed') { void refreshQueue().catch(showError); return }
   const turns = current.value.turns || (current.value.turns = [])
   if (event.method === 'turn/started' || event.method === 'turn/completed') {
@@ -305,12 +338,43 @@ function onEvent(event: RpcEvent): void {
     if (p.item) { if (item) Object.assign(item, p.item); else turn.items.push(p.item) }
     else if (event.method === 'item/agentMessage/delta') {
       if (!item) { item = { id: itemId, type: 'agentMessage', text: '' }; turn.items.push(item) }
-      item.text = `${item.text || ''}${p.delta || ''}`.slice(-64000)
-    } else if (event.method === 'item/commandExecution/outputDelta' && item) item.aggregatedOutput = `${item.aggregatedOutput || ''}${p.delta || ''}`.slice(-64000)
+      item.text = `${item.text || ''}${p.delta || ''}`
+    } else if (event.method === 'item/commandExecution/outputDelta' && item) item.aggregatedOutput = `${item.aggregatedOutput || ''}${p.delta || ''}`
+    else if (event.method === 'item/plan/delta') { if (!item) { item = {id:itemId,type:'plan',text:''}; turn.items.push(item) }; item.text = `${item.text || ''}${p.delta || ''}` }
   } else if (event.method === 'turn/plan/updated') overlay.value = { ...overlay.value, activityDetails: (p.plan || []).map((step: any) => `${step.status === 'completed' ? '✓' : '○'} ${step.step}`) }
+  else if (event.method === 'item/reasoning/summaryTextDelta') overlay.value = {...overlay.value,reasoningText:`${overlay.value.reasoningText}${p.delta || ''}`}
   else if (event.method === 'error') overlay.value = { ...overlay.value, errorText: p.error?.message || '任务出错，请查看原窗口。' }
   // Many token notifications share one render, keeping long conversations responsive.
-  if (!streamFrame) streamFrame = requestAnimationFrame(() => { streamFrame = 0; if (current.value) current.value = { ...current.value, turns: current.value.turns.slice(-128) } })
+  if (!streamFrame) streamFrame = requestAnimationFrame(() => { streamFrame = 0; if (current.value) current.value = { ...current.value, turns: [...current.value.turns] } })
+  if (event.method === 'turn/completed') scheduleReconcile()
+}
+function scheduleReconcile(): void {
+  clearTimeout(reconcileTimer)
+  reconcileTimer = setTimeout(() => {
+    if (!ready.value || !threadId.value) return
+    if (busy.value || syncing || loadingChat.value || loadingEarlier.value || loadingAllHistory.value) { scheduleReconcile(); return }
+    void refreshCurrent()
+  }, 500)
+}
+function saveLibrary(preferences: LibraryPreferences): void {
+  libraryDraft = preferences; libraryState.value = {...libraryState.value,preferences}
+  clearTimeout(libraryTimer); libraryTimer = setTimeout(() => { void flushLibrary() },250)
+}
+async function flushLibrary(): Promise<void> {
+  if (librarySaving || !ready.value || !libraryDraft) return
+  const e = epoch; librarySaving = true
+  try {
+    while (libraryDraft && e === epoch && ready.value) {
+      const draft = libraryDraft; libraryDraft = null
+      let result = await connection.request('lanpower/library/update',{revision:libraryState.value.revision,preferences:draft})
+      if (e !== epoch) return
+      if (result.conflict) result = await connection.request('lanpower/library/update',{revision:result.revision,preferences:draft})
+      if (e !== epoch) return
+      if (result.conflict) throw new Error('项目整理状态已变化，请刷新后重试。')
+      libraryState.value = {revision:result.revision,preferences:libraryDraft || result.preferences}
+    }
+  } catch (error) { if (e === epoch) { libraryDraft = null; showError(error); const status = await connection.request('lanpower/status').catch(() => null); if (status?.library && e === epoch) libraryState.value = status.library } }
+  finally { librarySaving = false; if (libraryDraft && ready.value) void flushLibrary() }
 }
 async function updatePower(): Promise<void> {
   const id = deviceId.value; if (!id) return
@@ -323,16 +387,36 @@ async function wake(): Promise<void> {
 function changeDevice(id: string): void {
   if (composer.value?.hasUnsavedDraft() && !confirm('切换电脑将清空当前未发送的草稿，继续吗？')) return
   epoch++; selection++; deviceId.value = id; threadId.value = ''; current.value = null; threads.value = []; projects.value = []; models.value = []; queue.value = []; resetApprovals(); activeTurns.value = {}; editingQueue.value = ''; listCursor.value = ''; historyCursor.value = ''; powerText.value = ''; wakeAvailable.value = false; feedback.value = ''; chatOpen.value = false
-  loadingChat.value = false; loadingLibrary.value = false; busy.value = false
+  loadingChat.value = false; loadingLibrary.value = false; loadingEarlier.value = false; loadingAllHistory.value = false; busy.value = false; skills.value = []; filesCwd.value = ''; chatSupported.value = false; view.value = 'chat'; archivedView.value = false; newThreadDialog.value = false; renameDialog.value = false
+  libraryDraft = null; libraryState.value = {revision:0,preferences:defaultLibraryPreferences()}; filePath.value = ''; clearTimeout(libraryTimer); clearTimeout(reconcileTimer); resetRemoteImages()
   connection.connect(id); if (!id) state.value = 'idle'; else void updatePower()
 }
 function reconnect(): void { connection.connect(deviceId.value) }
-function toggleTheme(): void { const dark = document.documentElement.classList.toggle('dark'); try { localStorage.setItem('lanpower-codex-theme', dark ? 'dark' : 'light') } catch {} }
+function toggleTheme(): void { setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark') }
+function setTheme(mode: string): void { document.documentElement.classList.toggle('dark',mode === 'dark' || mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches); try { localStorage.setItem('lanpower-codex-theme',mode) } catch {} }
+function setSendWithEnter(value: boolean): void { sendWithEnter.value = value; try { localStorage.setItem('lanpower-codex-send-enter',String(value)) } catch {} }
+function setInProgressMode(value: 'queue' | 'steer'): void { inProgressMode.value = value; try { localStorage.setItem('lanpower-codex-send-mode',value) } catch {} }
+function toggleSidebar(): void { if (innerWidth < 768 && threadId.value) chatOpen.value = true; else sidebarCollapsed.value = !sidebarCollapsed.value }
+function syncUrl(): void { history.replaceState(null,'',`#/device/${encodeURIComponent(deviceId.value)}${threadId.value ? `/thread/${encodeURIComponent(threadId.value)}` : ''}`) }
+async function openThread(id: string): Promise<void> { view.value = 'chat'; await selectThread(id) }
+function navigate(target: string): void { view.value = target; chatOpen.value = true }
+function openNewThread(cwd?: string): void { if (cwd) { view.value = 'chat'; void newThread(cwd) } else { newThreadDialog.value = true } }
+async function createFromDialog(): Promise<void> { await newThread(projectCwd.value); if (threadId.value) { newThreadDialog.value = false; view.value = 'chat' } }
+async function newChat(): Promise<void> { if (!ready.value || busy.value || !chatSupported.value) return; busy.value = true; try { const result = await connection.request('lanpower/chat/start',selectedModel.value ? {model:selectedModel.value} : {}); busy.value = false; view.value = 'chat'; await loadThreads(); await selectThread(result.thread.id) } catch(error) { showError(error) } finally { busy.value = false } }
+async function toggleArchived(): Promise<void> { if (loadingLibrary.value) return; archivedView.value = !archivedView.value; listCursor.value = ''; threads.value = []; await loadThreads() }
+async function sidebarThreadAction(action: string, id: string): Promise<void> { if (id !== threadId.value) await openThread(id); if (threadId.value !== id || loadingChat.value) return; if (action === 'rename') await renameThread(); else if (action === 'fork') await forkThread(); else if (action === 'export') await exportChat(); else if (action === 'archive') await archiveThread(); else if (action === 'unarchive') { try { await connection.request('thread/unarchive',{threadId:id}); await toggleArchived() } catch(error) { showError(error) } } }
+async function loadAllHistory(): Promise<boolean> { if (!threadId.value || !ready.value || loadingAllHistory.value || loadingEarlier.value) return false; const e = epoch, s = selection; loadingAllHistory.value = true; try { while (historyCursor.value && e === epoch && s === selection) { const cursor = historyCursor.value; await loadEarlier(threadId.value); if (historyCursor.value === cursor) return false }; return e === epoch && s === selection } finally { if (e === epoch && s === selection) loadingAllHistory.value = false } }
+async function jumpToBeginning(): Promise<void> { if (await loadAllHistory()) await conversation.value?.jumpToStart() }
+async function loadSkills(cwd: string, e = epoch, s = selection): Promise<void> { skills.value = []; if (!sharedControl.value || !cwd) return; try { const result = await connection.request('skills/list',{cwd}); if (e === epoch && s === selection) skills.value = [...new Map((result.data || []).flatMap((entry:any) => entry.skills || []).filter((skill:any) => skill.enabled !== false).map((skill:any) => [skill.path,skill])).values()] as any[] } catch {} }
+function openFiles(cwd: string, path = ''): void { filePath.value = path; filesCwd.value = cwd }
+async function attachProjectFile(path: string): Promise<void> { if (!threadId.value || !canControl.value) { feedback.value = '请先打开此项目的聊天，再添加文件。'; return }; view.value = 'chat'; chatOpen.value = true; await nextTick(); composer.value?.addProjectFile(path); filesCwd.value = '' }
+async function useSkill(skill: {name:string;path:string}): Promise<void> { if (!threadId.value || !canControl.value) { feedback.value = '请先打开聊天，再选择技能。'; view.value = 'chat'; return }; view.value = 'chat'; chatOpen.value = true; await nextTick(); composer.value?.addSkill(skill) }
 onMounted(() => {
-  try { document.documentElement.classList.toggle('dark', localStorage.getItem('lanpower-codex-theme') === 'dark') } catch {}
+  try { setTheme(localStorage.getItem('lanpower-codex-theme') || 'light'); sendWithEnter.value = localStorage.getItem('lanpower-codex-send-enter') !== 'false'; inProgressMode.value = localStorage.getItem('lanpower-codex-send-mode') === 'steer' ? 'steer' : 'queue' } catch {}
   connection.onEvent = onEvent; connection.onState = onState
-  if (devices.length) changeDevice(devices[0]!.id)
-  polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent() } }, 8000)
+  const route = location.hash.match(/^#\/device\/([^/]+)(?:\/thread\/([^/]+))?$/)
+  if (devices.length) { const target = devices.find(d => d.id === decodeURIComponent(route?.[1] || '')); changeDevice(target?.id || devices[0]!.id); if (target && route?.[2]) { threadId.value = decodeURIComponent(route[2]); chatOpen.value = true } }
+  polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent(); void loadThreads() } }, 30000)
 })
-onBeforeUnmount(() => { clearInterval(polling); cancelAnimationFrame(streamFrame); connection.stop() })
+onBeforeUnmount(() => { clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
 </script>

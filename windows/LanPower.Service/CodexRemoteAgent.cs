@@ -31,14 +31,15 @@ public sealed class CodexRemoteAgent(CloudTokenSession tokens, CodexHostBridge b
                 State = "connected";
                 var output = Channel.CreateBounded<string>(new BoundedChannelOptions(16) { FullMode = BoundedChannelFullMode.Wait });
                 using var connection = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                void Forward(string raw)
+                async Task Forward(string raw)
                 {
-                    if (!output.Writer.TryWrite(raw)) connection.Cancel();
+                    try { await output.Writer.WriteAsync(raw, connection.Token); }
+                    catch (OperationCanceledException) { }
                 }
                 bridge.Message += Forward;
                 try
                 {
-                    Forward(JsonSerializer.Serialize(new { type = "hello", protocol = 1,
+                    await Forward(JsonSerializer.Serialize(new { type = "hello", protocol = 1,
                         state = bridge.State == "host_offline" ? "host_offline" : bridge.State == "disabled" ? "disabled" : "host_ready" }));
                     async Task Send()
                     {
@@ -61,7 +62,8 @@ public sealed class CodexRemoteAgent(CloudTokenSession tokens, CodexHostBridge b
                                 body.Write(buffer, 0, result.Count);
                             } while (!result.EndOfMessage);
                             var frame = CodexRemoteProtocol.Parse(new UTF8Encoding(false, true).GetString(body.ToArray()));
-                            if (frame["type"]?.GetValue<string>() == "ping") Forward("{\"type\":\"pong\"}");
+                            if (frame["type"]?.GetValue<string>() == "ping") await Forward("{\"type\":\"pong\"}");
+                            else if (frame["type"]?.GetValue<string>() == "error") throw new InvalidDataException("relay_rejected");
                             else if (frame["type"]?.GetValue<string>() != "pong") await bridge.ForwardAsync(frame, connection.Token);
                         }
                     }
@@ -84,8 +86,8 @@ public sealed class CodexRemoteAgent(CloudTokenSession tokens, CodexHostBridge b
                 finally { bridge.Message -= Forward; }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception error) when (error is IOException or WebSocketException or HttpRequestException or
-                UnauthorizedAccessException or JsonException or InvalidOperationException or System.Security.Cryptography.CryptographicException)
+            catch (Exception error) when (error is IOException or InvalidDataException or WebSocketException or HttpRequestException or
+                UnauthorizedAccessException or JsonException or InvalidOperationException or OperationCanceledException or System.Security.Cryptography.CryptographicException)
             {
                 // Exception messages can contain response URLs or credentials.
                 if (delay == 2) log.Write("Codex Remote 连接等待重试：" + error.GetType().Name);

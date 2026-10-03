@@ -237,7 +237,7 @@
               />
             </button>
             <button
-              v-if="!remoteMode"
+              v-if="!remoteMode || supportsPlanMode"
               class="thread-composer-attach-setting"
               type="button"
               role="switch"
@@ -273,7 +273,7 @@
           />
 
           <ComposerSearchDropdown
-            v-if="!remoteMode"
+            v-if="!remoteMode || (skills?.length || 0) > 0"
             class="thread-composer-control"
             :options="skillDropdownOptions"
             :selected-values="selectedSkillPaths"
@@ -439,6 +439,7 @@ type SkillItem = { name: string; displayName?: string; description: string; path
 const props = defineProps<{
   activeThreadId: string
   remoteMode?: boolean
+  supportsPlanMode?: boolean
   cwd?: string
   collaborationModes?: CollaborationModeOption[]
   selectedCollaborationMode: CollaborationModeKind
@@ -483,6 +484,8 @@ export type ThreadComposerExposed = {
   hydrateDraft: (payload: ComposerDraftPayload) => void
   appendTextToDraft: (text: string) => void
   hasUnsavedDraft: () => boolean
+  addProjectFile: (path: string) => void
+  addSkill: (skill: {name:string;path:string}) => void
 }
 
 const emit = defineEmits<{
@@ -1820,6 +1823,8 @@ onMounted(() => {
 })
 
 defineExpose<ThreadComposerExposed>({
+  addProjectFile: addFileAttachment,
+  addSkill(skill) { if (!selectedSkills.value.some(s => s.path === skill.path)) selectedSkills.value.push(props.skills?.find(s => s.path === skill.path) || {...skill,description:''}); inputRef.value?.focus() },
   hydrateDraft,
   appendTextToDraft,
   hasUnsavedDraft: () => hasUnsavedDraft.value,

@@ -80,11 +80,24 @@ string? session = null;
 var runtimeLock = new SemaphoreSlim(1, 1);
 Channel<string>? output = null;
 CancellationTokenSource? connection = null;
+var dirtyHistory = new System.Collections.Concurrent.ConcurrentDictionary<(string Session, string Thread), byte>();
 void Emit(object frame)
 {
     var raw = JsonSerializer.Serialize(frame, CodexRemoteProtocol.JsonOptions);
-    if (Encoding.UTF8.GetByteCount(raw) > CodexRemoteProtocol.MaxFrame || output?.Writer.TryWrite(raw) == false)
-        connection?.Cancel();
+    if (Encoding.UTF8.GetByteCount(raw) <= CodexRemoteFrames.MaxResultBytes && output?.Writer.TryWrite(raw) != false) return;
+    // A busy transport must not abandon a native task or lose its final content.
+    var payload = JsonNode.Parse(raw)?["payload"];
+    var thread = payload?["params"]?["threadId"]?.GetValue<string>();
+    if (payload?["method"] is not null && payload?["id"] is null && thread is not null && session is { } current && dirtyHistory.Count < 128)
+        dirtyHistory[(current,thread)] = 0;
+    else connection?.Cancel();
+}
+async Task EmitResultAsync(JsonObject result, string current, CancellationToken token)
+{
+    var raw = JsonSerializer.Serialize(new { type = "rpc", session = current, payload = result }, CodexRemoteProtocol.JsonOptions);
+    if (Encoding.UTF8.GetByteCount(raw) > CodexRemoteFrames.MaxResultBytes)
+        raw = JsonSerializer.Serialize(new { type = "rpc", session = current, payload = new { id = result["id"], error = new { code = -32000, message = "result_too_large" } } }, CodexRemoteProtocol.JsonOptions);
+    if (output is { } channel) await channel.Writer.WriteAsync(raw, token);
 }
 void State(string state)
 {
@@ -137,7 +150,8 @@ while (!lifetime.IsCancellationRequested)
             throw new IOException("untrusted_service");
         using var connected = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         connection = connected;
-        output = Channel.CreateBounded<string>(new BoundedChannelOptions(16) { FullMode = BoundedChannelFullMode.Wait });
+        output = Channel.CreateBounded<string>(new BoundedChannelOptions(8) { FullMode = BoundedChannelFullMode.Wait });
+        dirtyHistory.Clear();
         using var reader = new StreamReader(pipe, new UTF8Encoding(false, true), false, 65536, true);
         using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 65536, true) { AutoFlush = true };
         var config = ReadSettings();
@@ -145,7 +159,13 @@ while (!lifetime.IsCancellationRequested)
         async Task Write()
         {
             await foreach (var raw in output.Reader.ReadAllAsync(connected.Token))
-                await writer.WriteLineAsync(raw.AsMemory(), connected.Token);
+            {
+                foreach (var part in CodexRemoteFrames.Encode(raw))
+                    await writer.WriteLineAsync(part.AsMemory(), connected.Token);
+                foreach (var dirty in dirtyHistory.Keys)
+                    if (dirtyHistory.TryRemove(dirty,out _) && session == dirty.Session)
+                        await writer.WriteLineAsync(JsonSerializer.Serialize(new { type = "rpc", session = dirty.Session, payload = new { method = "lanpower/historyChanged", @params = new { threadId = dirty.Thread } } }, CodexRemoteProtocol.JsonOptions).AsMemory(), connected.Token);
+            }
         }
         async Task Read()
         {
@@ -178,14 +198,14 @@ while (!lifetime.IsCancellationRequested)
                         try
                         {
                             var result = await runtime.HandleAsync(request, connected.Token);
-                            if (result is not null) Emit(new { type = "rpc", session, payload = result });
+                            if (result is not null) await EmitResultAsync(result, session!, connected.Token);
                         }
                         catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException or TimeoutException or ArgumentException)
                         {
                             // Remote failures contain only fixed categories. Runtime RPC errors remain encrypted in transit.
                             var category = error.Message is "desktop_session_busy" or "task_running" or "workspace_not_allowed" or
                                 "turn_changed" or "approval_unavailable" or "too_many_sessions" or "background_running" or
-                                "session_release_unavailable" or "shared_session_control" or "shared_runtime_required" ? error.Message : "request_rejected";
+                                "session_release_unavailable" or "shared_session_control" or "shared_runtime_required" or "image_not_referenced" or "image_too_large" or "unsupported_image" ? error.Message : "request_rejected";
                             Emit(new { type = "rpc", session, payload = new JsonObject { ["id"] = request["id"]?.DeepClone(),
                                 ["error"] = new JsonObject { ["code"] = -32000, ["message"] = category } } });
                         }

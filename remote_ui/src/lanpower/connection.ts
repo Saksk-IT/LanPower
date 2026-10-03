@@ -1,3 +1,4 @@
+import { RpcFragments } from './fragments'
 export type RpcEvent = { id?: string | number; method: string; params?: any }
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
 
@@ -8,12 +9,15 @@ const errors: Record<string, string> = {
   workspace_not_allowed: '项目尚未授权，请在电脑的 LanPower 检查项目目录。',
   turn_changed: '任务状态已经变化，请刷新后重试。',
   approval_unavailable: '审批已处理或失效，请刷新会话。',
+  result_too_large: '这一页内容超过传输上限，请在电脑查看，或缩小读取范围后重试。',
+  image_not_referenced: '此图片不属于当前聊天。', image_too_large: '图片超过 8 MB，请在电脑查看原图。', unsupported_image: '当前图片格式无法预览。',
 }
 
 // Credentials stay in the existing HttpOnly session cookie. Task bodies stay in memory.
 export class RemoteConnection {
   private socket: WebSocket | null = null
   private pending = new Map<string, Pending>()
+  private fragments = new RpcFragments()
   private retry: ReturnType<typeof setTimeout> | null = null
   private generation = 0
   private delay = 1000
@@ -39,16 +43,21 @@ export class RemoteConnection {
         return
       }
       if (frame.type === 'error') { this.onEvent({ method: 'lanpower/error', params: { code: frame.code } }); return }
-      const payload = frame.payload
-      if (frame.type !== 'rpc' || !payload || typeof payload !== 'object') return
+      let payload = frame.payload
+      if (frame.type === 'rpc_chunk') {
+        if (!this.pending.has(frame.id)) return
+        try { payload = this.fragments.accept(frame) } catch { socket.close(); this.rejectPending(); return }
+        if (!payload) return
+      } else if (frame.type !== 'rpc') return
+      if (!payload || typeof payload !== 'object') return
       if (typeof payload.method === 'string') { this.onEvent(payload); return }
       const call = this.pending.get(payload.id)
       if (!call) {
         if (payload.error) this.onEvent({ method: 'lanpower/approvalError', params: { id: payload.id } })
         return
       }
-      this.pending.delete(payload.id); clearTimeout(call.timer)
-      if (payload.error) call.reject(new Error(errors[payload.error.message] || '本机未能完成请求，请检查会话和授权。'))
+      this.pending.delete(payload.id); this.fragments.drop(payload.id); clearTimeout(call.timer)
+      if (payload.error) call.reject(new Error(payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || '本机未能完成请求，请检查会话和授权。'))
       else call.resolve(payload.result)
     }
     socket.onerror = () => {}
@@ -67,7 +76,7 @@ export class RemoteConnection {
     const data = JSON.stringify({ type: 'rpc', payload: { id, method, params } })
     if (new TextEncoder().encode(data).byteLength > 1048576) return Promise.reject(new Error('消息或图片过大，请缩小后重试。'))
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('请求超时，请刷新会话确认结果；任务不会自动重发。')) }, 35000)
+      const timer = setTimeout(() => { this.pending.delete(id); this.fragments.drop(id); reject(new Error('请求超时，请刷新会话确认结果；任务不会自动重发。')) }, 35000)
       this.pending.set(id, { resolve, reject, timer })
       try { this.socket!.send(data) } catch { clearTimeout(timer); this.pending.delete(id); reject(new Error('连接已断开，请重新连接。')) }
     })
@@ -79,6 +88,7 @@ export class RemoteConnection {
   private rejectPending(): void {
     for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(new Error('连接已断开，请恢复会话确认结果。')) }
     this.pending.clear()
+    this.fragments.clear()
   }
   stop(): void {
     this.generation++

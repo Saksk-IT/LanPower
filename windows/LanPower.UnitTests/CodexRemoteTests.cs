@@ -276,6 +276,36 @@ public sealed class CodexRemoteTests
     }
 
     [TestMethod]
+    public async Task ServiceBridgeRecoversAfterMalformedHostFrame()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var bridge = new CodexHostBridge(true);
+        var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bridge.Message += raw => {
+            if (CodexRemoteProtocol.Parse(raw)["type"]?.GetValue<string>() == "hello") recovered.TrySetResult();
+            return Task.CompletedTask;
+        };
+        async Task ConnectAndSend(string raw)
+        {
+            await using var pipe = new System.IO.Pipes.NamedPipeClientStream(".",
+                $"{CodexRemoteProtocol.PipeName}.DryRun.{Environment.ProcessId}",
+                System.IO.Pipes.PipeDirection.Out, System.IO.Pipes.PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(timeout.Token);
+            await using var writer = new StreamWriter(pipe, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+            await writer.WriteLineAsync(raw.AsMemory(), timeout.Token);
+        }
+        try
+        {
+            await bridge.StartAsync(timeout.Token);
+            await ConnectAndSend("{\"type\":\"hello\",\"protocol\":999,\"state\":\"host_ready\"}");
+            await ConnectAndSend("{\"type\":\"hello\",\"protocol\":1,\"state\":\"host_ready\"}");
+            await recovered.Task.WaitAsync(timeout.Token);
+            Assert.IsFalse(bridge.ExecuteTask!.IsCompleted, "A rejected frame must not stop the service bridge.");
+        }
+        finally { await bridge.StopAsync(CancellationToken.None); }
+    }
+
+    [TestMethod]
     public async Task ServiceBridgeAndUserHostPipeRoundtrip()
     {
         var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
@@ -285,7 +315,7 @@ public sealed class CodexRemoteTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         using var bridge = new CodexHostBridge(true);
         var messages = Channel.CreateUnbounded<JsonObject>();
-        bridge.Message += raw => messages.Writer.TryWrite(CodexRemoteProtocol.Parse(raw));
+        bridge.Message += raw => { messages.Writer.TryWrite(CodexRemoteProtocol.Parse(raw)); return Task.CompletedTask; };
         Process? host = null;
         async Task<JsonObject> Until(Func<JsonObject, bool> matches)
         {

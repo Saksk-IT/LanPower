@@ -1,3 +1,4 @@
+const {RpcFragments} = require('./codex-fragments');
 const STATES = {
   idle: ['选择开发电脑', '选择电脑后读取项目和最近会话'],
   connecting: ['正在连接', '正在连接你的开发电脑'],
@@ -33,6 +34,7 @@ class CodexConnection {
   constructor({wxApi, cloud, event, state, timer = setTimeout, clearTimer = clearTimeout}) {
     Object.assign(this, {wx: wxApi, cloud, event, state, timer, clearTimer});
     this.pending = new Map(); this.generation = 0; this.sequence = 0; this.delay = 1000;
+    this.fragments = new RpcFragments();
     this.socket = null; this.device = ''; this.opened = false;
   }
   connect(device) { this.stop(); this.device = device; this.open(); }
@@ -83,15 +85,20 @@ class CodexConnection {
     if (frame.type === 'error') {
       this.event({method: 'lanpower/error', params: {code: frame.code}}); return;
     }
-    if (frame.type !== 'rpc' || !frame.payload || typeof frame.payload !== 'object') return;
-    const payload = frame.payload;
+    let payload = frame.payload;
+    if (frame.type === 'rpc_chunk') {
+      if (!this.pending.has(frame.id)) return;
+      try { payload = this.fragments.accept(frame); } catch (_) { this.lost(socket, this.generation, 1006); return; }
+      if (!payload) return;
+    } else if (frame.type !== 'rpc') return;
+    if (!payload || typeof payload !== 'object') return;
     if (payload.method) { this.event(payload); return; }
     const call = this.pending.get(payload.id);
     if (!call) {
       if (payload.error) this.event({method: 'lanpower/approvalError', params: {id: payload.id}});
       return;
     }
-    this.pending.delete(payload.id); this.clearTimer(call.timeout);
+    this.pending.delete(payload.id); this.fragments.drop(payload.id); this.clearTimer(call.timeout);
     if (payload.error) call.reject(failure(ERRORS[payload.error.message] || '本机未能完成请求，请检查会话与授权。', 'REJECTED'));
     else call.resolve(payload.result || {});
   }
@@ -120,7 +127,7 @@ class CodexConnection {
     const id = 'm-' + this.generation + '-' + (++this.sequence);
     return new Promise((resolve, reject) => {
       const timeout = this.timer(() => {
-        this.pending.delete(id); reject(failure('请求超时；请刷新会话确认结果，任务不会自动重发。', 'TIMEOUT'));
+        this.pending.delete(id); this.fragments.drop(id); reject(failure('请求超时；请刷新会话确认结果，任务不会自动重发。', 'TIMEOUT'));
       }, 35000);
       this.pending.set(id, {resolve, reject, timeout});
       this.sendFrame({type: 'rpc', payload: {id, method, params}}).catch(error => {
@@ -135,6 +142,7 @@ class CodexConnection {
       this.clearTimer(call.timeout); call.reject(failure('连接断开；恢复后请确认会话进度。', 'CONNECTION'));
     }
     this.pending.clear();
+    this.fragments.clear();
   }
   reconnect() { const device = this.device; this.connect(device); }
   stop() {

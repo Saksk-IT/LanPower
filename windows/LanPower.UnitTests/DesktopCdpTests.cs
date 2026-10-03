@@ -38,8 +38,9 @@ public sealed class DesktopCdpTests
     {
         JsonObject Request(string method, JsonObject p) => new() { ["id"] = "one", ["method"] = method, ["params"] = p };
         Assert.AreEqual("thread/turns/list", CodexRemoteProtocol.ValidateRequest(Request("thread/turns/list", new() { ["threadId"] = "chat", ["limit"] = 8, ["cursor"] = "page" })));
-        foreach (var value in new object[] { 0, 51, "2" })
+        foreach (var value in new object[] { 0, 100001, "2" })
             Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("thread/rollback", new() { ["threadId"] = "chat", ["numTurns"] = JsonValue.Create(value) })));
+        Assert.AreEqual("thread/rollback", CodexRemoteProtocol.ValidateRequest(Request("thread/rollback",new() { ["threadId"] = "chat", ["numTurns"] = 180 })));
         foreach (var url in new[] { "file:///private", "https://example.com/image.png", "data:image/svg+xml;base64,QQ==", "data:image/jpeg;base64," })
             Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("turn/start", new() { ["threadId"] = "chat", ["input"] = new JsonArray(new JsonObject { ["type"] = "image", ["url"] = url }) })));
         Assert.AreEqual("turn/start", CodexRemoteProtocol.ValidateRequest(Request("turn/start", new() { ["threadId"] = "chat", ["input"] = new JsonArray(new JsonObject { ["type"] = "image", ["url"] = "data:image/jpeg;base64,QQ==" }) })));

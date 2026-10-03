@@ -51,4 +51,21 @@ describe('LanPower browser relay lifecycle', () => {
     expect(state).toHaveBeenLastCalledWith('controller_busy')
     expect(FakeSocket.sockets).toHaveLength(1)
   })
+  it('delivers large paginated history only after every fragment arrives',async () => {
+    client.connect('one'); const socket = FakeSocket.sockets[0]!
+    const pending = client.request('thread/turns/list',{threadId:'native'})
+    const id = socket.sent[0].payload.id, text = '完整内容🎨'.repeat(100000)
+    const raw = JSON.stringify({id,result:{text}}), parts = raw.match(/[\s\S]{1,16000}/g)!
+    parts.forEach((data,index) => socket.receive({type:'rpc_chunk',id,index,count:parts.length,data}))
+    expect((await pending).text).toBe(text)
+  })
+  it('discards a partial reply when the computer changes',async () => {
+    client.connect('one'); const old = FakeSocket.sockets[0]!
+    const pending = client.request('thread/read',{threadId:'private'}), rejected = expect(pending).rejects.toThrow('连接已断开')
+    const id = old.sent[0].payload.id
+    old.receive({type:'rpc_chunk',id,index:0,count:2,data:'{"id":'})
+    client.connect('two'); await rejected
+    old.receive({type:'rpc_chunk',id,index:1,count:2,data:'"old"}'})
+    expect(FakeSocket.sockets[1]!.sent).toEqual([])
+  })
 })

@@ -16,6 +16,7 @@ public sealed class DesktopCdp : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _write = new(1, 1);
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonObject>> _calls = new();
+    private readonly ConcurrentDictionary<string, byte> _dirtyThreads = new();
     private readonly Channel<string> _frames = Channel.CreateBounded<string>(new BoundedChannelOptions(128) { FullMode = BoundedChannelFullMode.Wait });
     private readonly string _global = "__lanpowerCdp_" + Guid.NewGuid().ToString("N");
     private readonly string _binding = "__lanpowerEvent_" + Guid.NewGuid().ToString("N");
@@ -110,7 +111,7 @@ public sealed class DesktopCdp : IAsyncDisposable
     private async Task<JsonNode?> RpcAsync(string method, JsonNode parameters, CancellationToken token)
     {
         // Only fixed error categories cross the CDP boundary; never forward renderer stacks or task content.
-        var response = await EvaluateAsync($"(async()=>{{const a=globalThis[{JsonSerializer.Serialize(_global)}];try{{if(!a)throw new Error('bridge unavailable');return {{ok:true,result:await a.rpc({JsonSerializer.Serialize(method)},{parameters.ToJsonString()})}};}}catch(e){{let missing=false;let c=e;for(let i=0;c&&i<4;i++,c=c.cause){{if(String(c.message||c).toLowerCase().includes('no rollout found for thread id'))missing=true;}}return {{ok:false,code:typeof e?.code==='number'?e.code:-32000,missing}};}}}})()", token);
+        var response = await EvaluateAsync($"(async()=>{{const a=globalThis[{JsonSerializer.Serialize(_global)}];try{{if(!a)throw new Error('bridge unavailable');return {{ok:true,result:await a.rpc({JsonSerializer.Serialize(method)},{parameters.ToJsonString()})}};}}catch(e){{let missing=false;let code=-32000;let c=e;for(let i=0;c&&i<4;i++,c=c.cause){{const text=String(c.message||c).toLowerCase();if(text.includes('no rollout found for thread id'))missing=true;if(typeof c.code==='number')code=c.code;else if(/method not found|unknown method|unrecognized method|unknown variant/.test(text))code=-32601;}}return {{ok:false,code,missing}};}}}})()", token);
         if (response?["ok"]?.GetValue<bool>() != true)
         {
             var missing = response?["missing"]?.GetValue<bool>() == true;
@@ -143,7 +144,17 @@ public sealed class DesktopCdp : IAsyncDisposable
 
     public static JsonObject? NormalizeEvent(JsonObject bridge)
     {
-        if (bridge["kind"]?.GetValue<string>() != "notification" || bridge["payload"] is not JsonObject payload) return null;
+        if (bridge["payload"] is not JsonObject payload) return null;
+        var kind = bridge["kind"]?.GetValue<string>();
+        if (kind is "conversationState" or "streamRole")
+            return payload["threadId"] is null ? null : new JsonObject {
+                ["method"] = kind == "conversationState" ? "lanpower/conversation/changed" : "lanpower/stream/changed", ["params"] = payload.DeepClone() };
+        if (kind == "turnCompleted")
+        {
+            var thread = payload["threadId"] ?? payload["conversationId"];
+            return thread is null ? null : new JsonObject { ["method"] = "lanpower/historyChanged", ["params"] = new JsonObject { ["threadId"] = thread.DeepClone() } };
+        }
+        if (kind != "notification") return null;
         var method = payload["method"]?.GetValue<string>();
         if (method == "server/request" && payload["params"] is JsonObject request)
             return new() { ["id"] = request["id"]?.DeepClone(), ["method"] = request["method"]?.DeepClone(), ["params"] = request["params"]?.DeepClone() };
@@ -171,7 +182,11 @@ public sealed class DesktopCdp : IAsyncDisposable
                 if (message["method"]?.GetValue<string>() != "Runtime.bindingCalled" || message["params"]?["name"]?.GetValue<string>() != _binding) continue;
                 var bridge = JsonNode.Parse(message["params"]!["payload"]!.GetValue<string>()) as JsonObject;
                 if (bridge is not null && NormalizeEvent(bridge) is { } notification && !_frames.Writer.TryWrite(notification.ToJsonString()))
-                    throw new IOException("desktop_backpressure");
+                {
+                    if (notification["id"] is not null || notification["params"]?["threadId"]?.GetValue<string>() is not { } thread || _dirtyThreads.Count >= 128)
+                        throw new IOException("desktop_backpressure");
+                    _dirtyThreads[thread] = 0;
+                }
             }
         }
         catch (Exception error) when (error is IOException or JsonException or WebSocketException or OperationCanceledException or InvalidOperationException) { }
@@ -179,7 +194,17 @@ public sealed class DesktopCdp : IAsyncDisposable
     }
 
     private async Task<string?> ReadFrame(CancellationToken token)
-    { while (await _frames.Reader.WaitToReadAsync(token)) if (_frames.Reader.TryRead(out var frame)) return frame; return null; }
+    {
+        while (await _frames.Reader.WaitToReadAsync(token))
+            if (_frames.Reader.TryRead(out var frame))
+            {
+                foreach (var thread in _dirtyThreads.Keys)
+                    if (_frames.Writer.TryWrite(new JsonObject { ["method"] = "lanpower/historyChanged", ["params"] = new JsonObject { ["threadId"] = thread } }.ToJsonString()))
+                    { _dirtyThreads.TryRemove(thread,out _); break; }
+                return frame;
+            }
+        return null;
+    }
 
     public async ValueTask DisposeAsync()
     {

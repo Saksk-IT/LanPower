@@ -7,6 +7,8 @@ public sealed record CodexProject(string Name, string Path, string? Id = null);
 
 public static class CodexProjects
 {
+    public static bool IsChatPath(string? path) => path is not null && System.Text.RegularExpressions.Regex.IsMatch(
+        path.Replace('\\','/'), @"(?:^|/)Documents/Codex/\d{4}-\d{2}-\d{2}/[^/]+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     public static string Home => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } home
         ? System.IO.Path.GetFullPath(home) : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
 
