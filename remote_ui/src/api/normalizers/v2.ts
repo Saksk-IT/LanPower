@@ -405,12 +405,15 @@ export function toUiFileChanges(changes: unknown): UiFileChange[] {
 
 function toUiMessages(item: ThreadItem): UiMessage[] {
   if (item.type === 'agentMessage') {
+    // New desktop versions expose the phase; older protocol snapshots omit it.
+    const phase = (item as typeof item & { phase?: unknown }).phase
     return [
       {
         id: item.id,
         role: 'assistant',
         text: item.text,
         messageType: item.type,
+        agentPhase: phase === 'commentary' || phase === 'final_answer' ? phase : undefined,
       },
     ]
   }
@@ -638,10 +641,10 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
       for (const msg of toUiMessages(item)) {
         if (turn.status === 'inProgress' && msg.messageType === 'reasoning') continue
         if (!insertedDuration && msg.role !== 'user' && duration !== undefined) {
-          messages.push({id:`${turnId ?? turnIndex}:worked`,role:'system',text:`已处理 ${formatWorkDuration(duration)}`,messageType:'worked',turnId,turnIndex})
+          messages.push({id:`${turnId ?? turnIndex}:worked`,role:'system',text:`已处理 ${formatWorkDuration(duration)}`,messageType:'worked',turnId,turnIndex,turnStatus:turn.status,turnDurationMs:duration})
           insertedDuration = true
         }
-        messages.push({ ...msg, turnId, turnIndex })
+        messages.push({ ...msg, turnId, turnIndex, turnStatus: turn.status, turnDurationMs: duration })
       }
     }
     const errorText = readTurnErrorText(turn)
@@ -654,6 +657,7 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
         messageType: 'turnError',
         turnId,
         turnIndex,
+        turnStatus: turn.status,
       })
     }
   }

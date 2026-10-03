@@ -1,7 +1,7 @@
 // Cache only an explicit list of public, versioned assets. Never cache HTML or APIs.
-const CACHE = 'lanpower-static-1.15.1';
-const ASSETS = ['/static/app.css?v=1.15.1','/static/app.js?v=1.15.1','/static/status.js?v=1.15.1',
-  '/static/codex-ui/codex.css?v=1.15.1','/static/codex-ui/codex.js?v=1.15.1','/static/favicon.svg'];
+const CACHE = 'lanpower-static-1.15.2';
+const ASSETS = ['/static/app.css?v=1.15.2','/static/app.js?v=1.15.2','/static/status.js?v=1.15.2',
+  '/static/codex-ui/codex.css?v=1.15.2','/static/codex-ui/codex.js?v=1.15.2','/static/favicon.svg'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('lanpower-static-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {

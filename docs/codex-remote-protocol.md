@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.15.1 与小程序 2.1.4。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
+适用于 LanPower Windows / Cloud / Web 1.15.2 与小程序 2.1.5。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
 
 ## 认证与连接
 

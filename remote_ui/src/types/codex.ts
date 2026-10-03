@@ -220,6 +220,9 @@ export type UiMessage = {
   plan?: UiPlanData
   turnId?: string
   turnIndex?: number
+  turnStatus?: 'completed' | 'interrupted' | 'failed' | 'inProgress'
+  turnDurationMs?: number
+  agentPhase?: 'commentary' | 'final_answer'
   isAutomationRun?: boolean
   automationDisplayName?: string | null
 }

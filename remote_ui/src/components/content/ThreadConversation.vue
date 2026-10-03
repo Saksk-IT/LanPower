@@ -26,8 +26,12 @@
         class="conversation-item"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
+        :data-message-id="message.id"
       >
-        <div v-if="isCommandMessage(message)" class="message-row" data-role="system">
+        <div v-if="message.activitySummary" class="message-row" data-role="system">
+          <ThreadActivitySummary :summary="message.activitySummary" @toggle="togglePresentation('activity', message.activitySummary!.id, $event)" />
+        </div>
+        <div v-else-if="isCommandMessage(message)" class="message-row" data-role="system">
           <ThreadCommand :execution="message.commandExecution!" />
         </div>
         <div v-else-if="message.messageType === 'reasoning'" class="message-row" data-role="system">
@@ -181,7 +185,12 @@
                   <code v-if="message.automationDisplayName">{{ message.automationDisplayName }}</code>
                 </div>
                 <div v-if="message.messageType === 'worked'" class="worked-separator-wrap">
-                  <p class="worked-separator-text">{{ message.text }}</p>
+                  <button v-if="message.turnProcess" type="button" class="worked-separator-text turn-process-toggle"
+                    :aria-expanded="message.turnProcess.expanded" @click="togglePresentation('turn', message.turnProcess!.id, $event)">
+                    <span>{{ message.text }}</span>
+                    <IconTablerChevronDown class="turn-process-chevron" :class="{'is-open': message.turnProcess.expanded}" />
+                  </button>
+                  <p v-else class="worked-separator-text">{{ message.text }}</p>
                 </div>
                 <div
                   v-else
@@ -742,6 +751,7 @@
 <script setup lang="ts">
 import RemoteMessageImage from './RemoteMessageImage.vue'
 import ThreadCommand from './ThreadCommand.vue'
+import ThreadActivitySummary from './ThreadActivitySummary.vue'
 import ThreadWorkIndicator from './ThreadWorkIndicator.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { UiFileChange, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
@@ -751,11 +761,13 @@ import { useMobile } from '../../composables/useMobile'
 import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard'
 import { localizeLiveActivityLabel, localizeLiveReasoningText } from '../../utils/liveActivityLocalization'
 import { routeLocalImageUrl } from '../../utils/localImageUrl'
-import { isPlanMessage, withoutPlanMessages } from '../../utils/planProgress'
+import { isPlanMessage } from '../../utils/planProgress'
+import { presentConversation } from '../../lanpower/conversationPresentation'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
 import IconTablerCopy from '../icons/IconTablerCopy.vue'
+import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
@@ -763,6 +775,8 @@ import IconTablerX from '../icons/IconTablerX.vue'
 type HighlightJsModule = (typeof import('highlight.js/lib/common'))['default']
 
 const expandedFileChangeSummaryIds = ref<Set<string>>(new Set())
+const expandedTurnProcessIds = ref<Set<string>>(new Set())
+const expandedActivityIds = ref<Set<string>>(new Set())
 const activeDiffViewerSummary = ref<TurnFileChangeSummary | null>(null)
 const activeDiffViewerChangeKey = ref('')
 const isDiffViewerFileListOpen = ref(false)
@@ -1004,8 +1018,26 @@ const LOAD_MORE_SCROLL_THRESHOLD_PX = 200
 const renderWindowStart = ref(0)
 const isLoadingMore = ref(false)
 
-const visibleMessages = computed(() => withoutPlanMessages(props.messages.slice(renderWindowStart.value)))
+const presentation = computed(() => presentConversation(props.messages, expandedTurnProcessIds.value, expandedActivityIds.value))
+const presentedMessages = computed(() => presentation.value.messages)
+const visibleMessages = computed(() => presentedMessages.value.slice(renderWindowStart.value))
 const hasMoreAbove = computed(() => renderWindowStart.value > 0 || props.hasMorePersistedAbove === true)
+
+async function togglePresentation(kind: 'turn' | 'activity', id: string, event: MouseEvent): Promise<void> {
+  const button = event.currentTarget as HTMLElement
+  const top = button.getBoundingClientRect().top
+  // Manual expansion must keep the clicked header reachable, even in very long turns.
+  autoFollowOutput.value = false
+  const target = kind === 'turn' ? expandedTurnProcessIds : expandedActivityIds
+  const next = new Set(target.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  target.value = next
+  await nextTick()
+  if (button.isConnected && conversationListRef.value) {
+    conversationListRef.value.scrollTop += button.getBoundingClientRect().top - top
+  }
+}
 
 const showJumpToLatestButton = computed(
   () => !autoFollowOutput.value && (props.messages.length > 0 || props.pendingRequests.length > 0 || Boolean(props.liveOverlay)),
@@ -1344,6 +1376,7 @@ const copyableResponseContentByAnchorId = computed<Record<string, string>>(() =>
 
   for (const message of props.messages) {
     if (!isCopyableAssistantMessage(message)) continue
+    if (presentation.value.processMessageIds.has(message.id)) continue
 
     const content = buildCopyableMessageContent(message)
     if (!content) continue
@@ -1386,6 +1419,7 @@ const forkableTurnIndexByAnchorId = computed<Record<string, number>>(() => {
 
   for (const message of props.messages) {
     if (!isCopyableAssistantMessage(message) || typeof message.turnIndex !== 'number') continue
+    if (presentation.value.processMessageIds.has(message.id)) continue
 
     const responseKey = `turn:${message.turnIndex}`
     const existing = groupedTurns.get(responseKey)
@@ -1475,7 +1509,7 @@ const anchoredFileChangeSummaryByAnchorId = computed<Record<string, TurnFileChan
       }
     }
 
-    if (!isFileChangeMessage(message)) continue
+    if (!isFileChangeMessage(message) || presentation.value.activityMemberIds.has(message.id)) continue
     const turnKey = typeof message.turnIndex === 'number' ? `turn:${message.turnIndex}` : `message:${message.id}`
     const current = fileChangeMessagesByTurnKey.get(turnKey)
     if (current) current.push(message)
@@ -1514,7 +1548,8 @@ const standaloneFileChangeSummaryByMessageId = computed<Record<string, TurnFileC
     }
 
     if (!isFileChangeMessage(message)) continue
-    const turnKey = typeof message.turnIndex === 'number' ? `turn:${message.turnIndex}` : `message:${message.id}`
+    const turnKey = presentation.value.activityMemberIds.has(message.id) ? `message:${message.id}`
+      : typeof message.turnIndex === 'number' ? `turn:${message.turnIndex}` : `message:${message.id}`
     const current = fileChangeMessagesByTurnKey.get(turnKey)
     if (current) current.push(message)
     else fileChangeMessagesByTurnKey.set(turnKey, [message])
@@ -3880,7 +3915,7 @@ function clearRenderCaches(): void {
 
 watch(
   () => props.messages,
-  async (next, previous) => {
+  () => {
     if (props.isLoading) return
 
     expandedFileChangeSummaryIds.value = pruneCommandIdSet(
@@ -3890,7 +3925,15 @@ watch(
         ...Object.keys(standaloneFileChangeSummaryByMessageId.value),
       ]),
     )
+    expandedTurnProcessIds.value = pruneCommandIdSet(expandedTurnProcessIds.value, presentation.value.processIds)
+    expandedActivityIds.value = pruneCommandIdSet(expandedActivityIds.value, presentation.value.activityIds)
+  },
+)
 
+watch(
+  presentedMessages,
+  async (next, previous) => {
+    if (props.isLoading) return
     // Keep renderWindowStart in bounds whenever the message list changes length.
     // Following output: always pin the window to the last RENDER_WINDOW_SIZE messages so
     //   the rendered count stays bounded (handles both growth and shrink/rollback).
@@ -3942,7 +3985,7 @@ watch(
   () => props.isLoading,
   async (loading) => {
     if (loading) return
-    renderWindowStart.value = Math.max(0, props.messages.length - RENDER_WINDOW_SIZE)
+    renderWindowStart.value = Math.max(0, presentedMessages.value.length - RENDER_WINDOW_SIZE)
     await scheduleConversationScroll()
   },
 )
@@ -3956,8 +3999,10 @@ watch(
     fileChangeActionState.value = {}
     fileChangeActionError.value = {}
     fileChangeRedoPatchIds.value = {}
+    expandedTurnProcessIds.value = new Set()
+    expandedActivityIds.value = new Set()
     // Apply immediately for cached threads where isLoading never toggles.
-    renderWindowStart.value = Math.max(0, props.messages.length - RENDER_WINDOW_SIZE)
+    renderWindowStart.value = Math.max(0, presentedMessages.value.length - RENDER_WINDOW_SIZE)
     await scheduleConversationScroll()
   },
   { flush: 'post' },
@@ -4551,6 +4596,20 @@ onBeforeUnmount(() => {
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }
+
+.turn-process-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.turn-process-toggle:hover { color: var(--lp-text,#262626); }
+.turn-process-chevron { width: 14px; height: 14px; transform: rotate(-90deg); transition: transform .15s; }
+.turn-process-chevron.is-open { transform: rotate(0); }
+@media (prefers-reduced-motion:reduce) { .turn-process-chevron { transition: none; } }
 
 .conversation-item[data-message-type='commandExecution'] + .conversation-item[data-message-type='commandExecution'] {
   margin-top: -6px;

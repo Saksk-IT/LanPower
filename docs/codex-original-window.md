@@ -1,6 +1,6 @@
 # 原 Codex 窗口与成熟网页整合
 
-当前版本 1.15.1 的会话展示与验证见 [会话窗口展示说明](codex-conversation-ui.md)，1.15 系统实现与差异见 [系统对齐说明](codex-system-parity.md)。本文保留 1.14 原窗口接入和真实任务/审批的验证记录。
+当前版本 1.15.2 的会话展示与验证见 [会话窗口展示说明](codex-conversation-ui.md)，1.15 系统实现与差异见 [系统对齐说明](codex-system-parity.md)。本文保留 1.14 原窗口接入和真实任务/审批的验证记录。
 
 网页复用 Codex Remote Bridge 0.1.101 的 Vue 会话、Markdown/代码/命令展示、输入、审批和队列组件。Windows 用户 Host 连接当前登录用户已经打开的官方 Codex 窗口；请求通过该窗口自己的 AppServerManager 执行。Cloud 继续使用 LanPower 的已认证 WSS 内存转发，不运行另一套 Codex，也不保存对话正文。
 
