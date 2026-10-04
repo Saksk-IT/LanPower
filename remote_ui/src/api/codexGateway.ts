@@ -11,14 +11,19 @@ export async function updateThreadFileChanges(_threadId: string, _turnId: string
 
 export async function uploadFile(file: File): Promise<string> {
   if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 20 * 1024 * 1024) throw new Error('请添加不超过 20 MB 的图片，电脑文件请在原窗口添加。')
+  const original = await new Promise<string>((resolve,reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('图片读取失败，请重新选择。')); reader.readAsDataURL(file)
+  })
+  if (original.length <= 700000) return original
+  if (['image/gif','image/webp'].includes(file.type)) throw new Error('此图片超过传输限制；为保留动画及原图，请在原窗口添加或选择较小的图片。')
   const bitmap = await createImageBitmap(file)
   try {
     const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale))
     const context = canvas.getContext('2d')!
-    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    const data = canvas.toDataURL('image/jpeg', .8)
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const data = canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', .8)
     if (data.length > 700000) throw new Error('图片过大，请缩小后重试。')
     return data
   } finally { bitmap.close() }

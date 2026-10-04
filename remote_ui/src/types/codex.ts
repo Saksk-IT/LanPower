@@ -216,6 +216,7 @@ export type UiMessage = {
   messageType?: string
   historyContent?: { reference: string; loaded: number; characters: number; error: string }
   rawPayload?: string
+  toolResult?: import('../lanpower/tools').NativeToolView
   isUnhandled?: boolean
   commandExecution?: CommandExecutionData
   plan?: UiPlanData

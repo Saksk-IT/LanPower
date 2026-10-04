@@ -12,6 +12,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     private long _revision;
     private void Notify(JsonObject message)
     {
+        message = RemoteHistory.PublicPayload(message).AsObject();
         if (message["params"] is JsonObject p) p["lanpowerRevision"] = Interlocked.Increment(ref _revision);
         Message?.Invoke(message);
     }
@@ -23,6 +24,9 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     private readonly ConcurrentDictionary<string, SessionWorker> _writers = new();
     private readonly Dictionary<string, string> _recentDiffs = new();
     private readonly RemoteLibraryStore _library = new();
+    private readonly RemoteLibraryCatalog _libraryCatalog = new();
+    private readonly SemaphoreSlim _libraryCatalogGate = new(1, 1);
+    private DateTimeOffset _libraryCatalogUpdated;
     private readonly RemoteImages _images = new();
     private List<CodexProject> _projects = new();
     private CodexHostSettings _scope = new(false, [], AutoDiscover: false);
@@ -191,10 +195,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     private JsonObject Summary(JsonObject thread)
     {
         var cwd = thread["cwd"]?.GetValue<string>();
-        var project = _projects.Where(project => cwd is not null &&
-            (project.Path.Equals(cwd, StringComparison.OrdinalIgnoreCase) ||
-             cwd.StartsWith(project.Path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
-            .OrderBy(project => project.Path.Length).FirstOrDefault();
+        var project = CodexProjects.ContainingProject(_projects, cwd);
         var id = thread["id"]!.GetValue<string>();
         var control = _runtime?.Shared == true && _sharedThreads.ContainsKey(id) ? "shared" :
             _writers.ContainsKey(id) ? "remote" : CodexProjects.DesktopOwns(id) ? "desktop" : "available";
@@ -278,11 +279,122 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             if (page["error"] is not null) throw new IOException(page["error"]?["message"]?.GetValue<string>() is "result_too_large" or "history_item_too_large" ? page["error"]!["message"]!.GetValue<string>() : "history_unavailable");
             var data = page["result"]?["data"] as JsonArray ?? [];
             thread["turns"] = new JsonArray(data.Reverse().Select(t => t?.DeepClone()).ToArray());
+            thread["historyTailTurnId"] = data.FirstOrDefault()?["id"]?.DeepClone();
             thread["historyCursor"] = page["result"]?["nextCursor"]?.DeepClone();
             thread["historyTruncated"] = false;
         }
         if (_runtime.Shared) _runtime.ObserveThread(thread, stateRevision);
         return thread;
+    }
+
+    private async Task EnsureLibraryCatalogAsync(bool refresh, CancellationToken token)
+    {
+        await _libraryCatalogGate.WaitAsync(token);
+        try
+        {
+            if (!refresh && DateTimeOffset.UtcNow - _libraryCatalogUpdated < TimeSpan.FromSeconds(5)) return;
+            var entries = new Dictionary<string, (JsonObject Thread, bool Archived)>();
+            foreach (var archived in new[] { false, true })
+            {
+                string? cursor = null; var seen = new HashSet<string>();
+                do
+                {
+                    var args = new JsonObject { ["limit"] = 50, ["archived"] = archived, ["sortKey"] = "updated_at",
+                        ["modelProviders"] = new JsonArray(), ["sourceKinds"] = new JsonArray("cli", "vscode", "appServer", "unknown") };
+                    if (cursor is not null) args["cursor"] = cursor;
+                    var page = await _runtime!.CallAsync("thread/list", args, token);
+                    if (page["result"]?["data"] is not JsonArray rows) throw new InvalidDataException("library_unavailable");
+                    foreach (var thread in rows.OfType<JsonObject>())
+                    {
+                        ObserveWorkspace(thread["cwd"]?.GetValue<string>());
+                        if (!_scope.Allows(thread["cwd"]?.GetValue<string>())) continue;
+                        var id = thread["id"]!.GetValue<string>(); _threads[id] = thread["cwd"]!.GetValue<string>();
+                        entries[id] = (Summary(thread), archived);
+                        if (entries.Count > RemoteLibraryCatalog.MaxThreads) throw new InvalidDataException("library_catalog_too_large");
+                    }
+                    cursor = page["result"]?["nextCursor"]?.GetValue<string>();
+                    if (cursor is not null && !seen.Add(cursor)) throw new InvalidDataException("library_cursor_changed");
+                } while (cursor is not null);
+            }
+            if (_runtime!.Shared) await RefreshSharedLoadedAsync(token);
+            foreach (var id in _sharedThreads.Keys.Concat(_newThreads.Keys).Distinct())
+                if (!entries.ContainsKey(id))
+                {
+                    var thread = await ReadThreadAsync(id, false, token);
+                    if (_scope.Allows(thread["cwd"]?.GetValue<string>())) entries[id] = (thread, false);
+                }
+            _libraryCatalog.Replace(entries.Values); _libraryCatalogUpdated = DateTimeOffset.UtcNow;
+        }
+        finally { _libraryCatalogGate.Release(); }
+    }
+
+    private async Task<JsonObject> LoadHistoryItemAsync(string id, RemoteHistoryStore.Locator source, CancellationToken token)
+    {
+        var reader = _writers.TryGetValue(id, out var writer) ? writer.Client : _runtime!;
+        string? cursor = null; var seen = new HashSet<string>();
+        while (true)
+        {
+            var args = new JsonObject { ["threadId"] = id, ["limit"] = 8, ["itemsView"] = "full", ["sortDirection"] = "desc" };
+            if (cursor is not null) args["cursor"] = cursor;
+            var page = await reader.CallAsync("thread/turns/list", args, token);
+            JsonArray data;
+            if (page["error"]?["code"]?.GetValue<int>() == -32601)
+            {
+                var full = await reader.CallAsync("thread/read", new() { ["threadId"] = id, ["includeTurns"] = true }, token);
+                if (full["result"]?["thread"]?["turns"] is not JsonArray all) throw new InvalidDataException("history_reference_changed");
+                data = all;
+            }
+            else if (page["result"]?["data"] is JsonArray turns) data = turns;
+            else throw new InvalidDataException("history_unavailable");
+            var turn = data.OfType<JsonObject>().FirstOrDefault(t => t["id"]?.GetValue<string>() == source.TurnId);
+            if (turn is not null)
+            {
+                var visible = RemoteHistory.VisibleTurns(new JsonArray(turn.DeepClone()))[0]!.AsObject();
+                if (source.WholeTurn) return visible;
+                if (visible["items"] is JsonArray items && source.ItemIndex < items.Count && items[source.ItemIndex] is JsonObject item && item["id"]?.GetValue<string>() == source.ItemId)
+                    return (JsonObject)item.DeepClone();
+                throw new InvalidDataException("history_reference_changed");
+            }
+            cursor = page["result"]?["nextCursor"]?.GetValue<string>();
+            if (cursor is null) throw new InvalidDataException("history_reference_changed");
+            if (!seen.Add(cursor)) throw new InvalidDataException("invalid_history_cursor");
+        }
+    }
+
+    private async Task<JsonObject> HistoryActionAsync(JsonObject parameters, JsonNode requestId, CancellationToken token)
+    {
+        var id = parameters["threadId"]!.GetValue<string>();
+        if (!_runtime!.Shared) throw new InvalidDataException("shared_runtime_required");
+        await RefreshSharedLoadedAsync(token); RequireControl(id);
+        JsonObject result;
+        if (_runtime.Desktop)
+            result = await _runtime.CallAsync("codex-web/local/history/action", parameters, token);
+        else
+        {
+            // Never derive native tail counts from the client's currently loaded page.
+            var ids = new List<string>(); var seen = new HashSet<string>(); string? cursor = null;
+            do
+            {
+                var args = new JsonObject { ["threadId"] = id, ["limit"] = 50, ["itemsView"] = "notLoaded", ["sortDirection"] = "desc" };
+                if (cursor is not null) args["cursor"] = cursor;
+                var page = await _runtime.CallAsync("thread/turns/list", args, token);
+                if (page["result"]?["data"] is not JsonArray data) throw new InvalidDataException("history_action_unsupported");
+                ids.AddRange(data.OfType<JsonObject>().Select(t => t["id"]!.GetValue<string>()));
+                cursor = page["result"]?["nextCursor"]?.GetValue<string>();
+                if (ids.Count > 100000 || cursor is not null && !seen.Add(cursor)) throw new InvalidDataException("invalid_history_cursor");
+            } while (cursor is not null);
+            var count = RemoteHistory.TailCount(ids, parameters["turnId"]!.GetValue<string>(), parameters["expectedTailTurnId"]!.GetValue<string>(), parameters["action"]!.GetValue<string>() == "rollback");
+            var latest = await _runtime.CallAsync("thread/turns/list", new() { ["threadId"] = id, ["limit"] = 1, ["itemsView"] = "notLoaded", ["sortDirection"] = "desc" }, token);
+            if (latest["result"]?["data"]?[0]?["id"]?.GetValue<string>() != ids[0] || _runtime.ActiveTurns.ContainsKey(id)) throw new InvalidDataException("history_changed");
+            result = parameters["action"]!.GetValue<string>() == "fork"
+                ? await _runtime.CallAsync("thread/fork", new() { ["threadId"] = id, ["lastTurnId"] = parameters["turnId"]!.DeepClone(), ["excludeTurns"] = true }, token)
+                : await _runtime.CallAsync("thread/rollback", new() { ["threadId"] = id, ["numTurns"] = count }, token);
+        }
+        result["id"] = requestId.DeepClone();
+        if (result["error"] is not null) return result;
+        var target = result["result"]?["thread"]?["id"]?.GetValue<string>() ?? id;
+        result["result"] = new JsonObject { ["thread"] = await ReadThreadAsync(target, true, token) };
+        return result;
     }
 
     private static bool UnpersistedSharedChat(JsonObject thread, JsonNode? error, string id)
@@ -455,6 +567,15 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         var method = CodexRemoteProtocol.ValidateRequest(request);
         var parameters = (JsonObject)request["params"]!.DeepClone();
         JsonObject Reply(JsonObject value) => new() { ["id"] = request["id"]!.DeepClone(), ["result"] = value };
+        if (method is "lanpower/library/list" or "lanpower/library/check")
+        {
+            await EnsureLibraryCatalogAsync(parameters["refresh"]?.GetValue<bool>() == true, token);
+            var archived = parameters["archived"]?.GetValue<bool>() == true;
+            if (method == "lanpower/library/check") return Reply(_libraryCatalog.Check(parameters["threadIds"]!.AsArray().Select(id => id!.GetValue<string>()), archived));
+            var preferences = (await _library.ReadAsync(token))["preferences"]!.AsObject();
+            return Reply(_libraryCatalog.Page(parameters["query"]?.GetValue<string>()?.Trim() ?? "", archived,
+                (preferences["pinned"] as JsonArray ?? []).Select(id => id!.GetValue<string>()), parameters["cursor"]?.GetValue<string>(), parameters["limit"]?.GetValue<int>() ?? 50, preferences["aliases"] as JsonObject));
+        }
         if (method == "lanpower/library/update")
         {
             var preferences = CodexLibraryPreferences.Validate(parameters["preferences"]);
@@ -509,6 +630,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                 ["autoDiscover"] = config.AutoDiscover, ["loggedIn"] = account["result"]?["account"] is not null, ["sessionHandoff"] = !_runtime.Shared,
                 ["sharedControl"] = _runtime.Shared, ["queueSupported"] = _runtime.Shared && !_unsupported.Contains("thread/queue/list"), ["desktopControl"] = _runtime.Desktop,
                 ["lanpowerRevision"] = revision, ["submissionReceipts"] = true, ["largeHistory"] = true,
+                ["targetedHistoryActions"] = _runtime.Shared, ["historyReferenceLeases"] = true, ["libraryCatalog"] = true,
                 ["unsupportedMethods"] = new JsonArray(_unsupported.Select(m => (JsonNode)JsonValue.Create(m)!).ToArray()),
                 ["chatSupported"] = config.AutoDiscover && _runtime.Shared,
                 ["library"] = await _library.ReadAsync(token),
@@ -537,8 +659,10 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                     var response = await _runtime.CallAsync("codex-web/local/history/item/read", parameters, token);
                     response["id"] = request["id"]!.DeepClone(); return response;
                 }
-                return Reply(_history.Read(threadId, parameters["reference"]!.GetValue<string>(), parameters["offset"]!.GetValue<int>()));
+                return Reply(await _history.ReadAsync(threadId, parameters["reference"]!.GetValue<string>(), parameters["offset"]!.GetValue<int>(),
+                    (source, ct) => LoadHistoryItemAsync(threadId, source, ct), token));
             }
+            if (method == "lanpower/history/action") return await HistoryActionAsync(parameters, request["id"]!, token);
             if (method == "lanpower/image/read") return Reply(_images.Read(_scope, cwd!, threadId, parameters["path"]!.GetValue<string>()));
             if (method == "thread/read")
                 return Reply(new JsonObject { ["thread"] = await ReadThreadAsync(threadId, parameters["includeTurns"]?.GetValue<bool>() == true, token, parameters["historyLimit"]?.GetValue<int>() ?? 8) });
@@ -700,6 +824,6 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         _initialized = false; if (_runtime is not null) await _runtime.DisposeAsync(); _runtime = null;
         foreach (var worker in _writers.Values) await worker.Client.DisposeAsync();
         _writers.Clear(); _threads.Clear(); _sharedThreads.Clear(); _newThreads.Clear(); _threadSettings.Clear(); _recentDiffs.Clear(); _projects.Clear(); _lastThread = null;
-        _history.Clear(); _unsupported.Clear();
+        _history.Clear(); _libraryCatalog.Clear(); _libraryCatalogUpdated = default; _unsupported.Clear();
     }
 }

@@ -1,8 +1,10 @@
 # 本机 Docker 开发环境
 
+当前修复与更新记录见 [Codex Remote 首批六项](codex-remote-first-six-fixes.md)。Windows / Cloud / Web `1.18.0`、小程序 `3.0.1`，镜像 `lanpower-cloud:1.18.0-dev.1`；升级保留原数据库、配对、授权、CA 和局域网 HTTPS 配置。
+
 默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
 
-应用源码版本为 `1.17.0`，小程序 `3.0.0`，本地部署配置版本为 `1.17.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.18.0`，小程序 `3.0.1`，本地部署配置版本为 `1.18.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 本机 1.17.0／小程序 3.0.0 原生重构（2026-10-04）
 

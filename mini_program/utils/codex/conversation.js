@@ -22,8 +22,12 @@ function itemRow(item, turn, index) {
     return {...row, kind: 'assistant', label: '生成的图片', images: source ? [source] : []};
   }
   if (item.type === 'imageView') return null;
-  const labels = {mcpToolCall: '调用工具', dynamicToolCall: '调用工具', collabAgentToolCall: '子任务', webSearch: '搜索网页', contextCompaction: '上下文整理', enteredReviewMode: '开始审查', exitedReviewMode: '审查结果'};
-  return {...row, label: labels[item.type] || '工作详情', text: item.text || item.output || JSON.stringify(item, null, 2)};
+  const labels = {mcpToolCall:'MCP 工具',dynamicToolCall:'动态工具',collabAgentToolCall:'协作任务',webSearch:'网页搜索',contextCompaction:'上下文整理',enteredReviewMode:'开始审查',exitedReviewMode:'审查结果'};
+  if (item.type === 'contextCompaction') return {...row,label:'上下文整理',text:'会话上下文已整理；仅显示公开提示。'};
+  const status = item.error || item.success === false || ['failed','error'].includes(item.status) ? '失败' : ['inProgress','in_progress'].includes(row.status) ? '进行中' : '已完成';
+  const title = [labels[item.type] || `新条目（${item.type}）`,item.server,item.tool || item.name,status].filter(Boolean).join(' · ');
+  const safe = JSON.stringify(item,function(key,value) { return ['encryptedContent','encrypted_content','reasoningContent','reasoning_content'].includes(key) || this.type === 'reasoning' && key === 'content' ? undefined : value; },2);
+  return {...row,label:title,text:safe};
 }
 function projectConversation(thread, expandedTurns = new Set(), expandedActivities = new Set()) {
   const rows = [];

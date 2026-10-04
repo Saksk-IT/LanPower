@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { createContext, runInContext } from 'node:vm'
+import { webcrypto } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('../../windows/LanPower.CodexHost/DesktopRenderer.js', import.meta.url), 'utf8')
@@ -18,7 +19,7 @@ function fixture() {
     addStreamRoleStateCallback: (fn: Function) => subscribe('role', fn),
     replyWithUserInputResponse: (conversationId: string, id: number, result: any) => { replies.push({ conversationId, id, result }); conversation.requests = []; emit('notification', { method: 'serverRequest/resolved', params: { requestId: id } }) },
   }
-  const context = createContext({ TextEncoder, __codexRoot: { _internalRoot: { current: { memoizedState: { memoizedState: manager } } } },
+  const context = createContext({ TextEncoder, crypto:webcrypto, __codexRoot: { _internalRoot: { current: { memoizedState: { memoizedState: manager } } } },
     eventA: (raw: string) => events.push(JSON.parse(raw)), eventB: (raw: string) => events.push(JSON.parse(raw)),
     electronBridge: { sendMessageFromView: async (reply: any) => { replies.push(reply); conversation.requests = [] } },
   })
@@ -26,6 +27,45 @@ function fixture() {
   return { context, manager, conversation, events, replies, listeners, emit, attach }
 }
 describe('original desktop renderer integration', () => {
+  it('keeps two 17 MiB item references readable despite background cache pressure',async () => {
+    const f = fixture(), text = 'x'.repeat(17 * 1024 * 1024)
+    const turns = [{id:'huge',items:[{id:'one',type:'agentMessage',text},{id:'two',type:'agentMessage',text:text+'结尾'}]}]
+    ;(f.manager as any).sendRequest = async (_method:string,p:any) => ({data:p.threadId === 'chat' ? turns : [{id:'background',items:[{id:'other',type:'agentMessage',text}]}],nextCursor:null})
+    const a = await f.attach('adapterA','eventA'), page = await a.rpc('codex-web/local/history/page',{threadId:'chat',limit:1})
+    for (let n=0;n<3;n++) {
+      await a.rpc('codex-web/local/history/page',{threadId:'other',limit:1})
+      for (const item of page.data[0].items) {
+        const first = await a.rpc('codex-web/local/history/item/read',{threadId:'chat',reference:item.reference,offset:0})
+        expect(first.data).toContain(`"id":"${item.id}"`)
+        const last = await a.rpc('codex-web/local/history/item/read',{threadId:'chat',reference:item.reference,offset:item.characters-8})
+        expect(last.nextOffset).toBe(null)
+      }
+    }
+    a.dispose()
+  })
+  it('locates native history actions by stable IDs and rejects a new desktop turn',async () => {
+    const f = fixture(), turns = Array.from({length:180},(_,i) => ({id:`turn-${180-i}`,status:'completed'}))
+    let changed = false
+    ;(f.manager as any).sendRequest = async (method:string,p:any) => {
+      f.replies.push({method,params:p})
+      if(method !== 'thread/turns/list') return {thread:{id:'result'}}
+      const all = changed && p.limit === 1 ? [{id:'new-turn',status:'completed'},...turns] : turns
+      const offset = Number(p.cursor || 0)
+      return {data:all.slice(offset,offset+p.limit),nextCursor:offset+p.limit<all.length ? String(offset+p.limit) : null}
+    }
+    const a = await f.attach('adapterA','eventA')
+    for(const target of [1,90,180]) {
+      await a.rpc('codex-web/local/history/action',{threadId:'chat',turnId:`turn-${target}`,expectedTailTurnId:'turn-180',action:'fork'})
+      expect(f.replies.at(-1)).toMatchObject({method:'thread/fork',params:{lastTurnId:`turn-${target}`}})
+      await a.rpc('codex-web/local/history/action',{threadId:'chat',turnId:`turn-${target}`,expectedTailTurnId:'turn-180',action:'rollback'})
+      expect(f.replies.at(-1)).toMatchObject({method:'thread/rollback',params:{numTurns:181-target}})
+    }
+    const mutations = f.replies.filter(r => ['thread/fork','thread/rollback'].includes(r.method)).length
+    changed = true
+    await expect(a.rpc('codex-web/local/history/action',{threadId:'chat',turnId:'turn-1',expectedTailTurnId:'turn-180',action:'rollback'})).rejects.toThrow('history_changed')
+    expect(f.replies.filter(r => ['thread/fork','thread/rollback'].includes(r.method))).toHaveLength(mutations)
+    a.dispose()
+  })
   it('reads native content above 16 MiB without hiding other items or relaying private reasoning', async () => {
     const f = fixture(), expected = '开始🎨' + 'x'.repeat(17 * 1024 * 1024) + '结尾'
     ;(f.manager as any).sendRequest = async () => ({data:[{id:'huge-turn',items:[{id:'large',type:'agentMessage',text:expected},{id:'private',type:'reasoning',content:['secret'],encryptedContent:'secret',summary:['public']}]}],nextCursor:null})

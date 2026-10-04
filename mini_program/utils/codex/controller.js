@@ -32,7 +32,7 @@ class CodexController {
     if (this.historyScope) this.historyScope.cancel(); if (this.contentScope) this.contentScope.cancel();
     this.historyScope = null; this.contentScope = null; this.contentReader = null; this.contentRun = (this.contentRun || 0) + 1; this.restoringContent = false; clearTimeout(this.contentRetry);
     this.historyCursor = ''; this.historySeen = new Set(); this.beginning = null; this.beginningIndex = -1; this.historyProgress = ''; this.historyResume = false; this.readingHistory = false;
-    this.windowOffset = null; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.contentProgress = {}; this.rows = [];
+    this.windowOffset = null; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.contentProgress = {}; this.contentFailures = new Map(); this.rows = [];
   }
   resetDevice() {
     this.resetHistory(); this.activeTurns = new Map(); this.approvals = new Map(); this.approvalAnswers = new Map(); this.queue = []; this.threads = []; this.projects = []; this.models = [];
@@ -74,6 +74,8 @@ class CodexController {
   }
   applyStatus(status, stamp = this.clock.capture()) {
     this.sharedControl = !!status.sharedControl; this.desktopControl = !!status.desktopControl; this.queueSupported = !!status.queueSupported; this.chatSupported = !!status.chatSupported; this.receiptsSupported = !!status.submissionReceipts;
+    this.targetedHistoryActions = !!status.targetedHistoryActions;
+    this.libraryCatalog = !!status.libraryCatalog;
     this.loggedIn = status.loggedIn !== false; this.handoff = !!status.sessionHandoff; this.unsupportedMethods = status.unsupportedMethods || []; this.projects = status.projects || [];
     if (status.library && !this.libraryDraft && !this.librarySaving) this.library = status.library;
     if (!this.clock.unchanged(stamp)) { this.reconcile(); return; }
@@ -94,15 +96,25 @@ class CodexController {
   }
   async loadThreads(more = false) {
     if (!this.ready || this.loadingLibrary) return;
-    const e = this.epoch, archived = this.archived, cursor = more ? this.listCursor : ''; this.loadingLibrary = true; this.emit();
+    const e = this.epoch, archived = this.archived, cursor = more ? this.listCursor : '', query = this.libraryQuery || ''; this.loadingLibrary = true; this.emit();
     try {
-      const page = await this.connection.request('thread/list', {limit: 50, archived, ...(cursor ? {cursor} : {})}); if (e !== this.epoch || archived !== this.archived) return;
+      const page = await this.connection.request(this.libraryCatalog ? 'lanpower/library/list' : 'thread/list', {limit:50,archived,...(this.libraryCatalog ? {refresh:!more,...(query ? {query} : {})} : {}),...(cursor ? {cursor} : {})}); if (e !== this.epoch || archived !== this.archived || query !== (this.libraryQuery || '')) return;
       if (more) advanceCursor(cursor, page.nextCursor, this.listSeen);
-      this.threads = Array.from(new Map([...this.threads, ...(page.data || [])].map(thread => [thread.id, thread])).values());
-      if (more || !this.listCursor) this.listCursor = page.nextCursor || '';
+      let previous = more || !query ? this.threads : [];
+      if (!more && this.libraryCatalog && !query) {
+        const checked = [];
+        for (let offset = 0; offset < previous.length; offset += 256) {
+          const result = await this.connection.request('lanpower/library/check',{threadIds:previous.slice(offset,offset + 256).map(t => t.id),archived}); if (e !== this.epoch || archived !== this.archived || query !== (this.libraryQuery || '')) return;
+          checked.push(...(result.data || []));
+        }
+        previous = checked;
+      }
+      this.threads = Array.from(new Map([...previous,...(page.data || []),...(page.pinned || [])].map(thread => [thread.id,thread])).values());
+      this.listCursor = page.nextCursor || '';
     } catch (failure) { if (e === this.epoch) this.notify(failure.message); }
-    finally { if (e === this.epoch) { this.loadingLibrary = false; this.emit(); } }
+    finally { if (e === this.epoch) { this.loadingLibrary = false; this.emit(); if (query !== (this.libraryQuery || '')) void this.loadThreads(); } }
   }
+  searchLibrary(query) { this.libraryQuery = query.trim(); this.listCursor = ''; this.listSeen.clear(); if (!this.libraryCatalog && query) this.notify('当前版本只能搜索已加载聊天，请更新电脑端与 Cloud。'); else { this.threads = []; void this.loadThreads(); } }
   async toggleArchived() { if (this.loadingLibrary || !this.ready) return; this.archived = !this.archived; this.threads = []; this.listCursor = ''; this.listSeen.clear(); await this.loadThreads(); }
   async selectThread(id, restoring = false) {
     if (!this.ready) return;
@@ -153,7 +165,7 @@ class CodexController {
   removeAttachment(kind, index) { if (['images', 'skills', 'files'].includes(kind)) this.draft[kind].splice(index, 1); this.emit(); }
   makeInput(draft) {
     const text = draft.files.length ? `# Files mentioned by the user:\n${draft.files.map(file => `## ${file.label}: ${file.path}`).join('\n')}\n\n## My request for Codex:\n${draft.text.trim()}` : draft.text.trim();
-    if (text.length > 16000) throw error('文字与文件引用合计不能超过 16000 字符。');
+    if (Array.from(text).length > 16000 || Array.from(text).some(point => point.length === 1 && /[\uD800-\uDFFF]/u.test(point))) throw error('文字与文件引用合计不能超过 16000 字符，且需为有效 Unicode。');
     if (draft.skills.length > 8 || draft.images.length > 4 || draft.images.reduce((sum, image) => sum + image.url.length, 0) > 850000 || draft.images.some(image => image.url.length > 700000)) throw error('附件过大，请减少图片或技能。');
     const input = [...(text ? [{type: 'text', text}] : []), ...draft.images.map(image => ({type: 'image', url: image.url})), ...draft.skills.map(skill => ({type: 'skill', name: skill.name, path: skill.path}))];
     if (!input.length) throw error('请先输入内容或添加附件。'); return input;
@@ -255,13 +267,12 @@ class CodexController {
       let result;
       if (action === 'rename') { const name = String(value || '').trim(); if (!name || name.length > 1000) throw error('聊天名称需为 1–1000 字符。'); result = await this.connection.request('thread/name/set', {threadId: id, name}); if (this.valid(e, s)) { this.current.name = name; this.threads = this.threads.map(thread => thread.id === id ? {...thread, name} : thread); } }
       else if (action === 'fork') {
-        result = await this.connection.request('thread/fork', {threadId: id}); if (!this.valid(e, s)) return;
-        const index = value ? this.current.turns.findIndex(turn => turn.id === value) : -1, later = index >= 0 ? this.current.turns.length - index - 1 : 0;
-        if (later > 0) await this.connection.request('thread/rollback', {threadId: result.thread.id, numTurns: later}); if (!this.valid(e, s)) return;
+        if (value && (!this.targetedHistoryActions || !this.current.historyTailTurnId || !this.current.turns.some(turn => turn.id === value))) throw error('请更新电脑端与 Cloud 后，再按指定历史轮次分支。');
+        result = await this.connection.request(value ? 'lanpower/history/action' : 'thread/fork', value ? {threadId:id,turnId:value,expectedTailTurnId:this.current.historyTailTurnId,action:'fork'} : {threadId:id}); if (!this.valid(e, s)) return;
         this.busy = false; await this.loadThreads(); if (this.valid(e, s)) await this.selectThread(result.thread.id);
       } else if (action === 'rollback') {
-        const index = (this.current.turns || []).findIndex(turn => turn.id === value); if (index < 0 || this.beginningIndex >= 0) throw error('请返回最新消息并加载该轮及后续内容，再执行回退。');
-        result = await this.connection.request('thread/rollback', {threadId: id, numTurns: this.current.turns.length - index}); if (!this.valid(e, s)) return;
+        if (!this.targetedHistoryActions || !this.current.historyTailTurnId || !(this.current.turns || []).some(turn => turn.id === value)) throw error('请更新电脑端与 Cloud 后，再按指定历史轮次回退。');
+        result = await this.connection.request('lanpower/history/action', {threadId:id,turnId:value,expectedTailTurnId:this.current.historyTailTurnId,action:'rollback'}); if (!this.valid(e, s)) return;
         this.resetHistory(); this.current = result.thread; this.observeThread(result.thread); this.historyCursor = result.thread.historyCursor || ''; this.feedback = '已移除此轮及后续对话，文件修改保留。';
       } else if (['archive', 'unarchive'].includes(action)) {
         await this.connection.request('thread/' + action, {threadId: id}); if (!this.valid(e, s)) return;
@@ -322,7 +333,8 @@ class CodexController {
     if (event.method === 'turn/completed' && !oldTurn) this.activeTurns.delete(id);
     if (event.method === 'thread/name/updated') { const name = p.threadName || p.name; this.threads = this.threads.map(thread => thread.id === id ? {...thread, name} : thread); if (this.current && this.current.id === id) this.current.name = name; }
     if (event.method === 'thread/settings/updated' && id) { const key = this.deviceId + ':' + id, settings = this.settings.get(key) || newSettings(); this.settings.set(key, settings); observeSettings(settings, p.settings || p, modelId(this.models[0] || {})); }
-    if (event.method === 'thread/started') { void this.loadThreads(); return; }
+    if (['thread/started', 'thread/archived', 'thread/unarchived'].includes(event.method)) { void this.loadThreads(); return; }
+    if (event.method === 'thread/name/updated' && this.libraryCatalog) void this.loadThreads();
     if (event.method === 'thread/status/changed') this.threads = this.threads.map(thread => thread.id === id ? {...thread, status: p.status} : thread);
     if (['lanpower/historyChanged', 'lanpower/conversation/changed', 'lanpower/stream/changed', 'thread/status/changed', 'thread/settings/updated', 'thread/queue/changed'].includes(event.method)) { this.reconcile(); this.emit(); return; }
     if (id !== this.threadId || !this.current || this.beginningIndex >= 0) { this.emit(); return; }
@@ -379,23 +391,31 @@ class CodexController {
     finally { if (this.valid(e, s)) { this.readingHistory = false; this.emit(); void this.restoreContent(); } }
   }
   cancelHistory() { if (this.historyScope) this.historyScope.cancel(); if (this.contentScope) this.contentScope.cancel(); clearTimeout(this.contentRetry); }
+  retryContent() { this.contentFailures.clear(); for (const value of Object.values(this.contentProgress)) value.error = ''; return this.restoreContent(); }
   async restoreContent() {
     if (!this.ready || !this.current || this.loadingThread || this.restoringContent) return;
     const e = this.epoch, s = this.selection, run = this.contentRun, scope = this.contentScope = new ReadScope(), reader = this.contentReader = this.contentReader || new ContentReader(this.threadId); this.restoringContent = true;
     const valid = () => this.valid(e, s) && run === this.contentRun;
     try {
       while (valid()) {
-        const turn = this.current.turns.find(value => (value.items || []).some(item => item.type === 'lanpowerLargeItem')); if (!turn) break;
-        const item = turn.items.find(value => value.type === 'lanpowerLargeItem'); this.contentProgress[item.reference] = {loaded: 0, error: ''};
-        try { await reader.read(this.connection, item, scope, loaded => { if (valid()) { this.contentProgress[item.reference] = {loaded, error: ''}; this.emit(); } }); if (!valid()) return; this.current.turns = reader.apply(this.current.turns); this.emit(); }
+        const available = item => item.type === 'lanpowerLargeItem' && !(this.contentProgress[item.reference] || {}).error;
+        const turn = this.current.turns.find(value => (value.items || []).some(available)); if (!turn) break;
+        const item = turn.items.find(available), key = `${turn.id}:${item.id}`; this.contentProgress[item.reference] = {loaded: 0, error: ''};
+        try { await reader.read(this.connection, item, scope, loaded => { if (valid()) { this.contentProgress[item.reference] = {loaded, error: ''}; this.emit(); } }); if (!valid()) return; this.current.turns = reader.apply(this.current.turns); this.contentFailures.delete(key); this.emit(); }
         catch (failure) {
           if (!valid() || failure.code === 'CANCELLED') return;
-          if (failure.code === 'history_reference_expired') { reader.forget(item.reference); const refreshed = await refreshTurn(this.connection, this.threadId, turn.id, scope); if (!valid()) return; this.current.turns = this.current.turns.map(value => value.id === turn.id ? refreshed : value); continue; }
-          this.contentProgress[item.reference].error = failure.message; this.emit(); break;
+          const count = (this.contentFailures.get(key) || 0) + 1; this.contentFailures.set(key,count);
+          if (count < 3 && ['history_reference_expired','history_reference_changed'].includes(failure.code)) {
+            reader.forget(item.reference);
+            try { const refreshed = await refreshTurn(this.connection,this.threadId,turn.id,scope); if (!valid()) return; this.current.turns = this.current.turns.map(value => value.id === turn.id ? refreshed : value); continue; } catch (_) { if (!valid() || scope.cancelled) return; }
+          }
+          this.contentProgress[item.reference].error = count < 3 ? failure.message : '内容读取已暂停，请点击重试或查看原窗口。'; this.emit();
         }
       }
     } catch (failure) { if (valid() && failure.code !== 'CANCELLED') this.notify(failure.message); }
-    finally { if (run === this.contentRun) { this.restoringContent = false; if (valid() && Object.values(this.contentProgress).some(value => value.error)) { clearTimeout(this.contentRetry); this.contentRetry = setTimeout(() => void this.restoreContent(), 5000); } } }
+    finally { if (run === this.contentRun) { this.restoringContent = false; if (valid() && !scope.cancelled && [...this.contentFailures.values()].some(count => count < 3)) {
+      clearTimeout(this.contentRetry); this.contentRetry = setTimeout(() => { for (const turn of this.current.turns) for (const item of turn.items || []) if ((this.contentFailures.get(`${turn.id}:${item.id}`) || 0) < 3 && this.contentProgress[item.reference]) this.contentProgress[item.reference].error = ''; void this.restoreContent(); },5000);
+    } } }
   }
   liveLabel() {
     if (!this.ready) return '任务状态待恢复'; if (this.selectedApprovals.length) return '等待你的回复'; if (!this.activeTurn) return '当前无运行任务'; if (this.interrupting) return '正在停止'; return this.overlay.label || '正在工作';

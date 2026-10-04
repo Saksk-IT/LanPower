@@ -1,26 +1,31 @@
 <template>
-  <button ref="element" class="message-image-button lp-remote-image" :class="{ 'lp-image-thumbnail': thumbnail }" type="button" :aria-label="`查看${alt || '图片'}`" @click="open">
-    <img v-if="url" class="message-image-preview" :class="imageClass" :src="url" :alt="alt || '图片'" loading="lazy" @error="error = '图片加载失败，点击重试。'; url = ''" />
-    <span v-else class="lp-image-placeholder" role="status">{{ error || '正在读取图片…' }}</span>
+  <button ref="element" class="message-image-button lp-remote-image" :class="{ 'lp-image-thumbnail': thumbnail }" type="button" :aria-label="`查看${alt || '图片'}`" :aria-busy="loading" @click="open">
+    <img v-if="url" class="message-image-preview" :class="imageClass" :src="url" :alt="alt || '图片'" loading="lazy" @error="failed" />
+    <span v-else class="lp-image-placeholder" role="status"><progress v-if="loading" aria-label="正在读取图片" />{{ error || '正在读取图片…' }}</span>
   </button>
 </template>
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { resolveRemoteImage } from '../../lanpower/images'
+import { resolveRemoteImage, observeRemoteImages, remoteImagePath, invalidateRemoteImage } from '../../lanpower/images'
 const props = withDefaults(defineProps<{source:string;threadId:string;cwd:string;alt?:string;imageClass?:string;thumbnail?:boolean}>(), {thumbnail:true})
 const emit = defineEmits<{open:[url:string]}>()
-const element = ref<HTMLElement | null>(null), url = ref(''), error = ref('')
+const element = ref<HTMLElement | null>(null), url = ref(''), error = ref(''), loading = ref(false)
 let generation = 0, observer: IntersectionObserver | undefined, visible = false, pending: Promise<void> | undefined
+const unobserve = observeRemoteImages(key => {
+  if (key && key !== `${props.threadId}\0${remoteImagePath(props.source,props.cwd)}`) return
+  generation++; pending = undefined; loading.value = false; url.value = ''; error.value = '图片需重新读取，点击重试。'
+})
+function failed(): void { invalidateRemoteImage(props.source,props.threadId,props.cwd); url.value = ''; error.value = '图片加载失败，点击重试。' }
 function load(): Promise<void> {
   if (pending) return pending
-  const sequence = ++generation; error.value = ''
-  pending = resolveRemoteImage(props.source,props.threadId,props.cwd).then(value => { if (sequence === generation) url.value = value }).catch(failure => { if (sequence === generation) error.value = failure instanceof Error ? failure.message : '读取图片失败，点击重试。' }).finally(() => { if (sequence === generation) pending = undefined })
+  const sequence = ++generation; error.value = ''; loading.value = true
+  pending = resolveRemoteImage(props.source,props.threadId,props.cwd).then(value => { if (sequence === generation) url.value = value }).catch(failure => { if (sequence === generation) error.value = failure instanceof Error ? failure.message : '读取图片失败，点击重试。' }).finally(() => { if (sequence === generation) { pending = undefined; loading.value = false } })
   return pending
 }
-async function open(): Promise<void> { if (!url.value) await load(); if (url.value) emit('open',url.value) }
+async function open(): Promise<void> { await load(); if (url.value) emit('open',url.value) }
 watch(() => [props.source,props.threadId,props.cwd],() => { generation++; pending = undefined; url.value = ''; error.value = ''; if (visible) void load() })
 onMounted(() => { observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { visible = true; observer?.disconnect(); void load() } },{rootMargin:'200px'}); if (element.value) observer.observe(element.value) })
-onBeforeUnmount(() => { generation++; observer?.disconnect() })
+onBeforeUnmount(() => { generation++; observer?.disconnect(); unobserve() })
 </script>
 <style scoped>
 .lp-remote-image { display: block; max-width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--lp-border,#e5e5e5); border-radius: 12px; background: var(--lp-surface,#fff); cursor: zoom-in; }

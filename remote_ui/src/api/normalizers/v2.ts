@@ -19,6 +19,7 @@ import type {
 } from '../../types/codex'
 import { normalizePathForComparison, normalizePathForUi, toProjectName } from '../../pathUtils.js'
 import { formatWorkDuration, reasoningSummary, turnDurationMs } from '../../lanpower/turnPresentation'
+import { nativeToolView, publicToolPayload } from '../../lanpower/tools'
 
 function toIso(seconds: number): string {
   return new Date(seconds * 1000).toISOString()
@@ -403,7 +404,7 @@ export function toUiFileChanges(changes: unknown): UiFileChange[] {
   return normalized
 }
 
-function toUiMessages(item: ThreadItem): UiMessage[] {
+function toUiMessages(item: ThreadItem, turnStatus?: string): UiMessage[] {
   if ((item as any).type === 'lanpowerLargeItem') {
     const raw = item as any
     return [{id:raw.id,role:'system',text:'',messageType:'historyContent',
@@ -529,12 +530,8 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   }
 
   const raw = item as unknown as Record<string,unknown>
-  // Context compaction contains internal context, rather than a public tool result.
-  if (raw.type === 'contextCompaction') return [{id:item.id,role:'system',text:'会话上下文已整理',messageType:'contextCompaction'}]
-  const labels: Record<string,string> = {webSearch:'搜索了网页',mcpToolCall:'调用了工具',dynamicToolCall:'调用了工具',collabAgentToolCall:'协作任务'}
-  const text = labels[String(raw.type)] || '会话记录'
-  const publicPayload = JSON.stringify(item,(key,value) => ['encryptedContent','encrypted_content'].includes(key) ? undefined : value,2)
-  return [{id:item.id,role:'system',text,messageType:'toolResult',rawPayload:publicPayload}]
+  const toolResult = nativeToolView(raw,turnStatus)
+  return [{id:item.id,role:'system',text:toolResult.kind,messageType:'toolResult',toolResult,rawPayload:JSON.stringify(publicToolPayload(raw),null,2)}]
 }
 
 function normalizeCommandStatus(value: unknown): CommandExecutionData['status'] {
@@ -651,7 +648,7 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
     const duration = turn.status !== 'inProgress' ? turnDurationMs(turn as Turn & {durationMs?:number;startedAt?:number;completedAt?:number}) : undefined
     let insertedDuration = false
     for (const item of items) {
-      for (const msg of toUiMessages(item)) {
+      for (const msg of toUiMessages(item,turn.status)) {
         if (turn.status === 'inProgress' && msg.messageType === 'reasoning') continue
         if (!insertedDuration && msg.role !== 'user' && duration !== undefined) {
           messages.push({id:`${turnId ?? turnIndex}:worked`,role:'system',text:`已处理 ${formatWorkDuration(duration)}`,messageType:'worked',turnId,turnIndex,turnStatus:turn.status,turnDurationMs:duration})

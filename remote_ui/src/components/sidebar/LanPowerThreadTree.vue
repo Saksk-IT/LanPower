@@ -9,6 +9,7 @@
     <div class="lp-sidebar-scrollable">
       <div v-if="searchVisible" class="lp-sidebar-search"><IconTablerSearch /><input v-model="query" class="lp-search" placeholder="搜索聊天和项目…" aria-label="搜索聊天和项目" maxlength="120" /><button v-if="query" @click="query = ''" aria-label="清除搜索">×</button></div>
       <slot name="connection" />
+      <section v-if="selectedOutsideList" class="lp-library-section"><small>正在查看</small><ThreadRow :thread="selectedOutsideList" :selected="true" :working="Boolean(activeTurns[selectedThreadId])" :pending="approvalThreads.includes(selectedThreadId)" @select="$emit('select',selectedThreadId)" @menu="openMenu($event,'thread',selectedThreadId)" /></section>
       <button class="lp-feature-link" @click="$emit('navigate', 'skills')"><span class="lp-feature-icon"><IconTablerBolt /></span><span><strong>技能</strong><small>PLUGINS, APPS, MCPS</small></span></button>
       <button class="lp-feature-link" @click="$emit('navigate', 'automations')"><span class="lp-feature-icon lp-automations-icon"><IconTablerBolt /></span><span><strong>自动化</strong><small>SCHEDULED WORK</small></span></button>
       <section v-if="library.pinned.length" class="lp-library-section lp-pinned-section">
@@ -78,12 +79,20 @@ import IconTablerFolderOpen from '../icons/IconTablerFolderOpen.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerSettings from '../icons/IconTablerSettings.vue'
 import { buildLibrary, defaultLibraryPreferences, libraryThread, type LibraryGroup, type LibraryPreferences, type LibraryProject } from '../../lanpower/library'
-const props = defineProps<{ deviceId: string; projects: LibraryProject[]; threads: any[]; selectedThreadId: string; activeTurns: Record<string,string>; approvalThreads: string[]; ready: boolean; loading: boolean; nextCursor: string; archived: boolean; chatSupported: boolean; savedPreferences: LibraryPreferences }>()
-const emit = defineEmits<{ select: [id: string]; 'new-thread': [cwd?: string]; 'new-chat': []; 'load-more': []; 'toggle-sidebar': []; 'toggle-archived': []; navigate: [view: string]; 'thread-action': [action: string, id: string]; 'browse-files': [cwd: string]; 'update-library': [preferences: LibraryPreferences] }>()
+const props = defineProps<{ deviceId: string; projects: LibraryProject[]; threads: any[]; currentThread?:any; selectedThreadId: string; activeTurns: Record<string,string>; approvalThreads: string[]; ready: boolean; loading: boolean; nextCursor: string; archived: boolean; chatSupported: boolean; savedPreferences: LibraryPreferences }>()
+const emit = defineEmits<{ search: [query:string]; select: [id: string]; 'new-thread': [cwd?: string]; 'new-chat': []; 'load-more': []; 'toggle-sidebar': []; 'toggle-archived': []; navigate: [view: string]; 'thread-action': [action: string, id: string]; 'browse-files': [cwd: string]; 'update-library': [preferences: LibraryPreferences] }>()
 const version = import.meta.env.VITE_APP_VERSION
 const preferences = ref<LibraryPreferences>(defaultLibraryPreferences()), query = ref(''), searchVisible = ref(false), expandedGroups = ref<Record<string,boolean>>({}), draggedProject = ref('')
 const menu = ref<{ type: string; id: string; x: number; y: number } | null>(null), renameTarget = ref<LibraryGroup | null>(null), renameDraft = ref('')
 const library = computed(() => buildLibrary(props.projects, props.threads.map(libraryThread), preferences.value, query.value))
+const selectedOutsideList = computed(() => {
+  if (!props.currentThread || query.value) return null
+  const id = props.selectedThreadId
+  if (expanded('pinned') && library.value.pinned.some(t => t.id === id) || expanded('chats') && library.value.chats.some(t => t.id === id) || expanded('projects') && library.value.projects.some(g => !collapsed(g.id) && g.threads.some(t => t.id === id))) return null
+  return libraryThread(props.currentThread)
+})
+let searchTimer: ReturnType<typeof setTimeout>
+watch(query,value => { clearTimeout(searchTimer); searchTimer = setTimeout(() => emit('search',value.trim()),250) })
 const menuStyle = computed(() => menu.value ? { left: `${Math.max(8, Math.min(menu.value.x, innerWidth - 244))}px`, top: `${Math.max(8, Math.min(menu.value.y, innerHeight - 320))}px` } : {})
 watch(() => props.deviceId, () => {
   preferences.value = defaultLibraryPreferences(); menu.value = null; query.value = ''; expandedGroups.value = {}
@@ -107,5 +116,5 @@ function moveProject(direction: number): void { if (!menu.value) return; const o
 function dropProject(id: string): void { if (!draggedProject.value || draggedProject.value === id) return; const order = library.value.projects.map(p => p.id), from = order.indexOf(draggedProject.value), to = order.indexOf(id); if (from >= 0 && to >= 0) { order.splice(from,1); order.splice(to,0,draggedProject.value); preferences.value.order = order }; draggedProject.value = '' }
 function escape(event: KeyboardEvent): void { if (event.key === 'Escape') { menu.value = null; renameTarget.value = null } }
 window.addEventListener('keydown', escape)
-onBeforeUnmount(() => window.removeEventListener('keydown', escape))
+onBeforeUnmount(() => { clearTimeout(searchTimer); window.removeEventListener('keydown', escape) })
 </script>

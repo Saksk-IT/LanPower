@@ -17,6 +17,13 @@ const STATES = {
   update_required: ['需要更新 Cloud', '请将 Cloud 更新至 1.16.2，以支持多个页面同时连接']
 };
 const ERRORS = {
+  invalid_params: '内容或参数不符合限制，未发送，请修改后重试。',
+  params_not_allowed: '当前组件不支持这些参数，未发送。',
+  method_not_allowed: '当前组件不支持此操作，未发送。',
+  history_changed: '原窗口历史已变化，操作未执行，请刷新后重试。',
+  history_reference_changed: '这项历史内容已变化，请重新读取。',
+  history_cache_busy: '电脑端历史引用正在使用，请稍后重试。',
+  library_cursor_changed: '聊天库已更新，请刷新后继续读取。',
   desktop_session_busy: '桌面仍占用这条会话，释放后才能继续。',
   workspace_not_allowed: '项目尚未授权，请在电脑检查项目设置。',
   task_running: '任务仍在运行，请先暂停或等待完成。',
@@ -123,7 +130,7 @@ class CodexConnection {
     if (payload.error) {
       const code = payload.error.code === -32601 ? 'unsupported_method' : payload.error.message;
       call.reject(failure(ERRORS[code] || '本机未能完成请求，请检查会话与授权。', code,
-        ![-32601, -32602].includes(payload.error.code) && !['turn_changed', 'task_running', 'workspace_not_allowed', 'submission_store_full', 'submission_store_unavailable'].includes(code)));
+        !(payload.error.data && payload.error.data.notSent) && ![-32601, -32602].includes(payload.error.code) && !['turn_changed', 'task_running', 'workspace_not_allowed', 'submission_store_full', 'submission_store_unavailable','history_changed'].includes(code)));
     }
     else call.resolve(payload.result || {});
   }

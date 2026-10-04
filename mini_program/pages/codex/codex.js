@@ -51,7 +51,7 @@ Page({
     this.clockTimer = setInterval(() => { if (this.visible && this.controller.activeTurn) this.setData({elapsed: this.controller.duration()}); }, 1000);
     this.paint();
   },
-  clearTimers() { clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer); clearTimeout(this.searchTimer); },
+  clearTimers() { clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer); clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer); },
   onHide() { this.visible = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: ''}); this.paint(); },
   onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },
   schedulePaint() { if (this.unloaded || this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
@@ -123,7 +123,7 @@ Page({
   backLibrary() { this.setData({view: 'library', sheet: '', keyboardHeight: 0}); this.paint(); },
   async selectThread(event) { this.follow = true; this.setData({view: 'chat', sheet: ''}); await this.controller.selectThread(dataOf(event).id); this.paint(); },
   readThread(id, navigate = true) { if (navigate) this.setData({view: 'chat'}); return this.controller.selectThread(id); },
-  search(event) { this.setData({search: event.detail.value}); this.libraryOffset = 0; this.chatOffset = 0; this.paint(); },
+  search(event) { this.setData({search: event.detail.value}); this.libraryOffset = 0; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.librarySearchTimer = setTimeout(() => this.controller.searchLibrary(this.data.search),250); this.paint(); },
   more() { return this.controller.loadThreads(true); },
   async toggleArchived() { await this.controller.toggleArchived(); this.libraryOffset = 0; this.chatOffset = 0; this.paint(); },
   libraryPage(event) { this.libraryOffset = Math.max(0, this.libraryOffset + Number(dataOf(event).direction) * 12); this.paint(); },
@@ -183,7 +183,7 @@ Page({
   loadLater() { return this.controller.loadLater(); },
   cancelHistory() { this.controller.cancelHistory(); },
   resumeHistory() { return this.controller.jumpToBeginning(); },
-  retryContent() { return this.controller.restoreContent(); },
+  retryContent() { return this.controller.retryContent(); },
   openDetail(event) { const row = this.controller.rows.find(value => value.key === dataOf(event).key); if (row) this.showDetail(row.label || (row.kind === 'assistant' ? '完整回复' : '消息详情'), (row.command ? row.command + '\n\n' : '') + row.text, row.kind); },
   showDetail(title, text, kind = '') { this.detailText = String(text || ''); this.detailIndex = 0; this.setData({sheet: 'detail', detailTitle: title, detailKind: kind}); this.paintDetail(); },
   paintDetail() { const pages = Math.max(1, Math.ceil(this.detailText.length / 6000)); this.detailIndex = Math.max(0, Math.min(this.detailIndex, pages - 1)); let start = this.detailIndex * 6000, end = (this.detailIndex + 1) * 6000; if (/[\uDC00-\uDFFF]/.test(this.detailText[start] || '')) start--; if (/[\uDC00-\uDFFF]/.test(this.detailText[end] || '')) end--; this.setData({detailText: this.detailText.slice(start, end), detailPage: this.detailIndex + 1, detailPages: pages}); },

@@ -7,6 +7,16 @@ export class RemoteError extends Error {
 }
 
 const errors: Record<string, string> = {
+  invalid_params: '内容或参数不符合限制，未发送，请修改后重试。',
+  invalid_input: '文字或附件不符合限制，未发送，请修改后重试。',
+  params_not_allowed: '当前版本不支持这些参数，未发送，请更新组件。',
+  method_not_allowed: '当前版本不支持此操作，未发送，请更新组件。',
+  history_changed: '原窗口历史已变化，操作未执行，请刷新后重新选择轮次。',
+  history_reference_changed: '这项历史内容已变化，请重新读取对应轮次。',
+  history_cache_busy: '电脑端历史引用正在使用，请稍后重试读取。',
+  library_cursor_changed: '聊天库已更新，请刷新后继续读取。',
+  library_unavailable: '电脑端聊天库读取失败，请稍后刷新。',
+  library_catalog_too_large: '聊天库超过当前电脑端元数据预算，请在原窗口整理。',
   desktop_session_busy: '这条会话由原窗口控制，请在电脑的 LanPower 点击「连接原 Codex 窗口」。',
   shared_runtime_required: '请先在电脑的 LanPower 连接原 Codex 窗口。',
   desktop_request_failed: '原窗口未能完成请求，请刷新会话确认状态。',
@@ -80,7 +90,7 @@ export class RemoteConnection {
         return
       }
       this.pending.delete(payload.id); this.fragments.drop(payload.id); clearTimeout(call.timer); call.cleanup?.()
-      if (payload.error) call.reject(new RemoteError(payload.error.code === -32601 ? 'unsupported_method' : payload.error.message, payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || '本机未能完成请求，请检查会话和授权。', ![-32601,-32602].includes(payload.error.code) && !['turn_changed','task_running','workspace_not_allowed','submission_store_full','submission_store_unavailable'].includes(payload.error.message)))
+      if (payload.error) call.reject(new RemoteError(payload.error.code === -32601 ? 'unsupported_method' : payload.error.message, payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || '本机未能完成请求，请检查会话和授权。', payload.error.data?.notSent !== true && ![-32601,-32602].includes(payload.error.code) && !['turn_changed','task_running','workspace_not_allowed','submission_store_full','submission_store_unavailable','history_changed'].includes(payload.error.message)))
       else call.resolve(payload.result)
     }
     socket.onerror = () => {}

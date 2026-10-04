@@ -1,7 +1,7 @@
 <template>
   <div class="lp-codex" :class="{ 'lp-chat-open': chatOpen, 'lp-sidebar-collapsed': sidebarCollapsed }">
     <aside class="lp-library" aria-label="电脑、项目和会话">
-      <LanPowerThreadTree :device-id="deviceId" :projects="projects" :threads="threads" :selected-thread-id="threadId" :active-turns="activeTurns" :approval-threads="approvals.map(a => a.threadId)" :ready="ready" :loading="loadingLibrary" :next-cursor="listCursor" :archived="archivedView" :chat-supported="chatSupported" :saved-preferences="libraryState.preferences" @update-library="saveLibrary" @select="openThread" @new-thread="openNewThread" @new-chat="newChat" @toggle-sidebar="toggleSidebar" @load-more="loadThreads(true)" @toggle-archived="toggleArchived" @navigate="navigate" @thread-action="sidebarThreadAction" @browse-files="openFiles">
+      <LanPowerThreadTree :device-id="deviceId" :projects="projects" :threads="displayedThreads" @search="searchLibrary" :current-thread="current" :selected-thread-id="threadId" :active-turns="activeTurns" :approval-threads="approvals.map(a => a.threadId)" :ready="ready" :loading="loadingLibrary" :next-cursor="listCursor" :archived="archivedView" :chat-supported="chatSupported" :saved-preferences="libraryState.preferences" @update-library="saveLibrary" @select="openThread" @new-thread="openNewThread" @new-chat="newChat" @toggle-sidebar="toggleSidebar" @load-more="loadThreads(true)" @toggle-archived="toggleArchived" @navigate="navigate" @thread-action="sidebarThreadAction" @browse-files="openFiles">
       <template #connection><div class="lp-device-context"><ComposerDropdown class="lp-device-picker" :model-value="deviceId" :options="devices.map(d => ({value:d.id,label:d.name}))" placeholder="选择开发电脑" enable-search search-placeholder="搜索电脑" @update:model-value="changeDevice" />
       <div class="lp-connection" role="status"><span :class="{ 'is-ready': ready }" />{{ stateLabel }}<button v-if="!ready && deviceId" @click="reconnect">重连</button></div>
       <p v-if="wakeAvailable" class="lp-power"><span>{{ powerText }}</span><button :disabled="waking" @click="wake">唤醒</button></p></div></template>
@@ -51,6 +51,7 @@ import { newSettings, observeSettings, effectiveSettings, modelId, validEfforts,
 import { StateClock } from './lanpower/state'
 import { reasoningSummary, timestampMs } from './lanpower/turnPresentation'
 import { defaultLibraryPreferences, type LibraryPreferences } from './lanpower/library'
+import { prepareSubmissionInput } from './lanpower/input'
 import { resetRemoteImages } from './lanpower/images'
 import type { ReasoningEffort, UiServerRequest, UiLiveOverlay } from './types/codex'
 import { connection, RemoteError, type RpcEvent } from './lanpower/connection'
@@ -65,9 +66,12 @@ const skills = ref<Array<{name:string;path:string;description:string;scope?:stri
 const conversation = ref<{jumpToStart:()=>Promise<void>;jumpToLatest:()=>void} | null>(null)
 const ready = computed(() => state.value === 'runtime_ready')
 const threads = shallowRef<any[]>([]), current = shallowRef<any>(null), projects = ref<Array<{ name: string; path: string; kind?:string }>>([])
+const libraryCatalog = ref(false), libraryQuery = ref(''), searchRows = shallowRef<any[]>([])
+const displayedThreads = computed(() => libraryQuery.value && libraryCatalog.value ? searchRows.value : threads.value)
 const projectCwd = ref(''), listCursor = ref(''), historyCursor = ref(''), models = ref<string[]>([])
 const selectedModel = ref(''), selectedEffort = ref<ReasoningEffort | ''>('')
 const desktopControl = ref(false), sharedControl = ref(false), queueSupported = ref(false)
+const targetedHistoryActions = ref(false)
 const planSupported = ref(false)
 const recovering = ref(false), lastSync = ref(0), syncFailed = ref(false)
 const nativeModels = ref<ModelCapability[]>([]), settingsVersion = ref(0), unsupportedMethods = ref<string[]>([])
@@ -79,8 +83,9 @@ let historyAbort: AbortController | null = null, beginningJob: BeginningJob | nu
 const contentState = shallowRef<Record<string,{loaded:number;error:string}>>({})
 let contentReader: HistoryContentReader | null = null, contentAbort: AbortController | null = null
 let contentRun = 0, restoringContent = false, contentRetry: ReturnType<typeof setTimeout> | undefined, contentRetryDelay = 2000
+const contentFailures = new Map<string,number>()
 function pauseContent(): void { contentRun++; contentAbort?.abort(); contentAbort = null; restoringContent = false; clearTimeout(contentRetry) }
-function resetContent(): void { pauseContent(); contentReader = null; contentState.value = {}; contentRetryDelay = 2000 }
+function resetContent(): void { pauseContent(); contentReader = null; contentState.value = {}; contentRetryDelay = 2000; contentFailures.clear() }
 function sessionKey(id = threadId.value): string { return `${deviceId.value}:${id}` }
 function threadSettings(): ThreadSettings { const key = sessionKey(); if (!settingsByThread.has(key)) settingsByThread.set(key,newSettings()); return settingsByThread.get(key)! }
 function displaySettings(): void { const options = effectiveSettings(threadSettings()); selectedModel.value = options.model; selectedEffort.value = options.effort; selectedMode.value = options.mode; settingsVersion.value++ }
@@ -171,7 +176,7 @@ function addApproval(event: RpcEvent): void {
 }
 function onState(value: string): void {
   const wasReady = ready.value; state.value = value
-  if (!ready.value) { epoch++; busy.value = false; syncing = false; recovering.value = false; loadingLibrary.value = false; loadingChat.value = false; loadingEarlier.value = false; interrupting.value = false; historyAbort?.abort(); libraryDraft = null; if (value === 'revoked' || value === 'disabled') resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }; clock.clear() }
+  if (!ready.value) { epoch++; busy.value = false; syncing = false; recovering.value = false; loadingLibrary.value = false; loadingChat.value = false; loadingEarlier.value = false; interrupting.value = false; historyAbort?.abort(); libraryDraft = null; resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }; clock.clear() }
   else if (!wasReady) void restore()
 }
 async function restore(): Promise<void> {
@@ -196,6 +201,8 @@ async function restore(): Promise<void> {
 function applyStatus(status: any, stamp = clock.capture()): void {
   desktopControl.value = Boolean(status.desktopControl); sharedControl.value = Boolean(status.sharedControl); queueSupported.value = Boolean(status.queueSupported)
   receiptsSupported.value = Boolean(status.submissionReceipts); unsupportedMethods.value = status.unsupportedMethods || []
+  targetedHistoryActions.value = Boolean(status.targetedHistoryActions)
+  libraryCatalog.value = Boolean(status.libraryCatalog)
   chatSupported.value = Boolean(status.chatSupported)
   if (status.library && !librarySaving && !libraryDraft) libraryState.value = status.library
   projects.value = status.projects || []; if (!projects.value.some(p => p.path === projectCwd.value)) projectCwd.value = projects.value[0]?.path || ''
@@ -214,15 +221,28 @@ function applyStatus(status: any, stamp = clock.capture()): void {
 }
 async function loadThreads(more = false): Promise<void> {
   if (!ready.value || loadingLibrary.value) return
-  const e = epoch; loadingLibrary.value = true
+  const e = epoch, query = libraryQuery.value, archived = archivedView.value; loadingLibrary.value = true
   try {
-    const result = await connection.request('thread/list', { limit: 50, archived: archivedView.value, ...(more && listCursor.value ? { cursor: listCursor.value } : {}) })
-    if (e !== epoch) return
-    const all = [...threads.value, ...result.data]
-    threads.value = [...new Map(all.map((t: any) => [t.id, t])).values()]
-    if (more || threads.value.length <= result.data.length) listCursor.value = result.nextCursor || ''
-  } catch (error) { if (e === epoch) showError(error) } finally { if (e === epoch) loadingLibrary.value = false }
+    const result = await connection.request(libraryCatalog.value ? 'lanpower/library/list' : 'thread/list', { limit:50,archived,
+      ...(libraryCatalog.value ? {refresh:!more,...(query ? {query} : {})} : {}),...(more && listCursor.value ? {cursor:listCursor.value} : {}) })
+    if (e !== epoch || query !== libraryQuery.value || archived !== archivedView.value) return
+    if (query && libraryCatalog.value) searchRows.value = [...new Map([...(more ? searchRows.value : []),...(result.data || []),...(result.pinned || [])].map((t:any) => [t.id,t])).values()]
+    else {
+      const previous = threads.value, checked:any[] = []
+      if (!more && libraryCatalog.value) {
+        for (let offset = 0; offset < previous.length; offset += 256) {
+          const check = await connection.request('lanpower/library/check',{threadIds:previous.slice(offset,offset + 256).map(t => t.id),archived})
+          if (e !== epoch || query !== libraryQuery.value || archived !== archivedView.value) return
+          checked.push(...(check.data || []))
+        }
+      }
+      threads.value = [...new Map([...(more || !libraryCatalog.value ? previous : checked),...(result.data || []),...(result.pinned || [])].map((t:any) => [t.id,t])).values()]
+    }
+    listCursor.value = result.nextCursor || ''
+  } catch (error) { if (e === epoch) { showError(error); if (more && error instanceof RemoteError && error.code === 'library_cursor_changed') { listCursor.value = ''; queueMicrotask(() => void loadThreads()) } } }
+  finally { if (e === epoch) { loadingLibrary.value = false; if (query !== libraryQuery.value) void loadThreads() } }
 }
+function searchLibrary(query: string): void { libraryQuery.value = query; searchRows.value = []; listCursor.value = ''; if (!libraryCatalog.value && query) feedback.value = '当前电脑版本仅能搜索已加载聊天，请更新后使用完整聊天库。'; void loadThreads() }
 async function selectThread(id: string, restoring = false): Promise<void> {
   if (!ready.value) return
   if (id === threadId.value && current.value && !restoring) { chatOpen.value = true; await refreshCurrent(); return }
@@ -237,6 +257,8 @@ async function selectThread(id: string, restoring = false): Promise<void> {
     const result = await readThread(connection,id)
     if (e !== epoch || s !== selection) return
     current.value = result.thread; historyCursor.value = result.thread.historyCursor || ''
+    const {turns:_turns,...summary} = result.thread
+    threads.value = [...new Map([...threads.value,summary].map(t => [t.id,t])).values()]
     if (clock.unchanged(stamp,id) && clock.snapshot(id,result.thread.lanpowerRevision)) { applyThreadSettings(result.thread); observeTurn(result.thread); lastSync.value = Date.now() }
     else scheduleReconcile()
     displaySettings(); await hydrateSavedDraft()
@@ -320,8 +342,7 @@ async function submit(payload: SubmitPayload): Promise<void> {
       if (options.effort && nativeModels.value.find(m => modelId(m) === options.model)?.supportedReasoningEfforts && !effortOptions.value.includes(options.effort)) throw new RemoteError('not_sent','所选模型不支持该思考强度，请重新选择。')
       if (options.mode === 'plan' && !planSupported.value) throw new RemoteError('not_sent','原窗口暂不支持计划模式，请采用原窗口参数。')
     }
-    const text = payload.fileAttachments.length ? `# Files mentioned by the user:\n${payload.fileAttachments.map(file => `## ${file.label}: ${file.fsPath}`).join('\n')}\n\n## My request for Codex:\n${payload.text.trim()}` : payload.text.trim()
-    const input = [...(text ? [{ type: 'text', text }] : []), ...payload.imageUrls.map(url => ({ type: 'image', url })), ...payload.skills.map(skill => ({type:'skill',name:skill.name,path:skill.path}))]
+    const input = prepareSubmissionInput(payload)
     let params: any = {threadId:id,input,...(receiptsSupported.value ? {submissionId:receipt.submissionId} : {})}
     if (editingQueue.value) { receipt.method = 'thread/queue/update'; params.queuedSubmissionId = editingQueue.value }
     else if (activeTurn.value && payload.mode === 'queue') { receipt.method = 'thread/queue/add'; params.clientUserMessageId = receipt.submissionId }
@@ -389,6 +410,7 @@ async function deleteQueue(id: string): Promise<void> { await queueAction('threa
 async function startQueue(id: string): Promise<void> { await queueAction('thread/queue/start', { queuedSubmissionId: id }) }
 async function reorderQueue({ draggedId, targetId }: { draggedId: string; targetId: string }): Promise<void> {
   const ids = queue.value.map(q => q.id), from = ids.indexOf(draggedId), to = ids.indexOf(targetId)
+  if (ids.length > 32) { feedback.value = '队列超过 32 条，请在原窗口整理；未发送排序请求。'; return }
   if (from < 0 || to < 0) return
   ids.splice(from, 1); ids.splice(to, 0, draggedId)
   await queueAction('thread/queue/reorder', { queuedSubmissionIds: ids })
@@ -417,20 +439,24 @@ async function saveThreadName(): Promise<void> {
 }
 async function forkThread(turnIndex?: number): Promise<void> {
   if (!canControl.value || busy.value) return
+  const id = threadId.value, turnId = typeof turnIndex === 'number' ? current.value?.turns[turnIndex]?.id : undefined
+  if (typeof turnIndex === 'number' && (!turnId || !targetedHistoryActions.value || !current.value?.historyTailTurnId)) { feedback.value = '请更新电脑端与 Cloud 后，再按指定历史轮次分支。'; return }
+  const e = epoch, s = selection
   busy.value = true
   try {
-    const result = await connection.request('thread/fork', { threadId: threadId.value })
-    const later = typeof turnIndex === 'number' ? (current.value.turns.length - turnIndex - 1) : 0
-    if (later > 0) await connection.request('thread/rollback', { threadId: result.thread.id, numTurns: later })
+    const result = turnId ? await connection.request('lanpower/history/action',{threadId:id,turnId,expectedTailTurnId:current.value.historyTailTurnId,action:'fork'}) : await connection.request('thread/fork', { threadId:id })
+    if (e !== epoch || s !== selection) return
     busy.value = false; await loadThreads(); await selectThread(result.thread.id)
   } catch (error) { showError(error) } finally { busy.value = false }
 }
 async function rollback(turnId: string): Promise<void> {
   if (!canControl.value || activeTurn.value || busy.value) return
+  if (!targetedHistoryActions.value || !current.value?.historyTailTurnId) { feedback.value = '请更新电脑端与 Cloud 后，再按指定历史轮次回退。'; return }
   const index = current.value.turns.findIndex((t: any) => t.id === turnId)
   if (index < 0 || !confirm('移除这轮及后续对话？已修改的文件会保留。')) return
   busy.value = true
-  try { const result = await connection.request('thread/rollback', { threadId: threadId.value, numTurns: current.value.turns.length - index }); current.value = result.thread; historyCursor.value = result.thread.historyCursor || ''; feedback.value = '对话已回退，已有文件修改保留。' } catch (error) { showError(error) } finally { busy.value = false }
+  const id = threadId.value, e = epoch, s = selection
+  try { const result = await connection.request('lanpower/history/action', { threadId:id,turnId,expectedTailTurnId:current.value.historyTailTurnId,action:'rollback' }); if (e !== epoch || s !== selection) return; resetHistory(); current.value = result.thread; historyCursor.value = result.thread.historyCursor || ''; feedback.value = '对话已回退，已有文件修改保留。' } catch (error) { if (e === epoch && s === selection) showError(error) } finally { if (e === epoch && s === selection) busy.value = false }
 }
 async function archiveThread(): Promise<void> {
   if (!canControl.value || activeTurn.value || !confirm('归档当前会话？')) return
@@ -439,10 +465,14 @@ async function archiveThread(): Promise<void> {
 function cancelHistory(): void { historyAbort?.abort() }
 function historyError(error: unknown): void { historyProgress.value = error instanceof DOMException && error.name === 'AbortError' ? '读取已取消，可继续。' : `读取中断，可继续：${error instanceof Error ? error.message : '连接未完成'}` }
 function resumeHistory(): void { if (historyResume.value === 'beginning') void jumpToBeginning() }
-function retryContent(reference?: string): void {
+function retryContent(reference?: string, automatic = false): void {
   clearTimeout(contentRetry)
+  if (!automatic) contentFailures.clear()
   const next = {...contentState.value}
-  for (const key of Object.keys(next)) if (!reference || key === reference) next[key] = {...next[key]!,error:''}
+  for (const turn of current.value?.turns || []) for (const item of turn.items || []) {
+    if (item.type !== 'lanpowerLargeItem' || reference && item.reference !== reference || (contentFailures.get(`${turn.id}:${item.id}`) || 0) >= 3) continue
+    if (next[item.reference]) next[item.reference] = {...next[item.reference]!,error:''}
+  }
   contentState.value = next; void restoreContent()
 }
 async function restoreContent(): Promise<void> {
@@ -464,14 +494,17 @@ async function restoreContent(): Promise<void> {
         - Number(a.item.wholeTurn || ['agentMessage','userMessage','imageGeneration','image_generation'].includes(a.item.originalType)))
       const target = pending[0]; if (!target) break
       const {item,turnId} = target
+      const failureKey = `${turnId}:${item.id}`
       try {
         await reader.read(connection,item,controller.signal,loaded => {
           if (valid()) contentState.value = {...contentState.value,[item.reference]:{loaded,error:''}}
         })
         contentRetryDelay = 2000
+        contentFailures.delete(failureKey)
       } catch (error) {
         if (!valid() || controller.signal.aborted) return
-        if (error instanceof RemoteError && error.code === 'history_reference_expired') {
+        const failures = (contentFailures.get(failureKey) || 0) + 1; contentFailures.set(failureKey,failures)
+        if (failures < 3 && error instanceof RemoteError && ['history_reference_expired','history_reference_changed'].includes(error.code)) {
           reader.forget(item.reference)
           try {
             const turn = await refreshHistoryTurn(connection,id,turnId,controller.signal)
@@ -480,7 +513,7 @@ async function restoreContent(): Promise<void> {
             continue
           } catch { if (!valid() || controller.signal.aborted) return }
         } else if (!(error instanceof RemoteError)) reader.forget(item.reference)
-        contentState.value = {...contentState.value,[item.reference]:{loaded:contentState.value[item.reference]?.loaded || 0,error:'内容读取中断，正在自动重试。'}}
+        contentState.value = {...contentState.value,[item.reference]:{loaded:contentState.value[item.reference]?.loaded || 0,error:failures < 3 ? '内容读取中断，正在自动重试。' : '内容读取已暂停，请点击重试或查看原窗口。'}}
       }
     }
   } finally {
@@ -488,8 +521,8 @@ async function restoreContent(): Promise<void> {
       restoringContent = false
       const references = new Set((current.value?.turns || []).flatMap((turn:any) => (turn.items || []).filter((item:any) => item.type === 'lanpowerLargeItem').map((item:any) => item.reference)))
       contentState.value = Object.fromEntries(Object.entries(contentState.value).filter(([reference]) => references.has(reference)))
-      if (ready.value && Object.values(contentState.value).some(value => value.error)) {
-        contentRetry = setTimeout(() => retryContent(),contentRetryDelay); contentRetryDelay = Math.min(30000,contentRetryDelay * 2)
+      if (ready.value && !controller.signal.aborted && [...contentFailures.values()].some(count => count < 3) && Object.values(contentState.value).some(value => value.error)) {
+        contentRetry = setTimeout(() => retryContent(undefined,true),contentRetryDelay); contentRetryDelay = Math.min(30000,contentRetryDelay * 2)
       }
     }
   }
@@ -510,7 +543,8 @@ function onEvent(event: RpcEvent): void {
   if (event.method === 'turn/started' && id && p.turn?.id) { rememberTiming(id,p.turn,true); activeTurns.value = { ...activeTurns.value, [id]: p.turn.id } }
   if (event.method === 'turn/completed') { rememberTiming(id,p.turn,false); if (!oldTurn) { const next = { ...activeTurns.value }; delete next[id]; activeTurns.value = next } }
   if (event.method === 'thread/name/updated') { threads.value = threads.value.map(t => t.id === id ? { ...t, name: p.threadName || p.name } : t); if (current.value?.id === id) current.value = { ...current.value, name: p.threadName || p.name } }
-  if (event.method === 'thread/started') { void loadThreads(); return }
+  if (['thread/started','thread/archived','thread/unarchived'].includes(event.method)) { void loadThreads(); return }
+  if (event.method === 'thread/name/updated' && libraryCatalog.value) void loadThreads()
   if (event.method === 'thread/status/changed') threads.value = threads.value.map(t => t.id === id ? {...t,status:p.status} : t)
   if (id && event.method === 'thread/settings/updated') {
     const key = sessionKey(id), settings = settingsByThread.get(key) || newSettings(); settingsByThread.set(key,settings)
@@ -598,7 +632,7 @@ function changeDevice(id: string): void {
   saveDraft(); resetHistory(); clock.clear()
   epoch++; selection++; deviceId.value = id; threadId.value = ''; current.value = null; threads.value = []; projects.value = []; models.value = []; queue.value = []; resetApprovals(); activeTurns.value = {}; editingQueue.value = ''; listCursor.value = ''; historyCursor.value = ''; powerText.value = ''; wakeAvailable.value = false; feedback.value = ''; chatOpen.value = false
   loadingChat.value = false; loadingLibrary.value = false; loadingEarlier.value = false; loadingAllHistory.value = false; busy.value = false; skills.value = []; filesCwd.value = ''; chatSupported.value = false; view.value = 'chat'; archivedView.value = false; newThreadDialog.value = false; renameDialog.value = false
-  libraryDraft = null; libraryState.value = {revision:0,preferences:defaultLibraryPreferences()}; filePath.value = ''; clearTimeout(libraryTimer); clearTimeout(reconcileTimer); resetRemoteImages()
+  libraryDraft = null; libraryQuery.value = ''; searchRows.value = []; libraryCatalog.value = false; libraryState.value = {revision:0,preferences:defaultLibraryPreferences()}; filePath.value = ''; clearTimeout(libraryTimer); clearTimeout(reconcileTimer); resetRemoteImages()
   selectedModel.value = ''; selectedEffort.value = ''; selectedMode.value = 'default'; nativeModels.value = []; lastSync.value = 0; syncFailed.value = false; queryingReceipt.value = false; receiptVersion.value++; interrupting.value = false
   connection.connect(id); if (!id) state.value = 'idle'; else void updatePower()
 }

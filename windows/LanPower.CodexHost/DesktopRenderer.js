@@ -3,7 +3,7 @@
     const protocol = 1;
     const globalName = "__LANPOWER_GLOBAL__";
     const bindingName = "__LANPOWER_BINDING__";
-    const notificationMethods = ["error","thread/started","thread/queue/changed","thread/name/updated","thread/settings/updated","thread/status/changed","thread/tokenUsage/updated","turn/started","turn/completed","turn/diff/updated","turn/plan/updated","item/started","item/completed","item/agentMessage/delta","item/plan/delta","item/reasoning/summaryTextDelta","item/commandExecution/outputDelta","item/commandExecution/terminalInteraction","item/fileChange/outputDelta","item/fileChange/patchUpdated","serverRequest/resolved"];
+    const notificationMethods = ["error","thread/started","thread/archived","thread/unarchived","thread/queue/changed","thread/name/updated","thread/settings/updated","thread/status/changed","thread/tokenUsage/updated","turn/started","turn/completed","turn/diff/updated","turn/plan/updated","item/started","item/completed","item/agentMessage/delta","item/plan/delta","item/reasoning/summaryTextDelta","item/commandExecution/outputDelta","item/commandExecution/terminalInteraction","item/fileChange/outputDelta","item/fileChange/patchUpdated","serverRequest/resolved"];
     const root = globalThis.__codexRoot && globalThis.__codexRoot._internalRoot
       ? globalThis.__codexRoot._internalRoot.current
       : null;
@@ -59,11 +59,19 @@
     const desktopResolvedDuringResponseIds = new Set();
     const historyItems = new Map();
     let historyCharacters = 0;
-    const storeHistory = (threadId, item, wholeTurn = false) => {
+    const trimHistoryBodies = keep => {
+      for (const [key, entry] of historyItems) {
+        if (historyCharacters * 2 <= 64 * 1024 * 1024) break;
+        if (key === keep || !entry.body) continue;
+        historyCharacters -= entry.body.length; entry.body = null;
+      }
+    };
+    const fingerprint = async body => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))), b => b.toString(16).padStart(2, '0')).join('');
+    const storeHistory = async (threadId, turnId, item, itemIndex, cursor, wholeTurn = false) => {
       const body = JSON.stringify(item);
       if (body.length * 2 > 64 * 1024 * 1024) throw new Error('history_item_too_large');
       for (const [key, entry] of historyItems) {
-        if (Date.now() - entry.time > 600000) { historyCharacters -= entry.body.length; historyItems.delete(key); }
+        if (Date.now() - entry.time > 600000) { historyCharacters -= entry.body?.length || 0; historyItems.delete(key); }
       }
       const imagePaths = new Set();
       const addPath = value => { if (typeof value === 'string' && imagePaths.size < 1024 && /^(?:[A-Za-z]:[\\/]|\/|file:)/i.test(value)) imagePaths.add(value); };
@@ -79,41 +87,67 @@
       };
       observeImages(item);
       const descriptor = reference => ({ id: item.id, type: 'lanpowerLargeItem', originalType: wholeTurn ? 'turn' : item.type,
-        reference, characters: body.length, bytes: new TextEncoder().encode(body).length, wholeTurn,
+        reference, characters: body.length, bytes: new TextEncoder().encode(body).length, wholeTurn, leaseSeconds:600,
         ...(imagePaths.size ? {imageReferences:Array.from(imagePaths,path => ({path}))} : {}) });
+      const hash = await fingerprint(body);
       for (const [reference, entry] of historyItems) {
-        if (entry.threadId === threadId && entry.body === body) { entry.time = Date.now(); return descriptor(reference); }
+        if (entry.threadId === threadId && entry.turnId === turnId && entry.itemIndex === itemIndex && entry.wholeTurn === wholeTurn && entry.hash === hash) {
+          entry.time = Date.now(); return descriptor(reference);
+        }
       }
-      while ((historyCharacters + body.length) * 2 > 64 * 1024 * 1024 && historyItems.size) {
-        const key = historyItems.keys().next().value;
-        historyCharacters -= historyItems.get(key).body.length; historyItems.delete(key);
-      }
+      if (historyItems.size >= 4096) throw new Error('history_cache_busy');
       const reference = 'native-' + (++sequence) + '-' + Math.random().toString(36).slice(2);
-      historyItems.set(reference, { threadId, body, time: Date.now() }); historyCharacters += body.length;
+      historyItems.set(reference, { threadId, turnId, itemId:item.id, itemIndex, cursor, wholeTurn, hash, body, time: Date.now() });
+      historyCharacters += body.length; trimHistoryBodies(reference);
       return descriptor(reference);
     };
-    const publicTurn = turn => ({ ...turn, items: (turn.items || []).map(item => {
-      if (item.type !== 'reasoning') return item;
-      const visible = { ...item }; delete visible.content; delete visible.encryptedContent; return visible;
-    }) });
-    const packTurn = (threadId, turn) => {
+    const publicPayload = value => {
+      if (Array.isArray(value)) return value.map(publicPayload);
+      if (!value || typeof value !== 'object') return value;
+      return Object.fromEntries(Object.entries(value).filter(([key]) => !['encryptedContent','encrypted_content','reasoningContent','reasoning_content'].includes(key)
+        && !(value.type === 'reasoning' && key === 'content') && !(value.type === 'contextCompaction' && !['id','type','status'].includes(key))).map(([key,part]) => [key,publicPayload(part)]));
+    };
+    const publicTurn = turn => ({ ...publicPayload(turn), items: (turn.items || []).map(publicPayload) });
+    const packTurn = async (threadId, turn, cursor) => {
       const visible = publicTurn(turn);
-      const packed = { ...visible, items: visible.items.map(item => JSON.stringify(item).length > 128 * 1024 ? storeHistory(threadId, item) : item) };
+      const items = [];
+      for (const [index, item] of visible.items.entries()) items.push(JSON.stringify(item).length > 128 * 1024
+        ? await storeHistory(threadId, turn.id, item, index, cursor) : item);
+      const packed = { ...visible, items };
       if (JSON.stringify(packed).length > 2 * 1024 * 1024)
-        return { ...visible, items: [storeHistory(threadId, visible, true)] };
+        return { ...visible, items: [await storeHistory(threadId, turn.id, visible, -1, cursor, true)] };
       return packed;
+    };
+    const rehydrateHistory = async entry => {
+      let cursor = entry.cursor, retryFromTail = Boolean(cursor);
+      const seen = new Set();
+      while (true) {
+        const page = await manager.sendRequest('thread/turns/list', {threadId:entry.threadId,limit:8,itemsView:'full',sortDirection:'desc',...(cursor ? {cursor} : {})}, {priority:'critical'});
+        const turn = (page.data || []).find(turn => turn.id === entry.turnId);
+        if (turn) {
+          const visible = publicTurn(turn), item = entry.wholeTurn ? visible : visible.items[entry.itemIndex];
+          if (!item || item.id !== entry.itemId) throw new Error('history_reference_changed');
+          const body = JSON.stringify(item);
+          if (await fingerprint(body) !== entry.hash) throw new Error('history_reference_changed');
+          return body;
+        }
+        if (retryFromTail) { cursor = undefined; retryFromTail = false; continue; }
+        if (!page.nextCursor) throw new Error('history_reference_changed');
+        if (seen.has(page.nextCursor)) throw new Error('invalid_history_cursor');
+        seen.add(page.nextCursor); cursor = page.nextCursor;
+      }
     };
     const emit = (kind, payload) => {
       if (disposed) return;
       const binding = globalThis[bindingName];
       if (typeof binding !== 'function') return;
       try {
-        let visible = payload;
+        let visible = publicPayload(payload);
         // Large events are hints; full bodies remain in the native history and its bounded cache.
-        if (kind === 'notification' && JSON.stringify(payload).length > 128 * 1024) {
-          const p = payload.params || {}, threadId = p.threadId || p.thread?.id;
-          visible = payload.method === 'turn/completed' || payload.method === 'turn/started'
-            ? { ...payload, params: { ...p, turn: { ...p.turn, items: [] } } }
+        if (kind === 'notification' && JSON.stringify(visible).length > 128 * 1024) {
+          const p = visible.params || {}, threadId = p.threadId || p.thread?.id;
+          visible = visible.method === 'turn/completed' || visible.method === 'turn/started'
+            ? { ...visible, params: { ...p, turn: { ...p.turn, items: [] } } }
             : { method: 'lanpower/historyChanged', params: { threadId } };
         }
         binding(JSON.stringify({ protocol, kind, sequence: ++sequence, payload: visible }));
@@ -268,13 +302,39 @@
         }
         if (method === 'turn/start') return adapter.startTurn(params);
         if (method === 'turn/interrupt') { await adapter.interruptTurn(params); return {}; }
+        if (method === 'codex-web/local/history/action') {
+          const ids = [], seen = new Set(); let cursor;
+          do {
+            const page = await manager.sendRequest('thread/turns/list', {threadId:params.threadId,limit:50,itemsView:'notLoaded',sortDirection:'desc',...(cursor ? {cursor} : {})}, {priority:'critical'});
+            for (const turn of page.data || []) {
+              if (turn.status === 'inProgress') throw new Error('history_changed');
+              ids.push(turn.id);
+            }
+            cursor = page.nextCursor;
+            if (ids.length > 100000 || cursor && seen.has(cursor)) throw new Error('invalid_history_cursor');
+            if (cursor) seen.add(cursor);
+          } while (cursor);
+          const index = ids.indexOf(params.turnId);
+          if (index < 0 || ids[0] !== params.expectedTailTurnId || new Set(ids).size !== ids.length) throw new Error('history_changed');
+          const latest = await manager.sendRequest('thread/turns/list', {threadId:params.threadId,limit:1,itemsView:'notLoaded',sortDirection:'desc'}, {priority:'critical'});
+          if (latest.data?.[0]?.id !== ids[0] || latest.data[0].status === 'inProgress') throw new Error('history_changed');
+          return params.action === 'fork'
+            ? manager.sendRequest('thread/fork', {threadId:params.threadId,lastTurnId:params.turnId,excludeTurns:true}, {priority:'critical'})
+            : manager.sendRequest('thread/rollback', {threadId:params.threadId,numTurns:index + 1}, {priority:'critical'});
+        }
         if (method === 'codex-web/local/history/page') {
           const page = await manager.sendRequest('thread/turns/list', params, { priority: 'critical' });
-          return { ...page, data: (page.data || []).map(turn => packTurn(params.threadId, turn)) };
+          const data = [];
+          for (const turn of page.data || []) data.push(await packTurn(params.threadId, turn, params.cursor));
+          return { ...page, data };
         }
         if (method === 'codex-web/local/history/item/read') {
           const entry = historyItems.get(params.reference), offset = params.offset;
           if (!entry || entry.threadId !== params.threadId || Date.now() - entry.time > 600000) throw new Error('history_reference_expired');
+          entry.time = Date.now();
+          const body = entry.body || await rehydrateHistory(entry);
+          if (disposed || historyItems.get(params.reference) !== entry) throw new Error('history_reference_expired');
+          if (!entry.body) { entry.body = body; historyCharacters += body.length; trimHistoryBodies(params.reference); }
           if (!Number.isSafeInteger(offset) || offset < 0 || offset >= entry.body.length) throw new Error('invalid_history_offset');
           let end = Math.min(entry.body.length, offset + 65536);
           if (end < entry.body.length && /[\uD800-\uDBFF]/.test(entry.body[end - 1])) end--;

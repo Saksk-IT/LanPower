@@ -7,6 +7,14 @@ public sealed record CodexProject(string Name, string Path, string? Id = null);
 
 public static class CodexProjects
 {
+    public static CodexProject? ContainingProject(IEnumerable<CodexProject> projects, string? cwd)
+    {
+        static string Normalize(string path) => path.Replace("\\\\?\\", "").Replace('\\','/').TrimEnd('/');
+        if (cwd is null) return null;
+        var path = Normalize(cwd);
+        return projects.Where(project => path.Equals(Normalize(project.Path), StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith(Normalize(project.Path) + '/', StringComparison.OrdinalIgnoreCase)).OrderByDescending(project => Normalize(project.Path).Length).FirstOrDefault();
+    }
     public static bool IsChatPath(string? path) => path is not null && System.Text.RegularExpressions.Regex.IsMatch(
         path.Replace('\\','/'), @"(?:^|/)Documents/Codex/\d{4}-\d{2}-\d{2}/[^/]+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     public static string Home => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } home

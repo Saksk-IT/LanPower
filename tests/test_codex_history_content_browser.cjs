@@ -15,7 +15,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
   const subscribe = () => () => {};
   const manager = {getHostId:()=> 'local',getConversation:()=>({requests:[]}),getRecentConversations:()=>[],sendRequest:async()=>({data:[design],nextCursor:null}),
     addApprovalRequestListener:subscribe,addNotificationCallback:subscribe,addTurnCompletedListener:subscribe,addStreamRoleStateCallback:subscribe};
-  const sandbox = vm.createContext({TextEncoder,__codexRoot:{_internalRoot:{current:{memoizedState:{memoizedState:manager}}}}});
+  const sandbox = vm.createContext({TextEncoder,crypto:require("node:crypto").webcrypto,__codexRoot:{_internalRoot:{current:{memoizedState:{memoizedState:manager}}}}});
   const renderer = fs.readFileSync(path.resolve(__dirname,'../windows/LanPower.CodexHost/DesktopRenderer.js'),'utf8');
   await vm.runInContext(renderer.replaceAll('__LANPOWER_GLOBAL__','historyAdapter').replaceAll('__LANPOWER_BINDING__','unusedBinding'),sandbox);
   const adapter = sandbox.historyAdapter;

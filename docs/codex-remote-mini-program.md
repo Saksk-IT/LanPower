@@ -1,13 +1,13 @@
 # Codex Remote 微信小程序 3.0
 
-版本：小程序 **3.0.0**，Windows / Cloud / Web **1.17.0**，2026-10-04。
+版本：小程序 **3.0.1**，Windows / Cloud / Web **1.18.0**，2026-10-04。
 
 小程序的 Codex 控制已从原来的简化页面重构为原生工作台。页面使用 WXML、WXSS、rich-text、scroll-view、textarea、picker 与 SocketTask；项目、聊天、文件、能力目录和设置按手机操作重新组织。所有控制沿用网页端的目标电脑接口，历史、队列与审批来自同一个原 Codex 窗口。
 
 ## 导入与连接
 
-1. 在微信开发者工具导入仓库的完整 mini_program 目录，或解压本机 windows/out/LanPower-mini-program-3.0.0.zip 后导入其中的 mini_program。配置自己的 AppID，重新编译或预览；公开源码与包内保留 touristappid。
-2. Windows、Cloud 建议使用本轮 **1.17.0**。本机网站已更新，正式云服务器需另行部署后才能使用本轮配套版本。微信公众平台需配置实际 Cloud 的 HTTPS request 与 WSS socket 合法域名。
+1. 在微信开发者工具导入仓库的完整 mini_program 目录，或解压本机 windows/out/LanPower-mini-program-3.0.1.zip 后导入其中的 mini_program。配置自己的 AppID，重新编译或预览；公开源码与包内保留 touristappid。
+2. Windows、Cloud 建议使用本轮 **1.18.0**。本机网站已更新，正式云服务器需另行部署后才能使用本轮配套版本。微信公众平台需配置实际 Cloud 的 HTTPS request 与 WSS socket 合法域名。
 3. 在 Windows LanPower「远程连接」启用 Codex Remote 并保存项目授权；原 Codex 窗口保持登录。Service 负责中继，交互用户的 Codex Host 负责连接原窗口。
 4. 在 Cloud「手机授权 → 修改手机权限」为手机勾选 **Codex Remote 远程开发**。已有手机无需重新扫码；新手机在生成授权二维码前勾选此权限。原电源授权不会自动获得开发权限。
 5. 点击小程序底部 **Codex**，选择开发电脑。新版支持多个网页、小程序同时连接；关闭一个控制页不会中断其他页面或电脑上的任务。旧运行模式按实际能力显示只读或交还桌面。

@@ -13,6 +13,14 @@ class FakeSocket {
   receive(value: unknown) { this.onmessage?.({ data: JSON.stringify(value) }) }
 }
 describe('LanPower browser relay lifecycle', () => {
+  it('immediately rejects a correlated validation error as definitely not sent',async () => {
+    client.connect('one'); const socket = FakeSocket.sockets[0]!
+    const request = client.request('turn/start',{threadId:'chat',input:[{type:'text',text:'invalid'}]})
+    const rejected = expect(request).rejects.toMatchObject({code:'invalid_params',uncertain:false})
+    const id = socket.sent[0].payload.id
+    socket.receive({type:'rpc',payload:{id,error:{code:-32602,message:'invalid_params',data:{notSent:true}}}})
+    await rejected; expect(vi.getTimerCount()).toBe(0)
+  })
   let client: RemoteConnection
   beforeEach(() => {
     vi.useFakeTimers(); FakeSocket.sockets = []

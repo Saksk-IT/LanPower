@@ -171,7 +171,10 @@ def test_forbidden_methods(remote, method):
     client, _, creds, _, _ = remote
     with connected(client, creds) as (_, down, _):
         down.send_json({"type": "rpc", "payload": {"id": 1, "method": method, "params": {}}})
-        assert down.receive_json()["code"] == "method_not_allowed"
+        rejected = down.receive_json()
+        assert rejected["type"] == "rpc" and rejected["payload"]["id"] == 1
+        assert rejected["payload"]["error"]["message"] == "method_not_allowed"
+        assert rejected["payload"]["error"]["data"] == {"notSent": True}
 
 
 @pytest.mark.parametrize("headers", [{"Origin": "https://evil.example"}, {"Origin": "null"}, {"Origin": ""}])

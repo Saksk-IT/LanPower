@@ -24,7 +24,9 @@ FIELDS = {
     "lanpower/files/list": {"cwd", "path", "cursor"}, "lanpower/files/read": {"cwd", "path"},
     "lanpower/files/search": {"cwd", "query"},
     "lanpower/library/update": {"revision", "preferences"}, "lanpower/image/read": {"threadId", "path"},
+    "lanpower/library/list": {"query", "cursor", "limit", "archived", "refresh"}, "lanpower/library/check": {"threadIds", "archived"},
     "lanpower/submission/read": {"threadId", "submissionId"}, "lanpower/history/item/read": {"threadId", "reference", "offset"},
+    "lanpower/history/action": {"threadId", "turnId", "expectedTailTurnId", "action"},
     "plugin/list": {"cwd"}, "app/list": {"cursor", "limit", "threadId"}, "mcpServerStatus/list": {"cursor", "limit"},
     "config/mcpServer/reload": set(), "account/rateLimits/read": set(), "collaborationMode/list": set(),
     "lanpower/session/release": {"threadId"},
@@ -121,6 +123,12 @@ def validate_request(payload: dict) -> str:
     if method == "lanpower/history/item/read" and (not isinstance(params.get("threadId"), str) or not isinstance(params.get("reference"), str) or not 1 <= len(params["reference"]) <= 100 or type(params.get("offset")) is not int or not 0 <= params["offset"] <= 64 * 1024 * 1024): raise ProtocolError()
     if method == "thread/rollback" and (type(params.get("numTurns")) is not int or not 1 <= params["numTurns"] <= 100000):
         raise ProtocolError()
+    if method == "lanpower/history/action":
+        if any(not isinstance(params.get(key), str) or not 1 <= len(params[key]) <= 100 for key in ("threadId", "turnId", "expectedTailTurnId")) or params.get("action") not in ("fork", "rollback"):
+            raise ProtocolError()
+    if method == "lanpower/library/check":
+        ids = params.get("threadIds")
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 256 or any(not isinstance(i, str) or not 1 <= len(i) <= 100 for i in ids): raise ProtocolError()
     if method.startswith("lanpower/files/"):
         if not isinstance(params.get("cwd"), str) or not params["cwd"]: raise ProtocolError()
         if method == "lanpower/files/read" and (not isinstance(params.get("path"), str) or not params["path"]): raise ProtocolError()
@@ -139,7 +147,7 @@ def validate_request(payload: dict) -> str:
         if not isinstance(sections, dict) or set(sections) - {"projects", "chats", "pinned"} or any(type(v) is not bool for v in sections.values()): raise ProtocolError()
         if prefs.get("sort", "updated") not in ("updated", "created") or type(prefs.get("chatsFirst", False)) is not bool: raise ProtocolError()
     if "mode" in params and params["mode"] not in ("default", "plan"): raise ProtocolError()
-    for key in ("includeTurns", "archived"):
+    for key in ("includeTurns", "archived", "refresh"):
         if key in params and type(params[key]) is not bool: raise ProtocolError()
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
     if method == "turn/steer" and "expectedTurnId" not in params: raise ProtocolError()
@@ -163,7 +171,7 @@ def validate_request(payload: dict) -> str:
                 if set(item) != {"type", "name", "path"} or skill_count > 8 or not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 120 or not isinstance(item["path"], str) or not 1 <= len(item["path"]) <= 1000: raise ProtocolError()
             elif item.get("type") == "text":
                 text_count += 1
-                if set(item) != {"type", "text"} or text_count > 1 or not isinstance(item["text"], str) or not 1 <= len(item["text"]) <= 16000: raise ProtocolError()
+                if set(item) != {"type", "text"} or text_count > 1 or not isinstance(item["text"], str) or not 1 <= len(item["text"]) <= 16000 or any(0xD800 <= ord(c) <= 0xDFFF for c in item["text"]): raise ProtocolError()
             elif item.get("type") == "image":
                 image_count += 1
                 url = item.get("url")
@@ -428,7 +436,13 @@ class CodexRelay:
         if not isinstance(payload, dict): raise ProtocolError()
         key = rpc_id(payload)
         if "method" in payload:
-            method = validate_request(payload)
+            try:
+                method = validate_request(payload)
+            except ProtocolError as error:
+                # The ID is already validated and nothing has been forwarded.
+                deliver(peer, {"type": "rpc", "payload": {"id": payload["id"], "error": {
+                    "code": -32602, "message": "invalid_params" if str(error) == "invalid_frame" else str(error), "data": {"notSent": True}}}})
+                return
             if key in peer.requests or key in shared.approvals or len(shared.requests) >= MAX_PENDING: raise ProtocolError("request_busy")
             peer.requests[key] = (method, time.monotonic())
             wire_id = "r-" + uuid.uuid4().hex

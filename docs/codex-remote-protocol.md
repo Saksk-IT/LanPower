@@ -52,6 +52,9 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 | `lanpower/session/release` | `threadId`；只释放本地授权范围内的闲置远程会话 |
 | `lanpower/chat/start` | `model`；仅自动发现与共享控制启用时，在当前用户 Documents/Codex 下新建独立聊天 |
 | `lanpower/library/update` | `revision`, `preferences`；电脑端收纳状态的版本检查与原子更新 |
+| `lanpower/library/list` | `query`（最多 120 字符）, `cursor`, `limit`, `archived`, `refresh`；完整授权元数据查询，独立返回 `pinned` |
+| `lanpower/library/check` | `threadIds`（至多 256 个编号）, `archived`；核验已缓存编号，返回仍属于该视图的 `data` |
+| `lanpower/history/action` | `threadId`, `turnId`, `expectedTailTurnId`, `action`（`fork` / `rollback`）；电脑端稳定轮次定位与操作前检查 |
 | `lanpower/files/list` | `cwd`, `path`, `cursor`；授权目录内分页浏览 |
 | `lanpower/files/read` | `cwd`, `path`；授权目录内文本预览 |
 | `lanpower/files/search` | `cwd`, `query`；授权目录内文件名/路径搜索 |
@@ -84,7 +87,9 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 | `lanpower/submission/read` | `threadId`, `submissionId`（1–100 字符）；只读取已授权会话的本机回执 |
 | `lanpower/history/item/read` | `threadId`, `reference`（1–100 字符）, `offset`（0–64 Mi，UTF-16 字符偏移）；读取本机会话绑定的临时引用 |
 
-请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。input 最多 13 项：至多一项 `{type:"text", text:"..."}`（16000 字符）、4 项 `{type:"image", url:"data:image/...;base64,..."}`（png/jpeg/webp/gif，单项最多 700000 字符、合计最多 850000 字符），以及 8 项 `{type:"skill", name, path}`。共享/原窗口模式发送技能前，Host 验证其与当前授权会话原生目录中的启用项相符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
+请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。input 最多 13 项：至多一项 `{type:"text", text:"..."}`（16000 个 Unicode 标量，包含文件引用前缀，emoji 代理对计为一个，拒绝未配对代理项）、4 项 `{type:"image", url:"data:image/...;base64,..."}`（png/jpeg/webp/gif，单项最多 700000 字符、合计最多 850000 字符），以及 8 项 `{type:"skill", name, path}`。图片 URL 为 ASCII；UTF-8 帧字节限额与 UTF-16 历史分块偏移分别计量。共享/原窗口发送技能前，Host 验证其与当前授权会话原生目录中的启用项相符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
+
+Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联响应 `{id,error:{code:-32602,message:"<固定类别>",data:{notSent:true}}}`，不进入路由与电脑派发。客户端立即显示未发送并保留草稿；帧结构或编号本身无效仍使用外层错误。断线、超时和已派发请求继续沿用回执查询，不推断未执行。
 
 独立模式 Host 为创建/恢复强制 `approvalPolicy:on-request`、`sandbox:workspace-write`；为 turn 强制当前本地允许 cwd 和 `workspaceWrite` 策略，`networkAccess:false`，排除临时目录额外写入。`thread/list` 内部追加来源筛选以包含 app-server 创建的会话。浏览器不能修改这些字段。
 
@@ -102,9 +107,17 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 
 `submissionId` 对四类发送方法为可选兼容字段；1.16 网页生成稳定编号并始终携带。Host 从原生参数中移除它，在本机先记录再派发，相同编号/参数返回原回执而不重新派发；不同会话或参数返回 `submission_mismatch`。成功结果增加 `receipt`；查询返回 `sending|accepted|failed|uncertain|unknown` 及实际可得的任务/队列编号。发送中重启转为 uncertain，只有明确拒绝可标记 failed，传输失联不推断未执行。文件仅保存元数据与哈希，不保存输入正文。
 
-大项替换为 `{type:"lanpowerLargeItem",id,originalType,reference,characters,bytes,wholeTurn}`，`wholeTurn:true` 表示完整轮次。客户端通过 `lanpower/history/item/read` 取得 `{offset,data,nextOffset,characters}`；最多 64 Ki 个 UTF-16 字符，末块 `nextOffset:null`，代理对保持完整。引用绑定 threadId，读取前重新核对授权。Renderer / Host 各保留最多 64 MiB 的内存缓存和 10 分钟空闲有效期；超限、过期、无效偏移分别返回固定错误类别。正文不写 Cloud。
+大项替换为 `{type:"lanpowerLargeItem",id,originalType,reference,characters,bytes,wholeTurn}`，`wholeTurn:true` 表示完整轮次。客户端通过 `lanpower/history/item/read` 取得 `{offset,data,nextOffset,characters}`；最多 64 Ki 个 UTF-16 字符，末块 `nextOffset:null`，代理对保持完整。引用绑定 threadId，读取前重新核对授权。1.18 中 Renderer / Host 将发布引用与正文分离：正文缓存各最多 64 MiB，引用最多 4096 个，10 分钟空闲租约续期。正文被淘汰时引用保留，按原生 turn/item 重新定位并核对内容哈希；过期或变化明确返回错误。网页/小程序每项最多自动尝试三次，随后手动重试。正文不写 Cloud。
 
-网页超限页按 8/4/2/1 缩小；完整导出逐轮还原大项 JSON 并组装 Blob，取消后保留已完成轮次与当前块偏移，失败不重放发送。Cloud 的 1 MiB 帧、16 MiB 结果、请求限速和内存中继边界保持适用。具体测试与人工验收范围见 [P0 记录](codex-remote-p0.md)。
+网页超限页按 8/4/2/1 缩小，在会话内自动恢复完整大项，取消后保留已完成轮次与当前块偏移，失败不重放发送。Cloud 的 1 MiB 帧、16 MiB 结果、请求限速和内存中继边界保持适用。具体测试与人工验收范围见 [P0 记录](codex-remote-p0.md) 和 [首批六项修复](codex-remote-first-six-fixes.md)。
+
+## 1.18.0 定位操作与聊天目录
+
+`lanpower/status` 增加 `targetedHistoryActions`、`historyReferenceLeases` 和 `libraryCatalog`。指定历史轮次的分支/回退需要前一能力为 true 且会话具有 `historyTailTurnId`；缺少时禁用该操作并提示更新。完整聊天库缺少能力时沿用旧列表，并说明搜索只覆盖已加载聊天。
+
+`lanpower/history/action` 在电脑端核对项目授权、目标轮次、原生最新尾轮和活动状态。分支使用内部 `thread/fork.lastTurnId`；回退分页读取全会话元数据后计算移除数量，执行前再读最新尾轮。历史变化返回 `history_changed`，不改变客户端阅读位置。该方法仅在共享/原窗口模式启用，不允许客户端指定原生尾部轮数。
+
+`lanpower/library/list` 返回 `{data,pinned,nextCursor,revision}`。电脑端获取活跃/归档授权元数据，总计最多 100000 条；查询覆盖标题、预览、目录、项目名称及别名。`refresh:true` 强制刷新，其他读取最多复用 5 秒快照。游标绑定快照修订号，变化返回 `library_cursor_changed`。`check` 从完整快照核对旧编号；客户端仅删除可靠确认不在视图中的条目，不用首屏缺席推断删除。归档、恢复、新会话和重命名事件触发更新，定期读取补偿遗漏。组织状态与元数据快照修订号分别维护。
 
 ## 1.15.1 电脑端项目组织和资源
 

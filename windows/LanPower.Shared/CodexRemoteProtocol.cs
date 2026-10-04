@@ -18,7 +18,9 @@ public static class CodexRemoteProtocol
         ["lanpower/files/list"] = ["cwd", "path", "cursor"], ["lanpower/files/read"] = ["cwd", "path"],
         ["lanpower/files/search"] = ["cwd", "query"],
         ["lanpower/library/update"] = ["revision", "preferences"], ["lanpower/image/read"] = ["threadId", "path"],
+        ["lanpower/library/list"] = ["query", "cursor", "limit", "archived", "refresh"], ["lanpower/library/check"] = ["threadIds", "archived"],
         ["lanpower/submission/read"] = ["threadId", "submissionId"], ["lanpower/history/item/read"] = ["threadId", "reference", "offset"],
+        ["lanpower/history/action"] = ["threadId", "turnId", "expectedTailTurnId", "action"],
         ["plugin/list"] = ["cwd"], ["app/list"] = ["cursor", "limit", "threadId"], ["mcpServerStatus/list"] = ["cursor", "limit"],
         ["config/mcpServer/reload"] = [], ["account/rateLimits/read"] = [], ["collaborationMode/list"] = [],
         ["thread/list"] = ["cursor", "limit", "cwd", "archived"],
@@ -106,6 +108,13 @@ public static class CodexRemoteProtocol
             ValidateString(args, "reference", 100, true);
             if (args["offset"] is not JsonValue offset || !offset.TryGetValue<int>(out var position) || position < 0 || position > 64 * 1024 * 1024) throw new InvalidDataException("invalid_params");
         }
+        if (method == "lanpower/history/action")
+        {
+            foreach (var key in new[] { "threadId", "turnId", "expectedTailTurnId" }) ValidateString(args, key, 100, true);
+            if (args["action"]?.GetValue<string>() is not ("fork" or "rollback")) throw new InvalidDataException("invalid_params");
+        }
+        if (method == "lanpower/library/check" && (args["threadIds"] is not JsonArray { Count: > 0 and <= 256 } threadIds ||
+            threadIds.Any(id => id is not JsonValue value || !value.TryGetValue<string>(out var text) || UnicodeLength(text) is < 1 or > 100))) throw new InvalidDataException("invalid_params");
         if (args.ContainsKey("historyLimit") && (args["historyLimit"] is not JsonValue historyLimit || !historyLimit.TryGetValue<int>(out var historyCount) || historyCount is < 1 or > 8)) throw new InvalidDataException("invalid_params");
         if (method.StartsWith("lanpower/files/")) { ValidateString(args,"cwd",1000,true); if (method == "lanpower/files/read") ValidateString(args,"path",1000,true); if (method == "lanpower/files/search") ValidateString(args,"query",256,true); }
         if (args.ContainsKey("mode") && args["mode"]?.GetValue<string>() is not ("default" or "plan")) throw new InvalidDataException("invalid_params");
@@ -119,7 +128,7 @@ public static class CodexRemoteProtocol
         if (method == "thread/rollback" && (args["numTurns"] is not JsonValue turns ||
             !turns.TryGetValue<int>(out var turnCount) || turnCount is < 1 or > 100000))
             throw new InvalidDataException("invalid_params");
-        foreach (var name in new[] { "includeTurns", "archived" })
+        foreach (var name in new[] { "includeTurns", "archived", "refresh" })
             if (args.ContainsKey(name) && (args[name] is not JsonValue value || !value.TryGetValue<bool>(out _)))
                 throw new InvalidDataException("invalid_params");
         if (method is "turn/start" or "turn/steer" or "thread/queue/add" or "thread/queue/update")
@@ -147,8 +156,21 @@ public static class CodexRemoteProtocol
     private static void ValidateString(JsonObject args, string name, int limit, bool required = false)
     {
         if (!args.ContainsKey(name) && !required) return;
-        if (args[name] is not JsonValue value || !value.TryGetValue<string>(out var text) || text.Length < 1 || text.Length > limit)
+        if (args[name] is not JsonValue value || !value.TryGetValue<string>(out var text) || UnicodeLength(text) < 1 || UnicodeLength(text) > limit)
             throw new InvalidDataException("invalid_params");
+    }
+
+    // Protocol string limits count Unicode scalar values, not UTF-16 code units.
+    public static int UnicodeLength(string text)
+    {
+        var count = 0;
+        for (var i = 0; i < text.Length; i++, count++)
+        {
+            if (!char.IsSurrogate(text[i])) continue;
+            if (!char.IsHighSurrogate(text[i]) || i + 1 >= text.Length || !char.IsLowSurrogate(text[++i]))
+                throw new InvalidDataException("invalid_params");
+        }
+        return count;
     }
 
     // StreamReader.ReadLineAsync allocates an unbounded line; impose a bound before parsing.

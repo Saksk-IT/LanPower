@@ -1,5 +1,6 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit(isTurnInProgress ? activeInProgressMode : 'steer')">
+    <p v-if="validationError" role="alert" class="thread-composer-dictation-error">{{ validationError }}</p>
     <p v-if="dictationErrorText" class="thread-composer-dictation-error">
       {{ dictationErrorText }}
     </p>
@@ -394,6 +395,7 @@
 </template>
 
 <script setup lang="ts">
+import { prepareSubmissionInput } from '../../lanpower/input'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   CollaborationModeKind,
@@ -532,7 +534,7 @@ const savedPrompts = ref<ComposerPromptInfo[]>([])
 const fileAttachments = ref<FileAttachment[]>([])
 const folderUploadGroups = ref<FolderUploadGroup[]>([])
 
-const dictationFeedback = ref('')
+const dictationFeedback = ref(''), validationError = ref('')
 const pendingAttachmentCount = ref(0)
 const attachmentBatchStats = ref<AttachmentBatchStats | null>(null)
 const isDragActive = ref(false)
@@ -967,13 +969,16 @@ function buildContextUsageView(
 function onSubmit(mode: 'steer' | 'queue' = 'steer'): void {
   const text = draft.value.trim()
   if (!canSubmit.value) return
-  emit('submit', {
+  const payload = {
     text,
     imageUrls: selectedImages.value.map((image) => image.url),
     fileAttachments: [...fileAttachments.value],
     skills: selectedSkills.value.map((s) => ({ name: s.name, path: s.path })),
     mode,
-  })
+  }
+  try { prepareSubmissionInput(payload); validationError.value = '' }
+  catch (error) { validationError.value = error instanceof Error ? error.message : '输入无效，草稿保留。'; return }
+  emit('submit', payload)
   clearPersistedDraftForThread(props.activeThreadId)
   clearDraftState()
   isComposerExpanded.value = false

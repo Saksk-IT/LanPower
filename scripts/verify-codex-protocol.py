@@ -23,6 +23,8 @@ def verify(executable: str):
             "ThreadResumeParams": {"threadId", "approvalPolicy", "sandbox"},
             "ThreadListParams": {"cwd", "limit", "cursor", "sourceKinds"},
             "ThreadReadParams": {"threadId", "includeTurns"},
+            "ThreadForkParams": {"threadId", "lastTurnId", "excludeTurns"},
+            "ThreadTurnsListParams": {"threadId", "cursor", "limit", "itemsView", "sortDirection"},
             "TurnStartParams": {"threadId", "input", "approvalPolicy", "sandboxPolicy"},
             "TurnInterruptParams": {"threadId", "turnId"},
             "TurnSteerParams": {"threadId", "expectedTurnId", "input"},
@@ -56,7 +58,7 @@ def verify(executable: str):
                     if "error" in value: raise RuntimeError("runtime_rpc_failed")
                     return value["result"]
         try:
-            call("initialize", {"clientInfo": {"name": "lanpower_verify", "version": "1.17.0"}, "capabilities": {"experimentalApi": True}}, "init")
+            call("initialize", {"clientInfo": {"name": "lanpower_verify", "version": "1.18.0"}, "capabilities": {"experimentalApi": True}}, "init")
             process.stdin.write('{"method":"initialized","params":{}}\n'); process.stdin.flush()
             call("thread/list", {"limit": 5}, "list")
             created = call("thread/start", {"cwd": str(root), "approvalPolicy": "on-request", "sandbox": "workspace-write"}, "start")

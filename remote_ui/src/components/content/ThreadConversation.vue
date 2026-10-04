@@ -35,10 +35,10 @@
         <div v-else-if="message.activitySummary" class="message-row" data-role="system">
           <ThreadActivitySummary :summary="message.activitySummary" @toggle="togglePresentation('activity', message.activitySummary!.id, $event)" />
         </div>
-        <details v-else-if="message.messageType === 'toolResult'" class="message-row lp-tool-result" data-role="system">
-          <summary>{{ message.text }} · 查看详情</summary>
-          <pre>{{ message.rawPayload }}</pre>
-        </details>
+        <div v-else-if="message.messageType === 'toolResult'" class="message-row lp-tool-result" data-role="system">
+          <ThreadToolResult v-if="message.toolResult" :tool="message.toolResult" :payload="message.rawPayload" />
+          <details v-else><summary>{{ message.text }} · 查看详情</summary><pre>{{ message.rawPayload }}</pre></details>
+        </div>
         <div v-else-if="isCommandMessage(message)" class="message-row" data-role="system">
           <ThreadCommand :execution="message.commandExecution!" />
         </div>
@@ -611,6 +611,7 @@
           <IconTablerX class="icon-svg" />
         </button>
         <img class="image-modal-image" :src="modalImageUrl" alt="Expanded message image" />
+        <a class="lp-original-image-download" :href="modalImageUrl" :download="imageDownloadName(modalImageUrl)">下载原图</a>
       </div>
     </div>
 
@@ -757,6 +758,8 @@
 </template>
 
 <script setup lang="ts">
+import ThreadToolResult from './ThreadToolResult.vue'
+import { retainRemoteImage, imageDownloadName, observeRemoteImages } from '../../lanpower/images'
 import RemoteMessageImage from './RemoteMessageImage.vue'
 import ThreadCommand from './ThreadCommand.vue'
 import ThreadActivitySummary from './ThreadActivitySummary.vue'
@@ -920,7 +923,10 @@ const localizedLiveReasoningText = computed(() => (
 const conversationListRef = ref<HTMLElement | null>(null)
 const bottomAnchorRef = ref<HTMLElement | null>(null)
 const modalImageUrl = ref('')
+let releaseModalImage: (() => void) | undefined
+watch(modalImageUrl,value => { if (!value) { releaseModalImage?.(); releaseModalImage = undefined } },{flush:'sync'})
 const imageModalRef = ref<HTMLElement | null>(null)
+const stopObservingModalImages = observeRemoteImages(key => { if (!key) closeImageModal() })
 let imageReturnFocus: HTMLElement | null = null
 const copiedResponseAnchorId = ref('')
 const fileChangeActionState = ref<Record<string, 'idle' | 'undoing' | 'redoing' | 'undone' | 'redone'>>({})
@@ -4044,12 +4050,14 @@ function onMarkdownImageError(messageId: string, blockIndex: number): void {
 }
 
 function openImageModal(imageUrl: string): void {
+  releaseModalImage?.(); releaseModalImage = retainRemoteImage(imageUrl)
   imageReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   modalImageUrl.value = imageUrl
   void nextTick(() => imageModalRef.value?.focus())
 }
 
 function closeImageModal(): void {
+  releaseModalImage?.(); releaseModalImage = undefined
   modalImageUrl.value = ''
   imageReturnFocus?.focus(); imageReturnFocus = null
 }
@@ -4061,6 +4069,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopObservingModalImages()
+  releaseModalImage?.()
   clearRenderCaches()
   if (conversationScrollFrame) {
     cancelAnimationFrame(conversationScrollFrame)
@@ -4630,14 +4640,18 @@ onBeforeUnmount(() => {
 
 .image-modal-content {
   @apply relative max-w-[min(92vw,1100px)] max-h-[92vh];
+  min-width: min(280px, 92vw);
 }
+.lp-original-image-download { display: block; padding: 10px; text-align: center; color: #fff; background: #222; border-radius: 6px; }
 
 .image-modal-close {
   @apply absolute top-2 right-2 z-10 w-10 h-10 rounded-full bg-white/90 text-slate-900 border border-slate-300 flex items-center justify-center;
 }
 
 .image-modal-image {
-  @apply block max-w-full max-h-[90vh] rounded-2xl shadow-2xl bg-white;
+  @apply block max-w-full rounded-2xl shadow-2xl bg-white;
+  max-height: calc(92vh - 52px);
+  margin-inline: auto;
 }
 
 .icon-svg {
