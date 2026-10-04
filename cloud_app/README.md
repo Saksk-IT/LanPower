@@ -1,5 +1,7 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
+当前 Cloud / Web `1.20.1`：Codex 网页侧边栏改为中性浅灰白，悬停、选中、文字和分隔线配套采用中性灰。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。
+
 网页 Codex 输入框旁新增权限切换：请求批准、帮我批准、完全访问权限，读取原窗口实际设置并通过原生接口更改。Windows / Cloud / Web `1.20.0`，小程序版本 `3.1.2`；入口、任务生效范围和验证见 [权限切换](../docs/codex-permissions.md)。
 
 本轮 Cloud 权限中继、可靠性、多页面及版本兼容共 58 项检查通过；本机 Docker 已更新到 `1.20.0-dev.1`，原身份、授权、配置与数据卷保留。正式云端仍等待人工测试后部署。
@@ -10,7 +12,7 @@
 
 工作过程图片已增加折叠标题：默认收起，展开显示 140×140 等比例缩略图，点击可查看大图。Windows / Cloud / Web `1.20.0`，小程序 `3.1.2`；行为和验证见 [图片折叠预览](../docs/codex-image-preview.md)。
 
-当前源码版本：Cloud `1.20.0`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。Cloud 1.19.0 的完整 237 项检查已记录，1.19.1 本轮版本兼容 9 项检查通过；额度、上下文和能力状态说明见 [原生状态说明](../docs/codex-native-status.md)。关联未发送回执、稳定历史操作和完整聊天目录见 [首批六项修复](../docs/codex-remote-first-six-fixes.md)。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.20.1`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。Cloud 1.19.0 的完整 237 项检查已记录，1.19.1 本轮版本兼容 9 项检查通过；额度、上下文和能力状态说明见 [原生状态说明](../docs/codex-native-status.md)。关联未发送回执、稳定历史操作和完整聊天目录见 [首批六项修复](../docs/codex-remote-first-six-fixes.md)。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
 微信小程序 `3.1.2` 已接入完整远程控制接口，使用原生界面与独立状态控制器；网页和小程序共用原生额度、上下文及能力状态解析，Cloud 只做有界中继，详见 [小程序重构说明](../docs/codex-remote-mini-program.md) 和 [原生状态说明](../docs/codex-native-status.md)。本轮只更新本机 Docker 与 Windows，保留设备身份、配对和开发授权。
 

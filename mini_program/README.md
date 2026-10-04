@@ -1,5 +1,7 @@
 # LanPower 微信小程序
 
+当前小程序 `3.1.3`，配套 Windows / Cloud / Web `1.20.1`，同步记录网页 Codex 侧边栏的中性浅灰白更新。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。
+
 `3.1.2` 配合 Windows / Cloud `1.20.0` 修复查看原窗口会话时的更新时间变化；手机复用同一 Host 读取链路，无需重新配对。说明见 [会话更新时间](../docs/codex-session-recency.md)。
 
 运行中的“已处理时间”移至本轮工作内容开头；完成后的查看图片记录与过程插图收进整轮“用时…”入口，展开可查看完整过程和图片预览。Windows / Cloud / Web `1.20.0`，小程序 `3.1.2`；说明见 [整轮工作过程](../docs/codex-conversation-ui.md)。
@@ -14,7 +16,7 @@ Codex Remote 已解除单控制页面限制：多个网页和小程序可同时�
 
 开发版与正式版独立保存授权和连接配置。开发版可在「连接 → 开发版 Cloud 地址」修改测试地址，正式版通过 HTTPS 授权二维码连接。环境切换和本机测试步骤见 [开发版与正式版](../docs/mini-program-environments.md)。
 
-当前源码版本：`3.1.2`，Windows / Cloud / Web `1.20.0`。Codex 控制已完全重构为原生小程序工作台，使用 WXML、WXSS、原生输入/文件/图片控件与 SocketTask。项目与独立聊天、会话管理、完整历史、模型/思考强度/计划模式、内存草稿与发送回执、排队与引导、审批、目标电脑文件和能力目录均与网页使用相同接口；额度、上下文和能力缺失时显示原生原因，不推测“可用”。功能对照、架构和状态规则见 [Codex 小程序 3.0](../docs/codex-remote-mini-program.md) 与 [原生状态说明](../docs/codex-native-status.md)。
+当前源码版本：`3.1.3`，Windows / Cloud / Web `1.20.1`。Codex 控制已完全重构为原生小程序工作台，使用 WXML、WXSS、原生输入/文件/图片控件与 SocketTask。项目与独立聊天、会话管理、完整历史、模型/思考强度/计划模式、内存草稿与发送回执、排队与引导、审批、目标电脑文件和能力目录均与网页使用相同接口；额度、上下文和能力缺失时显示原生原因，不推测“可用”。功能对照、架构和状态规则见 [Codex 小程序 3.0](../docs/codex-remote-mini-program.md) 与 [原生状态说明](../docs/codex-native-status.md)。
 
 导入完整 `mini_program` 目录或新生成的 `LanPower-mini-program-3.1.2.zip`，配置自己的 AppID 后重新编译与预览。包内仍使用公开占位符，协议为 `2`，既有 LAN/Cloud/唤醒与长期授权保持兼容。公开下载入口仍为 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)，正式云服务器需另行要求部署。
 

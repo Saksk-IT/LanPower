@@ -1,5 +1,7 @@
 # LanPower
 
+网页 Codex 侧边栏采用接近原生应用的中性浅灰白：底色 `#F7F7F7`、悬停和选中底色 `#EAEAEA`，文字与分隔线统一为中性灰。Windows / Cloud / Web `1.20.1`，小程序 `3.1.3`；本机更新和验证见 [本机开发环境](docs/local-development.md)。
+
 网页 Codex 输入框旁新增权限切换：请求批准、帮我批准、完全访问权限，读取原窗口实际设置并通过原生接口更改。Windows / Cloud / Web `1.20.0`，小程序版本 `3.1.2`；入口、任务生效范围和验证见 [权限切换](docs/codex-permissions.md)。
 
 Codex Remote `1.20.0` 修复网页点击会话后更新时间变为「刚刚」：原窗口接入改为只读查看历史、设置和队列，发送时再恢复会话，最近聊天继续按原生时间排序。Windows / Cloud / Web 为 `1.20.0`，小程序为 `3.1.2`；行为与验证见 [会话更新时间](docs/codex-session-recency.md)。
@@ -18,7 +20,7 @@ Codex Remote 已解除单控制页面限制：多个网页和小程序可同时�
 
 微信小程序开发版与正式版独立保存授权和连接配置；开发版可在「连接 → 开发版 Cloud 地址」修改本机测试地址。使用步骤见 [开发版与正式版](docs/mini-program-environments.md)。
 
-当前源码版本：**v1.20.0**。微信小程序 Codex 控制已重构为原生工作台：项目与独立聊天、完整历史、模型与思考强度、内存草稿与发送回执、原生队列和审批、文件图片与能力目录均接入网页使用的电脑端接口。功能对照及使用说明见 [小程序 3.0](docs/codex-remote-mini-program.md)。Windows / Cloud / Web 为 `1.20.0`，小程序为 `3.1.2`；公开版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。
+当前源码版本：**v1.20.1**。微信小程序 Codex 控制已重构为原生工作台：项目与独立聊天、完整历史、模型与思考强度、内存草稿与发送回执、原生队列和审批、文件图片与能力目录均接入网页使用的电脑端接口。功能对照及使用说明见 [小程序 3.0](docs/codex-remote-mini-program.md)。Windows / Cloud / Web 为 `1.20.1`，小程序为 `3.1.3`；公开版本仍为 **[v1.6.1](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)**。
 
 Windows 主动通过 WSS 连接，Cloud 不保存任务正文、代码、Diff 或 OpenAI 凭据。默认自动识别项目，可关闭自动识别并手动授权目录。原窗口与网页共用原服务，退出网页或关闭远程授权不结束桌面任务。接入只使用当前用户的本机调试接口，未开启时给出手动启动说明，不自动结束原窗口。本机 Docker 和 Windows 已更新，原配置、配对与设备身份保留；未更新远程服务器或推送。[使用说明](docs/codex-remote.md) · [原窗口整合](docs/codex-original-window.md) · [Relay 协议](docs/codex-remote-protocol.md)。
 
@@ -28,9 +30,9 @@ Windows 主动通过 WSS 连接，Cloud 不保存任务正文、代码、Diff �
 
 | 组件 | 当前源码版本 |
 |---|---|
-| Windows 应用 / 安装器 | `1.20.0` |
-| Cloud 控制台 | `1.20.0` |
-| 微信小程序 | `3.1.2` |
+| Windows 应用 / 安装器 | `1.20.1` |
+| Cloud 控制台 | `1.20.1` |
+| 微信小程序 | `3.1.3` |
 | Wake Gateway | `2.1.2` |
 
 2026-10-03 本轮小程序第一版：原生 Codex 页面与独立手机开发权限完成，已有手机可直接修改权限，无需重新扫码。Cloud 193 项、Windows 71 项、小程序交互及微信编译检查通过；320/390/430px 的浅色、深色、审批和键盘布局通过。正常 HTTPS 的实际手机 Bearer WSS 入口、修改权限和撤销已验证；安装 Host 就绪，另一控制页面仍在使用，未抢占它执行真实任务。本机 Docker 和 Windows 已更新，原配置、配对与身份保留；真实微信、5G 和远程服务器部署待后续验收。

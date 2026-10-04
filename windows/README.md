@@ -1,5 +1,7 @@
 # Windows 应用
 
+当前 Windows `1.20.1`，配套 Cloud / Web `1.20.1` 和小程序 `3.1.3`。网页 Codex 侧边栏采用原生风格的中性浅灰白；本机就地更新与验证见 [本机开发环境](../docs/local-development.md)。
+
 网页 Codex 输入框旁新增权限切换：请求批准、帮我批准、完全访问权限，读取原窗口实际设置并通过原生接口更改。Windows / Cloud / Web `1.20.0`，小程序版本 `3.1.2`；入口、任务生效范围和验证见 [权限切换](../docs/codex-permissions.md)。
 
 `1.20.0` 修复原 Codex 窗口接入时只查看会话就刷新更新时间的问题，历史和队列读取不再隐式恢复会话；原生模型、思考强度与计划模式通过只读缓存和记录保留。说明见 [会话更新时间](../docs/codex-session-recency.md)。
@@ -14,7 +16,7 @@
 
 Codex Remote 已解除单控制页面限制：多个网页和小程序可同时连接同一电脑，任务与审批状态同步，关闭一个页面不影响其他页面。版本与验证见 [多页面控制](../docs/codex-multiple-pages.md)。
 
-当前源码版本：Windows `1.20.0`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。Host 修复大图片导致整轮隐藏，稳定复用内容引用；网页自动恢复正文、图片及完整工具输出，详见 [完整会话显示](../docs/codex-history-content.md)。既有发送回执、状态版本及原生控制恢复继续保留，见 [P0 验收记录](../docs/codex-remote-p0.md)。小程序 `3.1.2` 通过 Cloud `1.20.0` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用；会话展示见 [说明](../docs/codex-conversation-ui.md)，本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+当前源码版本：Windows `1.20.1`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。Host 修复大图片导致整轮隐藏，稳定复用内容引用；网页自动恢复正文、图片及完整工具输出，详见 [完整会话显示](../docs/codex-history-content.md)。既有发送回执、状态版本及原生控制恢复继续保留，见 [P0 验收记录](../docs/codex-remote-p0.md)。小程序 `3.1.3` 通过 Cloud `1.20.1` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用；会话展示见 [说明](../docs/codex-conversation-ui.md)，本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
 微信小程序 `3.1.2` 已接入完整远程控制接口，使用原生界面与独立状态控制器；详见 [小程序重构说明](../docs/codex-remote-mini-program.md)。本轮只更新本机 Docker 与 Windows，保留设备身份、配对和开发授权。
 
