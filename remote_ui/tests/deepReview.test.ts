@@ -21,7 +21,7 @@ describe('deep review input and public tool contracts',() => {
   })
   it('includes file references and rejects combined images and too many skills before dispatch',() => {
     expect(() => prepareSubmissionInput({...payload('x'.repeat(15990)),fileAttachments:[{label:'资料',fsPath:'D:/Work/data.txt'}]})).toThrow('未发送')
-    expect(() => prepareSubmissionInput({...payload(''),imageUrls:Array(4).fill('data:image/png;base64,'+'A'.repeat(220000))})).toThrow('850000')
+    expect(() => prepareSubmissionInput({...payload(''),imageUrls:Array(4).fill('data:image/png;base64,'+'A'.repeat(220000))})).toThrow('可发送大小')
     expect(() => prepareSubmissionInput({...payload(''),skills:Array(9).fill({name:'Skill',path:'D:/Skill'})})).toThrow('8 个技能')
     expect(() => prepareSubmissionInput(payload('\ud800'))).toThrow('无效字符')
   })

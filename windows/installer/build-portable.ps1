@@ -27,7 +27,7 @@ $components = [ordered]@{
     'Desktop/vcruntime140_cor3.dll' = 'desktop/vcruntime140_cor3.dll'
     'Desktop/wpfgfx_cor3.dll' = 'desktop/wpfgfx_cor3.dll'
     'CodexHost/LanPower.CodexHost.exe' = 'codexhost/LanPower.CodexHost.exe'
-    'CodexServer/1.20.1/LanPower.CodexServer.exe' = 'codexserver/LanPower.CodexServer.exe'
+    'CodexServer/1.20.2/LanPower.CodexServer.exe' = 'codexserver/LanPower.CodexServer.exe'
 }
 foreach ($entry in $components.GetEnumerator()) {
     $source = Join-Path $outputDir $entry.Value

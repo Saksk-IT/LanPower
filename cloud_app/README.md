@@ -1,5 +1,7 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
+Cloud / Web `1.20.2` 的网页输入框在发送和编辑时自动处理图片总量，失败保留草稿；沿用有界中继协议，说明见 [图片发送](../docs/codex-image-submission.md)。
+
 当前 Cloud / Web `1.20.1`：Codex 网页侧边栏改为中性浅灰白，悬停、选中、文字和分隔线配套采用中性灰。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。
 
 网页 Codex 输入框旁新增权限切换：请求批准、帮我批准、完全访问权限，读取原窗口实际设置并通过原生接口更改。Windows / Cloud / Web `1.20.0`，小程序版本 `3.1.2`；入口、任务生效范围和验证见 [权限切换](../docs/codex-permissions.md)。

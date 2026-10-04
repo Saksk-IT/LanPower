@@ -1,6 +1,7 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit(isTurnInProgress ? activeInProgressMode : 'steer')">
     <p v-if="validationError" role="alert" class="thread-composer-dictation-error">{{ validationError }}</p>
+    <p v-if="isPreparingSubmission" role="status" class="thread-composer-dictation-error">正在处理图片…</p>
     <p v-if="dictationErrorText" class="thread-composer-dictation-error">
       {{ dictationErrorText }}
     </p>
@@ -78,6 +79,7 @@
             class="thread-composer-skill-chip-remove"
             type="button"
             :aria-label="`Remove skill ${skill.displayName || skill.name}`"
+            :disabled="isInteractionDisabled"
             @click="removeSkill(skill.path)"
           >×</button>
         </span>
@@ -398,6 +400,7 @@
 
 <script setup lang="ts">
 import { prepareSubmissionInput } from '../../lanpower/input'
+import { prepareSubmissionImages, MAX_SUBMISSION_IMAGES } from '../../lanpower/submissionImages'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   CollaborationModeKind,
@@ -542,6 +545,7 @@ const fileAttachments = ref<FileAttachment[]>([])
 const folderUploadGroups = ref<FolderUploadGroup[]>([])
 
 const dictationFeedback = ref(''), validationError = ref('')
+const isPreparingSubmission = ref(false)
 const pendingAttachmentCount = ref(0)
 const attachmentBatchStats = ref<AttachmentBatchStats | null>(null)
 const isDragActive = ref(false)
@@ -655,6 +659,7 @@ const skillDropdownOptions = computed(() =>
 )
 
 const canSubmit = computed(() => {
+  if (isPreparingSubmission.value) return false
   if (props.disabled) return false
   if (props.isUpdatingSpeedMode) return false
   if (!props.activeThreadId) return false
@@ -676,8 +681,8 @@ const standaloneFileAttachments = computed(() => {
   }
   return fileAttachments.value.filter((att) => !grouped.has(att.fsPath))
 })
-const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
-const isComposerConfigDisabled = computed(() => props.disabled || !props.activeThreadId)
+const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId || isPreparingSubmission.value)
+const isComposerConfigDisabled = computed(() => isInteractionDisabled.value)
 const isFastModeSupported = computed(() => /^gpt-5\.(?:4|5)(?:$|-)/.test(props.selectedModel.trim()))
 const showFastModeModelIcon = computed(() =>
   props.selectedSpeedMode === 'fast' && isFastModeSupported.value,
@@ -963,7 +968,7 @@ function buildContextUsageView(
   }
 }
 
-function onSubmit(mode: 'steer' | 'queue' = 'steer'): void {
+async function onSubmit(mode: 'steer' | 'queue' = 'steer'): Promise<void> {
   const text = draft.value.trim()
   if (!canSubmit.value) return
   const payload = {
@@ -973,8 +978,22 @@ function onSubmit(mode: 'steer' | 'queue' = 'steer'): void {
     skills: selectedSkills.value.map((s) => ({ name: s.name, path: s.path })),
     mode,
   }
-  try { prepareSubmissionInput(payload); validationError.value = '' }
-  catch (error) { validationError.value = error instanceof Error ? error.message : '输入无效，草稿保留。'; return }
+  const generation = draftGeneration.value, threadId = props.activeThreadId
+  isPreparingSubmission.value = true
+  validationError.value = ''
+  try {
+    // Validate text and skill limits before doing any image work.
+    prepareSubmissionInput({...payload, imageUrls: payload.imageUrls.length ? ['data:image/png;base64,AA=='] : []})
+    payload.imageUrls = await prepareSubmissionImages(payload.imageUrls)
+    if (generation !== draftGeneration.value || threadId !== props.activeThreadId || props.disabled) return
+    prepareSubmissionInput(payload)
+  } catch (error) {
+    if (generation === draftGeneration.value && threadId === props.activeThreadId) {
+      const message = error instanceof Error ? error.message : '图片处理失败。'
+      validationError.value = message.includes('未发送') ? message : `${message}未发送，草稿保留。`
+    }
+    return
+  } finally { isPreparingSubmission.value = false }
   emit('submit', payload)
   clearPersistedDraftForThread(props.activeThreadId)
   clearDraftState()
@@ -1009,6 +1028,7 @@ function replaceDraftState(payload: ComposerDraftPayload): void {
   folderUploadGroups.value = []
   dictationFeedback.value = ''
   attachmentBatchStats.value = null
+  validationError.value = ''
   pendingAttachmentCount.value = 0
   isAttachMenuOpen.value = false
   closeFileMention()
@@ -1349,6 +1369,12 @@ function ensureFileName(file: File): File {
 }
 
 async function attachImageFile(file: File, sessionToken: number): Promise<void> {
+  if (props.remoteMode && selectedImages.value.length + pendingAttachmentCount.value >= MAX_SUBMISSION_IMAGES) {
+    if (sessionToken !== attachmentSessionToken) return
+    recordAttachmentBatchResult('failure')
+    validationError.value = `一次最多添加 ${MAX_SUBMISSION_IMAGES} 张图片，请移除多余图片。`
+    return
+  }
   if (!beginAttachmentWork(sessionToken)) return
   try {
     const normalizedFile = ensureFileName(file)
@@ -1367,9 +1393,10 @@ async function attachImageFile(file: File, sessionToken: number): Promise<void> 
       },
     ]
     recordAttachmentBatchResult('success')
-  } catch {
+  } catch (error) {
     if (sessionToken === attachmentSessionToken) {
       recordAttachmentBatchResult('failure')
+      validationError.value = error instanceof Error ? error.message : '图片添加失败，请重新选择。'
     }
   } finally {
     finishAttachmentWork(sessionToken)
@@ -1840,6 +1867,7 @@ defineExpose<ThreadComposerExposed>({
 })
 
 onBeforeUnmount(() => {
+  draftGeneration.value += 1
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('drop', onWindowDragCleanup)
   window.removeEventListener('dragend', onWindowDragCleanup)

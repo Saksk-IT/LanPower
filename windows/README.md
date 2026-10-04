@@ -1,5 +1,7 @@
 # Windows 应用
 
+Windows `1.20.2` 配合网页图片发送修复更新，Service / Host 沿用原图片和帧校验，保留现有配置与原窗口；说明见 [图片发送](../docs/codex-image-submission.md)。
+
 当前 Windows `1.20.1`，配套 Cloud / Web `1.20.1` 和小程序 `3.1.3`。网页 Codex 侧边栏采用原生风格的中性浅灰白；本机就地更新与验证见 [本机开发环境](../docs/local-development.md)。
 
 网页 Codex 输入框旁新增权限切换：请求批准、帮我批准、完全访问权限，读取原窗口实际设置并通过原生接口更改。Windows / Cloud / Web `1.20.0`，小程序版本 `3.1.2`；入口、任务生效范围和验证见 [权限切换](../docs/codex-permissions.md)。

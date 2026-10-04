@@ -1,8 +1,8 @@
 {
-  "../../../../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js": {
+  "../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js": {
     "file": "assets/common-BeuopZEI.js",
     "name": "common",
-    "src": "../../../../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js",
+    "src": "../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js",
     "isDynamicEntry": true
   },
   "index.html": {
@@ -11,7 +11,7 @@
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
-      "../../../../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js"
+      "../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js"
     ],
     "css": [
       "codex.css"

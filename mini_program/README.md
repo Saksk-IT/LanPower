@@ -1,5 +1,7 @@
 # LanPower 微信小程序
 
+小程序随产品更新至 `3.1.4`，本轮修复网页整组图片发送；小程序图片输入行为沿用现有实现，说明见 [图片发送](../docs/codex-image-submission.md)。
+
 当前小程序 `3.1.3`，配套 Windows / Cloud / Web `1.20.1`，同步记录网页 Codex 侧边栏的中性浅灰白更新。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。
 
 `3.1.2` 配合 Windows / Cloud `1.20.0` 修复查看原窗口会话时的更新时间变化；手机复用同一 Host 读取链路，无需重新配对。说明见 [会话更新时间](../docs/codex-session-recency.md)。
