@@ -1,5 +1,8 @@
 # LanPower 微信小程序
 
+小程序 `3.2.2` 按 ChatGPT iOS Codex 页面重做首页：最近与项目列表、电脑选择、搜索、弹出排序/管理菜单及原生剩余用量均接入已有功能，支持浅色与深色。入口和验证见 [首页说明](../docs/codex-mini-home.md)。
+
+
 小程序 `3.2.0` 支持累计添加任意数量原图、长文字和多技能，并可上传普通文件到电脑；大请求分块发送，图片不压缩。详见 [完整输入](../docs/codex-image-submission.md)。
 
 当前小程序 `3.1.3`，配套 Windows / Cloud / Web `1.20.1`，同步记录网页 Codex 侧边栏的中性浅灰白更新。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。

@@ -1,5 +1,8 @@
 # Codex Remote 微信小程序 3.0
 
+小程序 `3.2.2` 按 ChatGPT iOS Codex 页面重做首页：最近与项目列表、电脑选择、搜索、弹出排序/管理菜单及原生剩余用量均接入已有功能，支持浅色与深色。入口和验证见 [首页说明](codex-mini-home.md)。
+
+
 版本：小程序 **3.0.1**，Windows / Cloud / Web **1.18.0**，2026-10-04。
 
 小程序的 Codex 控制已从原来的简化页面重构为原生工作台。页面使用 WXML、WXSS、rich-text、scroll-view、textarea、picker 与 SocketTask；项目、聊天、文件、能力目录和设置按手机操作重新组织。所有控制沿用网页端的目标电脑接口，历史、队列与审批来自同一个原 Codex 窗口。

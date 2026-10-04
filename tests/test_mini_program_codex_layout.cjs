@@ -37,7 +37,8 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         };
         window.Page = definition => {window.crPage = {...definition, data: structuredClone(definition.data)};};
         const root = 'C:\\Fixture\\LanPower';
-        window.wx = {getStorageSync: () => '', setStorageSync: () => {}, getAppBaseInfo: () => ({theme: 'light'}), setNavigationBarColor: () => {},
+        const storage = new Map();
+        window.wx = {getStorageSync: key => storage.get(key) || '', setStorageSync: (key, value) => storage.set(key, value), getAppBaseInfo: () => ({theme: 'light'}), setNavigationBarColor: () => {},
           redirectTo: () => {}, setClipboardData: options => options.success()};
         load('pages/codex/codex.js'); const model = window.crPage;
         function makeNode(node) {
@@ -56,6 +57,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
             const result = model[attrs.bindtap || attrs.catchtap]({currentTarget: element, detail: {}});
             if (result?.catch) result.catch(error => model.controller.notify(error.message));
           });
+          if (attrs.bindlongpress) element.addEventListener('contextmenu', event => {event.preventDefault(); void model[attrs.bindlongpress]({currentTarget: element, detail: {}});});
           if (['wx-input', 'wx-textarea'].includes(node.tag)) {
             const input = document.createElement(node.tag === 'wx-input' ? 'input' : 'textarea');
             input.value = attrs.value || ''; input.placeholder = attrs.placeholder || ''; input.disabled = !!attrs.disabled;
@@ -85,7 +87,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
           {id:'chat',name:'规划下一个想法',cwd:'',isChat:true,updatedAt:Date.now()/1000-1000}];
         c.models = [{id:'gpt-5.4',displayName:'GPT-5.4',supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}],isDefault:true}]; c.library.preferences.pinned=['b'];
         model.setData({authorized: true, ready: true, state: 'runtime_ready', devices: [{device_id: 'pc-a', name: '开发电脑'}],
-          deviceId: 'pc-a', deviceName: '开发电脑'}); model.paint();
+          deviceId: 'pc-a', deviceName: '开发电脑'}); model.loadHomePreferences(); model.paint();
         window.crShowChat = () => {
           c.threadId='a'; c.current={...c.threads[0],model:'gpt-5.4',turns:[{id:'first',status:'completed',durationMs:38000,items:[
             {id:'user',type:'userMessage',content:[{type:'text',text:'把 Codex 页面做得更简洁一些'}]},
@@ -114,6 +116,34 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       }
       await page.screenshot({path: path.join(output, 'white-list-' + width + '.png')}); await geometry();
       assert.ok(await page.locator('.cr-project-group').count() >= 2); assert.ok((await page.locator('.cr-thread').allTextContents()).some(text=>text.includes('规划下一个想法')));
+      assert.deepEqual(await page.locator('.cr-recent-section .cr-thread-name').allTextContents(), ['优化小程序布局','规划下一个想法','检查连接状态','整理项目文档'], '最近包含项目内和独立会话，并按原生更新时间倒序');
+      await page.evaluate(() => {crPage.controller.nativeUsage.state={loading:false,reason:'',snapshots:[{limitId:'codex',primary:{windowDurationMins:300,usedPercent:49},secondary:{windowDurationMins:10080,usedPercent:65}}]};crPage.paint();});
+      await page.locator('.cr-home-title').click(); await geometry();
+      assert.equal(await page.locator('.cr-home-menu').count(),1);assert.ok((await page.locator('.cr-home-quota').textContent()).includes('5 小时 51%'));assert.ok((await page.locator('.cr-home-quota').textContent()).includes('每周 35%'));
+      await page.screenshot({path:path.join(output,'home-menu-'+width+'.png')});
+      await page.locator('.cr-home-menu-row[data-order="updated"]').click(); assert.equal(await page.locator('.cr-project-group').count(),0);assert.equal(await page.locator('.cr-home-menu').count(),0);assert.equal(await page.locator('.cr-recent-section .cr-thread').count(),4);
+      await page.evaluate(()=>{crPage.controller.approvals.set('pending-home',{id:'pending-home',method:'item/fileChange/requestApproval',params:{threadId:'c'}});crPage.controller.activeTurns.set('a','running-home');crPage.paint();});
+      await page.locator('.cr-home-title').click();await page.locator('.cr-home-menu-row[data-order="priority"]').click();assert.deepEqual(await page.locator('.cr-recent-section .cr-thread-name').allTextContents(),['整理项目文档','优化小程序布局','检查连接状态','规划下一个想法']);
+      await page.evaluate(()=>{crPage.controller.approvals.delete('pending-home');crPage.controller.activeTurns.delete('a');});
+      await page.locator('.cr-home-title').click();await page.locator('.cr-home-menu-row[data-order="project"]').click();
+      await page.locator('.cr-home-title').click();await page.locator('.cr-home-menu-row').filter({hasText:'优先显示'}).click();
+      assert.ok(await page.evaluate(()=>document.querySelector('.cr-project-group').compareDocumentPosition(document.querySelector('.cr-recent-section'))&Node.DOCUMENT_POSITION_FOLLOWING));
+      await page.evaluate(()=>{crPage.loadHomePreferences();crPage.paint();});assert.equal(await page.evaluate(()=>crPage.data.recentFirst),false,'首页显示方式在当前电脑恢复');
+      await page.evaluate(()=>crPage.setRecentFirst({detail:{value:true}}));
+      await page.locator('.cr-home-filter[data-filter="chats"]').click();assert.equal(await page.locator('.cr-project-group').count(),0);assert.deepEqual(await page.locator('.cr-thread-name').allTextContents(),['规划下一个想法']);
+      await page.locator('.cr-home-filter[data-filter="all"]').click();await page.locator('.cr-home-circle[aria-label="搜索会话和项目"]').click();
+      await page.locator('.cr-home-search input').fill('规划');assert.deepEqual(await page.locator('.cr-recent-section .cr-thread-name').allTextContents(),['规划下一个想法']);
+      await page.locator('.cr-home-search wx-button').click();assert.equal(await page.evaluate(()=>crPage.data.search),'');await page.evaluate(()=>clearTimeout(crPage.librarySearchTimer));
+      await page.locator('.cr-project-toggle').first().dispatchEvent('contextmenu');assert.equal(await page.locator('.cr-sheet-heading').textContent(),'LanPower×');await page.evaluate(()=>crPage.closeSheet());
+      await page.locator('.cr-project-header .cr-section-compose').first().evaluate(element=>{if(element.dataset.path!=='C:\\Fixture\\LanPower')throw new Error('项目新建入口路径不匹配');});
+      await page.locator('.cr-home-prompt').click();assert.equal(await page.evaluate(()=>crPage.data.sheet),'new');await page.evaluate(()=>crPage.closeSheet());
+      await page.evaluate(()=>{const now=Date.now()/1000;crPage.controller.threads.push(...Array.from({length:35},(_,i)=>({id:'home-page-'+i,name:'更早会话 '+i,cwd:'',isChat:true,updatedAt:now-10000-i})));crPage.paint();});
+      assert.equal(await page.locator('.cr-recent-section .cr-thread').count(),6);await page.locator('.cr-recent-more').click();assert.equal(await page.locator('.cr-recent-section .cr-thread').count(),15);await page.locator('.cr-recent-section wx-button[data-direction="1"]').click();assert.equal(await page.locator('.cr-recent-section .cr-thread').count(),15);
+      await page.evaluate(()=>{crPage.controller.threads=crPage.controller.threads.filter(row=>!row.id.startsWith('home-page-'));crPage.chooseHomeOrder({currentTarget:{dataset:{order:'project'}}});});
+      await page.evaluate(()=>{crPage.setData({ready:false,deviceName:'很长的开发电脑名称，用于检查小屏幕和安全边距'});crPage.controller.state='disconnected';crPage.controller.nativeUsage.state={snapshots:[],loading:false,reason:'电脑连接未就绪'};crPage.paint();});
+      await page.locator('.cr-home-title').click();await geometry();assert.ok((await page.locator('.cr-home-quota').textContent()).includes('连接电脑后查看'));assert.equal(await page.locator('.cr-home-quota .cr-quota-percent').count(),0);await page.screenshot({path:path.join(output,'home-disconnected-'+width+'.png')});
+      await page.locator('.cr-home-menu-row[data-kind="settings"]').click();assert.equal(await page.evaluate(()=>crPage.data.view),'settings');assert.equal(await page.evaluate(()=>crPage.data.homeMenu),false);await page.evaluate(()=>{crPage.controller.state='runtime_ready';crPage.setData({view:'library',deviceName:'开发电脑'});crPage.paint();});
+      await page.evaluate(()=>{crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.toggleHomeMenu();});await geometry();await page.screenshot({path:path.join(output,'home-dark-menu-'+width+'.png')});await page.evaluate(()=>{crPage.closeHomeMenu();crPage.changeTheme({currentTarget:{dataset:{value:'light'}}});});
       await page.evaluate(() => crShowChat()); await geometry(); await page.screenshot({path: path.join(output, 'white-chat-' + width + '.png')});
       assert.equal(await page.locator('.cr-message-activity').count(),0); await page.locator('.cr-work-row').click(); assert.equal(await page.locator('.cr-activity-group').count(),1); await page.locator('.cr-activity-group').click(); assert.equal(await page.locator('.cr-message-activity').count(),2);
       await page.evaluate(()=>{crPage.controller.expandedTurns.clear();crShowImages();});assert.equal(await page.locator('.cr-image-toggle').count(),1,'viewed image stays inside completed process');assert.equal(await page.locator('.cr-image-previews').count(),0);
@@ -141,6 +171,6 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       await page.evaluate(()=>{crPage.setData({view:'settings'});crPage.paint();});await geometry();await page.screenshot({path:path.join(output,'settings-'+width+'.png')});
       assert.deepEqual(errors, []); await context.close();
     }
-    console.log('微信编译页面：320/390/430px 运行计时位于过程开头、图片折叠、140px 预览与点击大图，以及项目与聊天、过程折叠、队列、审批、深色、键盘、技能、文件和设置检查通过');
+    console.log('微信编译页面：320/390/430px 首页最近/项目/优先级、菜单用量、筛选搜索、显示偏好、完整分页、断线与深色布局，以及聊天、图片、队列、审批、键盘、技能、文件和设置检查通过');
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});
