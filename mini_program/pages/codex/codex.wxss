@@ -101,6 +101,7 @@
 .codex-page button.cr-file-link { width:100%;justify-content:flex-start;color:var(--cr-muted);font-size:12px;text-align:left;word-break:break-all; }
 .cr-link { max-width:100%;word-break:break-all; }
 .cr-large-content { display:flex;flex-direction:column;gap:5px;border:1px solid var(--cr-line);border-radius:12px;padding:12px;font-size:12px; }
+.cr-work-elapsed { padding:4px 0 12px;border-bottom:1px solid var(--cr-line);color:var(--cr-muted);font-size:12px;font-variant-numeric:tabular-nums; }
 .cr-live { display:flex;align-items:center;gap:8px;padding:10px 0;color:var(--cr-muted);font-size:12px; }
 .cr-thinking-dot { background:var(--cr-text);animation:cr-pulse 1.4s ease-in-out infinite; }
 @keyframes cr-pulse { 0%,100% {opacity:.25}50% {opacity:1} }

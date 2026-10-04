@@ -80,6 +80,8 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
     assert.ok(calls.filter(call=>call.method==='lanpower/history/item/read').filter(call=>call.offset===65536).length>=2,'resume the interrupted segment');
     assert.equal(await page.getByRole('button',{name:/完整下载|导出完整/}).count(),0);
     assert.ok((await page.locator(`[data-message-id="${final.id}"]`).textContent()).includes('我建议采用'));
+    const viewedActivities=imageActivities.filter(item=>item.type==='imageView');
+    if(viewedActivities.length){assert.equal(await page.locator('.turn-process-toggle').getAttribute('aria-expanded'),'false');assert.equal(await page.locator('[data-message-id="viewed-image"]').count(),0);await page.locator('.turn-process-toggle').click();}
     for (const image of imageActivities) {
       const activity=page.locator(`[data-message-id="${image.id}"]`),toggle=activity.locator('.native-image-toggle');
       assert.equal(await toggle.getAttribute('aria-expanded'),'false');
@@ -136,7 +138,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
     await page.locator('.lp-back').click();await page.locator('[data-thread-id="design"] .lp-thread-title').click();
     await page.locator(`[data-message-id="${final.id}"]`).waitFor();
     await page.waitForFunction(()=>document.querySelectorAll('.lp-history-content').length===0,null,{timeout:45000});
-    assert.equal(await page.locator('.conversation-item[data-message-type="imageView"]').count(),imageActivities.length);
+    assert.equal(await page.locator('.conversation-item[data-message-type="imageView"]').count(),imageActivities.length-viewedActivities.length);
     assert.equal(await page.locator('.native-image-toggle[aria-expanded="true"]').count(),0,'switching conversations resets preview expansion');
     assert.ok(calls.some(call=>call.method==='thread/turns/list'),'refresh expired references automatically');
     assert.deepEqual(downloads,[]);assert.deepEqual(errors,[]);

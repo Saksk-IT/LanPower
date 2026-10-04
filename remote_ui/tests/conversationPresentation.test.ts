@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeThreadMessagesV2 } from '../src/api/normalizers/v2'
-import { presentConversation } from '../src/lanpower/conversationPresentation'
+import { liveWorkStartId, presentConversation } from '../src/lanpower/conversationPresentation'
 
 const user = {id: 'user', type: 'userMessage', content: [{type: 'text', text: '开始工作'}]}
 const commentary = {id: 'commentary', type: 'agentMessage', phase: 'commentary', text: '正在检查文件'}
@@ -13,6 +13,23 @@ function normalize(items: unknown[], status = 'completed', timing = {}, id = 'tu
 }
 
 describe('conversation process folding', () => {
+  it('anchors live timing after user messages and before the first running process record', () => {
+    const previous = normalize([user, final], 'completed', {}, 'previous')
+    const running = normalize([{...user,id:'running-user'}, {...user,id:'steer-user'}, commentary, command()], 'inProgress', {}, 'running')
+    expect(liveWorkStartId([...previous, ...running])).toBe('commentary')
+    expect(liveWorkStartId(presentConversation(running).messages)).toBe('commentary')
+  })
+
+  it('keeps live timing at the first visible running record when the turn window is clipped', () => {
+    const running = presentConversation(normalize([user, commentary, command(), {...commentary,id:'later'}], 'inProgress')).messages
+    expect(liveWorkStartId(running.slice(2))).toBe(running[2]?.id)
+  })
+
+  it('leaves a timing insertion point after the prompt when the running turn has no response yet', () => {
+    expect(liveWorkStartId(normalize([user], 'inProgress'))).toBeUndefined()
+    expect(liveWorkStartId(normalize([user, final]))).toBeUndefined()
+  })
+
   it('retains public search and unfamiliar tool records with their complete result', () => {
     const source = normalize([{id:'search',type:'webSearch',action:{query:'完整结果'}},
       {id:'tool',type:'futureTool',result:'工具结果末尾',encryptedContent:'private'},final])
@@ -88,10 +105,38 @@ describe('conversation process folding', () => {
   })
 
   it('keeps generated images and all explicit final parts outside the process', () => {
-    const source = normalize([user, commentary, command(), final, {...final, id: 'final-two', text: '补充结果'}, {...commentary, id: 'later-commentary'}])
-    source.splice(3, 0, {id: 'image', role: 'assistant', text: '', messageType: 'imageView', images: ['data:image/png;base64,fixture'], turnId: 'turn', turnIndex: 0, turnStatus: 'completed'})
+    const source = normalize([user, commentary, command(), {id:'image',type:'imageGeneration',result:'data:image/png;base64,fixture'}, final, {...final, id: 'final-two', text: '补充结果'}, {...commentary, id: 'later-commentary'}])
     const result = presentConversation(source)
     expect(result.messages.filter(message => message.role === 'assistant').map(message => message.id)).toEqual(['image', 'final', 'final-two'])
+  })
+
+  it('folds four viewed images with the completed process and restores them on expansion', () => {
+    const views = Array.from({length:4},(_,index)=>({id:`view-${index}`,type:'imageView',path:`D:/Fixture/image-${index}.png`}))
+    const source = normalize([user, commentary, command(), ...views, final], 'completed', {durationMs: 1557000})
+    const original = JSON.stringify(source)
+    const collapsed = presentConversation(source)
+    expect(collapsed.messages.map(message=>message.id)).toEqual(['user', 'turn:worked', 'final'])
+    expect(collapsed.messages[1]?.text).toBe('用时 25分钟 57秒')
+    expect([...collapsed.finalMessageIds]).toEqual(['final'])
+    expect(views.every(view=>collapsed.processMessageIds.has(view.id))).toBe(true)
+    const expanded = presentConversation(source, collapsed.processIds)
+    expect(expanded.messages.filter(message=>message.imageAction==='view').map(message=>message.id)).toEqual(views.map(view=>view.id))
+    expect(JSON.stringify(source)).toBe(original)
+  })
+
+  it('keeps commentary images inside the process and explicit final images outside', () => {
+    const source = normalize([user, commentary, final])
+    source.find(message=>message.id==='commentary')!.images=['data:image/png;base64,process']
+    source.find(message=>message.id==='final')!.images=['data:image/png;base64,result']
+    const result = presentConversation(source)
+    expect(result.messages.some(message=>message.id==='commentary')).toBe(false)
+    expect(result.messages.find(message=>message.id==='final')?.images).toEqual(['data:image/png;base64,result'])
+  })
+
+  it.each(['inProgress', 'failed', 'interrupted'])('keeps viewed images visible in a %s turn', status => {
+    const result = presentConversation(normalize([user,{id:'view',type:'imageView',path:'D:/Fixture/image.png'},final],status))
+    expect(result.messages.find(message=>message.id==='view')?.imageAction).toBe('view')
+    expect(result.processIds.size).toBe(0)
   })
 
   it('keeps group keys stable during streaming and does not group across commentary or turns', () => {

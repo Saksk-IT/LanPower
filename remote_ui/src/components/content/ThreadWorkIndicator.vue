@@ -1,6 +1,5 @@
 <template>
   <section class="thread-work-indicator" :aria-busy="running">
-    <p v-if="elapsed" class="thread-work-elapsed">已处理 {{ elapsed }}</p>
     <details v-if="reasoningText" class="thread-work-reasoning">
       <summary><span class="thread-work-label" :class="{ 'is-working': running }" role="status">{{ label }}</span><IconTablerChevronDown /></summary>
       <div class="thread-work-summary"><slot>{{ reasoningText }}</slot></div>
@@ -9,22 +8,11 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
-import { formatWorkDuration } from '../../lanpower/turnPresentation'
-const props = defineProps<{label:string;running:boolean;startedAtMs?:number;reasoningText?:string}>()
-const now = ref(Date.now())
-let ticker: ReturnType<typeof setInterval> | undefined
-const elapsed = computed(() => props.running && props.startedAtMs !== undefined ? formatWorkDuration(now.value - props.startedAtMs) : '')
-watch(() => [props.running,props.startedAtMs], () => {
-  clearInterval(ticker); ticker = undefined; now.value = Date.now()
-  if (props.running && props.startedAtMs !== undefined) ticker = setInterval(() => { now.value = Date.now() },1000)
-}, { immediate:true })
-onBeforeUnmount(() => clearInterval(ticker))
+defineProps<{label:string;running:boolean;reasoningText?:string}>()
 </script>
 <style scoped>
 .thread-work-indicator { width: 100%; color: var(--lp-muted,#737373); padding: 4px 0 8px; font-size: 14px; line-height: 1.6; }
-.thread-work-elapsed { margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--lp-border,#ececec); font-variant-numeric: tabular-nums; }
 .thread-work-label { margin: 0; font-weight: 400; color: var(--lp-muted,#737373); }
 .is-working { width: fit-content; background: linear-gradient(100deg,var(--lp-muted,#737373) 30%,var(--lp-surface,#fff) 50%,var(--lp-muted,#737373) 70%); background-size: 220% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: thread-work-shimmer 2s linear infinite; }
 .thread-work-reasoning summary { display: flex; width: fit-content; align-items: center; gap: 6px; cursor: pointer; list-style: none; }

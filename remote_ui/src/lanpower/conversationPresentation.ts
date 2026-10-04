@@ -24,6 +24,12 @@ function isActivity(message: UiMessage): boolean {
     || (message.messageType === 'fileChange' && (message.fileChanges?.length ?? 0) > 0)
 }
 
+/** Place live timing after this turn's leading user messages, even in a clipped display window. */
+export function liveWorkStartId(messages: UiMessage[]): string | undefined {
+  const running = messages.filter(message => message.turnStatus === 'inProgress').at(-1)
+  return running ? messages.find(message => turnKey(message) === turnKey(running) && message.role !== 'user')?.id : undefined
+}
+
 function finalAnswerIds(messages: UiMessage[]): Set<string> {
   const answers = messages.filter(message => message.role === 'assistant' && message.messageType === 'agentMessage' && message.text.trim())
   const explicitFinals = answers.filter(message => message.agentPhase === 'final_answer')
@@ -34,8 +40,9 @@ function finalAnswerIds(messages: UiMessage[]): Set<string> {
     ? [] : lastAnswer && lastItem?.id === lastAnswer.id ? [lastAnswer] : []
   return new Set([
     ...final.map(message => message.id),
-    // Generated images are deliverables even when the following answer has no text.
-    ...messages.filter(message => message.role === 'assistant' && (message.images?.length ?? 0) > 0).map(message => message.id),
+    // Only generated results are deliverables. Viewed images and commentary belong to the process.
+    ...messages.filter(message => message.role === 'assistant' && message.messageType === 'imageView'
+      && message.imageAction === 'generate' && (message.images?.length ?? 0) > 0).map(message => message.id),
   ])
 }
 

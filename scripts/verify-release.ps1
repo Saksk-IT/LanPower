@@ -22,7 +22,7 @@ try {
         'Desktop/LanPower.Desktop.exe', 'Desktop/D3DCompiler_47_cor3.dll', 'Desktop/PenImc_cor3.dll',
         'Desktop/PresentationNative_cor3.dll', 'Desktop/vcruntime140_cor3.dll', 'Desktop/wpfgfx_cor3.dll',
         'CodexHost/LanPower.CodexHost.exe',
-        'CodexServer/1.18.2/LanPower.CodexServer.exe',
+        'CodexServer/1.18.3/LanPower.CodexServer.exe',
         'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'codex-startup.ps1', 'uninstall-service.ps1', 'Install.cmd', 'Open.cmd',
         'Install-Portable.ps1', 'README.txt', 'FILES.sha256'
     )

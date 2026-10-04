@@ -7,3 +7,5 @@ LanPower 使用自己的页面容器和已认证 WSS 通道，不运行上游 No
 LanPower 1.18.0 增加正文与引用分离、稳定轮次操作、Unicode 输入校验、公开工具卡片、授权聊天元数据查询及图片引用管理。相关回归见仓库 docs/codex-remote-first-six-fixes.md。以上适配保留上游许可，生成资源与源码同步构建。
 
 LanPower 1.18.1 为工作过程图片增加可折叠的等比例缩略图，区分查看与生成记录，沿用授权读取和大图预览。相关说明见仓库 docs/codex-image-preview.md。
+
+LanPower 1.18.3 将运行计时移至本轮工作内容开头，并修正整轮工作过程中的图片归类，查看图片和中间插图随过程折叠，最终答复与生成结果保留。相关说明见 docs/codex-conversation-ui.md。

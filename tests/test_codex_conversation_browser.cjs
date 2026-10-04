@@ -4,7 +4,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 (async () => {
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
   const password = fs.readFileSync(path.resolve(__dirname,'../deploy/docker/private/dev-login.txt'),'utf8').match(/^Password: (.+)$/m)[1].trim();
-  const output = path.resolve(__dirname,'../private/codex-remote-1.15.2/browser'); fs.mkdirSync(output,{recursive:true});
+  const output = path.resolve(__dirname,'../private/codex-process-fold-1.18.3/browser'); fs.mkdirSync(output,{recursive:true});
   const image = process.env.LANPOWER_CONVERSATION_FIXTURE_IMAGE ? fs.readFileSync(process.env.LANPOWER_CONVERSATION_FIXTURE_IMAGE) : Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=','base64');
   const browser = await chromium.launch({headless:true}), context = await browser.newContext({viewport:{width:1440,height:900}});
   const calls = [], errors = [], startedAt = Date.now()-18000;
@@ -17,6 +17,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     {id:'file-one',type:'fileChange',status:'completed',changes:[{path:'README.md',kind:{type:'update'},diff:'@@ -1 +1 @@\n-old fixture\n+new fixture'}]},
     command('cmd-three'),
     {id:'reason-one',type:'reasoning',summary:['正在检查会话展示。']},
+    ...Array.from({length:4},(_,index)=>({id:`view-${index}`,type:'imageView',path:`D:/Projects/Demo/image-${index}.png`})),
   ]};
   const thread = id => ({id,name:id==='native-chat'?'会话展示验收':'另一条工作会话',cwd:'D:/Projects/Demo',createdAt:1700000000,updatedAt:1700000100,control:'shared',status:{type:'active'},turns:id==='native-chat'?[{...turn,status:active?'inProgress':'completed'}]:[{id:'other-turn',status:'inProgress',items:[{id:'other-user',type:'userMessage',content:[{type:'text',text:'另一条任务'}]}]}]});
   const rpc = request => {
@@ -48,6 +49,15 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await Promise.all([page.waitForURL('**/dashboard'),page.locator('form[action="/login"] button').click()]);
     await page.goto(base+'/remote');await page.locator('[data-thread-id="native-chat"] .lp-thread-title').click();
     await page.getByRole('status').filter({hasText:'正在思考'}).waitFor();
+    const assertTimingAtStart = async () => {
+      assert.equal(await page.locator('.thread-work-elapsed').count(),1);
+      assert.ok(await page.evaluate(()=>{
+        const user=document.querySelector('.conversation-item[data-message-id="user"]'), timer=document.querySelector('.thread-work-elapsed'), process=document.querySelector('.conversation-item[data-message-id="answer"]');
+        return !!(user.compareDocumentPosition(timer)&Node.DOCUMENT_POSITION_FOLLOWING) && !!(timer.compareDocumentPosition(process)&Node.DOCUMENT_POSITION_FOLLOWING);
+      }),'live timing must follow the user prompt and precede all commentary and tools');
+      assert.equal(await page.locator('.conversation-item-overlay .thread-work-elapsed').count(),0,'live timing is separate from the trailing status');
+    };
+    await assertTimingAtStart();
     assert.equal(await page.locator('.native-activity-toggle').count(),1);
     assert.equal(await page.locator('.native-command-toggle').count(),0,'the whole activity sequence starts collapsed');
     assert.ok((await page.locator('.native-activity-toggle').textContent()).includes('含失败命令'));
@@ -76,6 +86,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.equal(await page.locator('.message-file-chip').count(),0,'image metadata must not be duplicated as file chips');
     await page.waitForFunction(()=>[...document.querySelectorAll('.lp-image-thumbnail img')].every(img=>img.naturalWidth>0));
     assert.equal(await page.locator('.lp-image-thumbnail').count(),2);
+    assert.equal(await page.locator('.native-image-toggle').count(),4,'running turn shows all viewed-image records');
     await page.locator('.lp-image-thumbnail').first().click();await page.locator('.image-modal-image').waitFor();
     await page.keyboard.press('Escape');assert.equal(await page.locator('.image-modal-image').count(),0);
     await page.locator('.lp-image-thumbnail').first().evaluate(el=>el.blur());
@@ -112,6 +123,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.equal(await page.locator('.thread-work-summary').count(),0,'reasoning stays within its conversation');
     await page.locator('[data-thread-id="native-chat"] .lp-thread-title').click();
     await page.getByRole('status').filter({hasText:'正在思考'}).waitFor();
+    await assertTimingAtStart();
     await page.evaluate(()=>window.__fixtureSocket.onclose({code:1006}));
     await page.waitForFunction(()=>!document.querySelector('.is-working'));
     assert.ok(!(await page.locator('.lp-chat-status').textContent()).includes('已同步'));
@@ -124,6 +136,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await emit({method:'turn/completed',params:{threadId:'native-chat',turn:{id:'native-turn',status:'completed',completedAt:turn.completedAt}}});
     await page.waitForFunction(()=>!document.querySelector('.is-working'));
     await page.locator('.turn-process-toggle').waitFor();
+    assert.equal(await page.locator('.thread-work-elapsed').count(),0,'completed turn replaces live timing with the process header');
     assert.ok((await page.locator('.worked-separator-text').textContent()).includes('用时'));
     assert.equal(await page.locator('.turn-process-toggle').getAttribute('aria-expanded'),'false');
     assert.ok((await page.locator('.conversation-root').textContent()).includes(final.text));
@@ -132,10 +145,12 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),final.text,'copy final answer without hidden commentary or tools');
     assert.ok(!(await page.locator('.conversation-root').textContent()).includes('我会对照原生窗口'));
     assert.equal(await page.locator('.native-activity-toggle').count(),0,'finished turn hides every intermediate activity');
+    assert.equal(await page.locator('.native-image-toggle').count(),0,'viewed images belong inside the completed process');
     // A reconciliation refresh must preserve the completed projection.
     await emit({method:'thread/status/changed',params:{threadId:'native-chat',status:{type:'idle'}}});
     await page.waitForTimeout(800);
     assert.equal(await page.locator('.turn-process-toggle').getAttribute('aria-expanded'),'false');
+    assert.equal(await page.locator('.native-image-toggle').count(),0,'refresh keeps viewed images folded with the process');
     for (const width of [1440,390,320]) {
       await page.setViewportSize({width,height:900});await page.mouse.move(0,0);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1));
@@ -149,6 +164,10 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.equal(await page.locator('.turn-process-toggle').getAttribute('aria-expanded'),'true');
     assert.ok((await page.locator('.conversation-root').textContent()).includes('我会对照原生窗口'));
     assert.equal(await page.locator('.native-activity-toggle').count(),1);
+    assert.equal(await page.locator('.native-image-toggle').count(),4,'expanding the process restores all viewed images');
+    await page.locator('.native-image-toggle').first().click();await page.locator('.native-image-previews img').waitFor();
+    const preview=page.locator('.native-image-previews .lp-remote-image');const bounds=await preview.boundingBox();assert.ok(bounds.width<=141&&bounds.height<=141);
+    await preview.click();await page.locator('.image-modal-image').waitFor();await page.keyboard.press('Escape');
     if (await page.locator('.native-activity-toggle').getAttribute('aria-expanded')==='false') await page.locator('.native-activity-toggle').click();
     await page.locator('.native-command-toggle').first().click();
     assert.ok((await page.locator('.native-command-details').textContent()).includes('完整输出末尾'));
@@ -157,6 +176,6 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.ok((await page.locator('.conversation-root').textContent()).includes(final.text));
     assert.equal(calls.filter(call=>call.method==='turn/start').length,0,'presentation and reconnect must never submit a task');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({activityGroupCollapse:true,individualCommands:true,fullCommandDetails:true,completedTurnCollapse:true,expandFullProcess:true,refreshPreservesCollapse:true,thinkingAnimation:true,elapsedTimer:true,approvalWait:true,compactImages:true,imageModal:true,cleanUserText:true,threadIsolation:true,reconnectNoResend:true,completedDuration:true,reducedMotion:true,widths:[1440,390,320],lightAndDark:true,browserErrors:0}));
+    console.log(JSON.stringify({activityGroupCollapse:true,individualCommands:true,fullCommandDetails:true,completedTurnCollapse:true,expandFullProcess:true,refreshPreservesCollapse:true,thinkingAnimation:true,elapsedTimer:true,elapsedBeforeProcess:true,approvalWait:true,compactImages:true,imageModal:true,cleanUserText:true,threadIsolation:true,reconnectNoResend:true,completedDuration:true,reducedMotion:true,widths:[1440,390,320],lightAndDark:true,browserErrors:0}));
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});

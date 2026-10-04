@@ -21,6 +21,9 @@
         </button>
       </li>
       <template v-for="message in visibleMessages" :key="message.id">
+      <li v-if="showLiveElapsed && message.id === liveElapsedStartId" class="conversation-item conversation-item-elapsed">
+        <div class="message-row"><div class="message-stack"><ThreadWorkElapsed :started-at-ms="liveOverlay?.startedAtMs" /></div></div>
+      </li>
       <li
         v-if="!hiddenFileChangeMessageIds.has(message.id)"
         class="conversation-item"
@@ -578,11 +581,14 @@
         </div>
       </li>
       </template>
+      <li v-if="showLiveElapsed && !liveElapsedStartId" class="conversation-item conversation-item-elapsed">
+        <div class="message-row"><div class="message-stack"><ThreadWorkElapsed :started-at-ms="liveOverlay?.startedAtMs" /></div></div>
+      </li>
       <li v-if="liveOverlay" class="conversation-item conversation-item-overlay">
         <div class="message-row">
           <div class="message-stack">
             <article class="live-overlay-inline" aria-live="polite">
-              <ThreadWorkIndicator v-if="liveOverlay.activityLabel" :label="localizedLiveActivityLabel || '正在思考'" :running="Boolean(liveOverlay.running)" :started-at-ms="liveOverlay.startedAtMs" :reasoning-text="localizedLiveReasoningText">
+              <ThreadWorkIndicator v-if="liveOverlay.activityLabel" :label="localizedLiveActivityLabel || '正在思考'" :running="Boolean(liveOverlay.running)" :reasoning-text="localizedLiveReasoningText">
                 <div v-html="renderMarkdownBlocksAsHtml(localizedLiveReasoningText)" />
               </ThreadWorkIndicator>
               <div v-if="liveOverlay.errorText" class="live-overlay-error">
@@ -767,6 +773,7 @@ import ThreadCommand from './ThreadCommand.vue'
 import ThreadImageActivity from './ThreadImageActivity.vue'
 import ThreadActivitySummary from './ThreadActivitySummary.vue'
 import ThreadWorkIndicator from './ThreadWorkIndicator.vue'
+import ThreadWorkElapsed from './ThreadWorkElapsed.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { UiFileChange, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
 import { updateThreadFileChanges } from '../../api/codexGateway'
@@ -776,7 +783,7 @@ import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/
 import { localizeLiveActivityLabel, localizeLiveReasoningText } from '../../utils/liveActivityLocalization'
 import { routeLocalImageUrl } from '../../utils/localImageUrl'
 import { isPlanMessage } from '../../utils/planProgress'
-import { presentConversation } from '../../lanpower/conversationPresentation'
+import { liveWorkStartId, presentConversation } from '../../lanpower/conversationPresentation'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
@@ -1039,6 +1046,8 @@ const isLoadingMore = ref(false)
 const presentation = computed(() => presentConversation(props.messages, expandedTurnProcessIds.value, expandedActivityIds.value))
 const presentedMessages = computed(() => presentation.value.messages)
 const visibleMessages = computed(() => presentedMessages.value.slice(renderWindowStart.value))
+const liveElapsedStartId = computed(() => liveWorkStartId(visibleMessages.value))
+const showLiveElapsed = computed(() => Boolean(props.liveOverlay?.running) && props.liveOverlay?.startedAtMs !== undefined)
 const hasMoreAbove = computed(() => renderWindowStart.value > 0 || props.hasMorePersistedAbove === true)
 
 async function togglePresentation(kind: 'turn' | 'activity', id: string, event: MouseEvent): Promise<void> {

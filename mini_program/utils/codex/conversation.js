@@ -19,11 +19,11 @@ function itemRow(item, turn, index) {
   if (item.type === 'lanpowerLargeItem') return {...row, kind: 'large', reference: item.reference, characters: item.characters, label: item.wholeTurn ? '读取完整这一轮' : '读取完整内容', text: `${item.characters || 0} 字符，点击继续读取`};
   if (['imageGeneration', 'image_generation'].includes(item.type)) {
     const result = typeof item.result === 'string' ? item.result.trim() : '', source = !result ? '' : /^(data:|https?:|file:|[A-Za-z]:[\\/]|\/)/.test(result) ? result : `data:image/png;base64,${result.replace(/\s/g, '')}`;
-    return source ? {...row, kind: 'imageActivity', label: '已生成 1 张图像', images: [source]} : null;
+    return source ? {...row, kind: 'imageActivity', imageAction: 'generate', label: '已生成 1 张图像', images: [source]} : null;
   }
   if (item.type === 'imageView') {
     const source = [item.path, item.url, item.imagePath, item.image_url].find(value => typeof value === 'string' && value.trim());
-    return source ? {...row, kind: 'imageActivity', label: '已查看 1 张图像', images: [source]} : null;
+    return source ? {...row, kind: 'imageActivity', imageAction: 'view', label: '已查看 1 张图像', images: [source]} : null;
   }
   const labels = {mcpToolCall:'MCP 工具',dynamicToolCall:'动态工具',collabAgentToolCall:'协作任务',webSearch:'网页搜索',contextCompaction:'上下文整理',enteredReviewMode:'开始审查',exitedReviewMode:'审查结果'};
   if (item.type === 'contextCompaction') return {...row,label:'上下文整理',text:'会话上下文已整理；仅显示公开提示。'};
@@ -40,7 +40,7 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
     const phaseAware = answers.some(row => row.phase), finals = answers.filter(row => row.phase === 'final_answer');
     const last = normalized[normalized.length - 1];
     if (!finals.length && !phaseAware && last && last.kind === 'assistant') finals.push(last);
-    const finalIds = new Set([...finals, ...normalized.filter(row => ['assistant', 'imageActivity'].includes(row.kind) && row.images.length)].map(row => row.key));
+    const finalIds = new Set([...finals, ...normalized.filter(row => row.imageAction === 'generate' && row.images.length)].map(row => row.key));
     const foldable = turn.status === 'completed' && finalIds.size && normalized.some(row => row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key));
     const start = timestamp(turn.startedAt), end = timestamp(turn.completedAt), duration = turn.durationMs !== undefined ? turn.durationMs : start && end ? end - start : undefined;
     const work = {key: `work:${turn.id}`, kind: 'work', turnId: turn.id, turnIndex: index, text: duration !== undefined ? `用时 ${elapsed(duration / 1000)}` : turn.status === 'inProgress' ? '正在工作' : turn.status === 'interrupted' ? '已停止' : '工作过程', foldable: !!foldable, expanded: expandedTurns.has(turn.id), images: [], files: [], skills: []};
@@ -56,7 +56,7 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
       rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', label: files ? commands ? '编辑了文件，运行了命令' : '编辑了文件' : commands ? '运行了命令' : '调用了工具', text: '', count: members.length, expanded: expandedActivities.has(key), failed: members.some(m => m.status === 'failed' || typeof m.exitCode === 'number' && m.exitCode !== 0)});
       if (expandedActivities.has(key)) rows.push(...members);
     }
-    if (!inserted && turn.status !== 'inProgress') rows.push(work);
+    if (!inserted) rows.push(work);
     if (turn.error) rows.push({key: `error:${turn.id}`, kind: 'error', turnId: turn.id, text: turn.error.message || '任务出错', images: [], files: [], skills: []});
   }
   return rows;

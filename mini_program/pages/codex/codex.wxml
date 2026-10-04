@@ -39,7 +39,7 @@
   </scroll-view>
 
   <block wx:elif="{{view === 'chat'}}">
-    <view class="cr-chat-status"><view><text class="cr-state-dot {{ready ? 'is-ready' : ''}}">●</text><text>{{taskState}}</text><text wx:if="{{elapsed && running}}" class="cr-muted"> · {{elapsed}}</text></view><button wx:if="{{cwd}}" class="cr-project-pill" bindtap="openFiles">▱ {{project}}</button><button wx:if="{{!ready}}" class="cr-text" bindtap="reconnect">重连</button></view>
+    <view class="cr-chat-status"><view><text class="cr-state-dot {{ready ? 'is-ready' : ''}}">●</text><text>{{taskState}}</text></view><button wx:if="{{cwd}}" class="cr-project-pill" bindtap="openFiles">▱ {{project}}</button><button wx:if="{{!ready}}" class="cr-text" bindtap="reconnect">重连</button></view>
     <text wx:if="{{syncLabel}}" class="cr-sync-label">{{syncLabel}}</text>
     <view wx:if="{{historyProgress}}" class="cr-history-state"><text>{{historyProgress}}</text><button wx:if="{{readingHistory}}" class="cr-text" bindtap="cancelHistory">取消读取</button><button wx:elif="{{historyResume}}" class="cr-text" disabled="{{!ready}}" bindtap="resumeHistory">继续读取</button></view>
     <view wx:if="{{beginningIndex >= 0}}" class="cr-history-state"><text>正在阅读历史</text><button class="cr-text" disabled="{{!ready || readingHistory || beginningIndex === 0}}" bindtap="loadLater">后续消息</button><button class="cr-text" disabled="{{!ready}}" bindtap="jump">返回最新</button></view>
@@ -48,7 +48,8 @@
       <view wx:if="{{loading && !messages.length}}" class="cr-empty-small">正在读取原窗口的聊天…</view>
       <view wx:if="{{!loading && !messages.length}}" class="cr-chat-welcome"><text class="cr-empty-glyph">✦</text><text class="cr-empty-title">从一个想法开始</text><text>在下面发送任务，与你电脑上的 Codex 继续同一段对话。</text></view>
       <view wx:for="{{messages}}" wx:key="key" wx:for-item="message" id="{{message.domId}}" class="cr-message cr-message-{{message.kind}}">
-        <button wx:if="{{message.kind === 'work'}}" class="cr-work-row" data-key="{{message.key}}" data-turn="{{message.turnId}}" bindtap="toggleRow"><text>{{message.text}}</text><text wx:if="{{message.foldable}}">{{message.expanded ? '收起过程 ⌃' : '查看过程 ⌄'}}</text></button>
+        <view wx:if="{{message.kind === 'work' && message.turnId === activeTurnId && running && elapsed && !approvals.length && !interrupting && beginningIndex < 0}}" class="cr-work-elapsed"><text>已处理 {{elapsed}}</text></view>
+        <button wx:elif="{{message.kind === 'work'}}" class="cr-work-row" data-key="{{message.key}}" data-turn="{{message.turnId}}" bindtap="toggleRow"><text>{{message.text}}</text><text wx:if="{{message.foldable}}">{{message.expanded ? '收起过程 ⌃' : '查看过程 ⌄'}}</text></button>
         <button wx:elif="{{message.kind === 'activityGroup'}}" class="cr-activity-group" data-key="{{message.key}}" data-turn="{{message.turnId}}" bindtap="toggleRow"><text>{{message.label}}</text><text class="cr-muted">{{message.failed ? '含失败命令 · ' : ''}}{{message.count}} 项 {{message.expanded ? '⌃' : '⌄'}}</text></button>
         <view wx:elif="{{message.kind === 'large'}}" class="cr-large-content"><text>{{message.label}}</text><text class="cr-muted">{{message.text}}</text><button class="cr-text" disabled="{{!ready}}" bindtap="retryContent">继续读取完整内容</button></view>
         <view wx:elif="{{message.kind === 'imageActivity'}}" class="cr-image-activity">
@@ -70,7 +71,7 @@
         </block>
       </view>
       <button wx:if="{{hasWindowAfter}}" class="cr-load-more" bindtap="later">查看后续内容</button>
-      <view wx:if="{{running && !approvals.length && beginningIndex < 0}}" class="cr-live"><view class="cr-thinking-dot"></view><text>{{taskState}}</text><text class="cr-muted">{{elapsed}}</text></view>
+      <view wx:if="{{running && !approvals.length && beginningIndex < 0}}" class="cr-live"><view class="cr-thinking-dot"></view><text>{{taskState}}</text></view>
       <view wx:if="{{plan.length}}" class="cr-plan"><button class="cr-text" bindtap="toggleProgress">{{progressOpen ? '收起计划 ⌃' : '查看任务计划 ⌄'}}</button><view wx:if="{{progressOpen}}" wx:for="{{plan}}" wx:key="step"><text>{{item.status === 'completed' ? '✓' : item.status === 'inProgress' ? '◉' : '○'}} {{item.step}}</text></view></view>
       <view id="chat-end" class="cr-chat-end"></view>
     </scroll-view>
