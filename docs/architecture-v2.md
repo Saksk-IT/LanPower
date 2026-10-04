@@ -26,7 +26,7 @@ flowchart LR
     Runtime --> Project[本机项目与 Codex 历史]
 ```
 
-第一阶段每台电脑只有一个远程控制页面、一个用户 Host 和一个 Runtime。已发送任务在浏览器断线后继续运行；重连读取本机状态和历史，Relay 不回放任务正文。Cloud 使用单个 worker，重启丢弃转发队列。项目只能在电脑端授权，Runtime 按 `workspace-write` / `on-request` 启动；远端不能修改 Codex 配置、登录或调用任意 Shell RPC。具体能力与验收见 [Codex Remote](codex-remote.md)。
+每台电脑保留一个用户 Host，多个已授权网页和小程序共享同一个 Host 会话；Cloud 将请求回包分流到发起页面，并广播任务状态和审批。已发送任务在浏览器断线后继续运行；重连读取本机状态和历史，Relay 不回放任务正文。Cloud 使用单个 worker，重启丢弃转发队列。项目只能在电脑端授权，Runtime 按 `workspace-write` / `on-request` 启动；远端不能修改 Codex 配置、登录或调用任意 Shell RPC。具体能力与验收见 [Codex Remote](codex-remote.md)。
 
 | 模式 | 组件 | 能力 |
 |---|---|---|

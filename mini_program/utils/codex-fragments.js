@@ -4,16 +4,18 @@ class RpcFragments {
   constructor() { this.parts = new Map(); this.bytes = 0; }
   accept(frame) {
     const {id, index, count, data} = frame;
+    const rpcId = frame.rpcId === undefined ? id : frame.rpcId;
+    if (typeof rpcId !== 'string' && !(typeof rpcId === 'number' && Number.isSafeInteger(rpcId))) throw new Error('invalid_chunk');
     if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || count > 512 || index < 0 || index >= count || typeof data !== 'string' || !data.length || data.length > 65536) throw new Error('invalid_chunk');
     let part = this.parts.get(id);
-    if (!part) { if (index !== 0 || this.parts.size >= 4) throw new Error('invalid_chunk'); part = {count, bytes:0, values:[]}; this.parts.set(id, part); }
+    if (!part) { if (index !== 0 || this.parts.size >= 4) throw new Error('invalid_chunk'); part = {count, bytes:0, values:[], rpcId}; this.parts.set(id, part); }
     const bytes = utf8Bytes(data);
-    if (index !== part.values.length || count !== part.count || part.bytes + bytes > 16 * 1048576 || this.bytes + bytes > 32 * 1048576) throw new Error('invalid_chunk');
+    if (index !== part.values.length || count !== part.count || rpcId !== part.rpcId || part.bytes + bytes > 16 * 1048576 || this.bytes + bytes > 32 * 1048576) throw new Error('invalid_chunk');
     part.values.push(data); part.bytes += bytes; this.bytes += bytes;
     if (index + 1 !== count) return null;
     const payload = JSON.parse(part.values.join('')); this.drop(id);
-    if (!payload || payload.id !== id || typeof payload.method === 'string') throw new Error('invalid_chunk');
-    return payload;
+    if (!payload || payload.id !== rpcId || typeof payload.method === 'string') throw new Error('invalid_chunk');
+    return {...payload, id};
   }
   drop(id) { const part = this.parts.get(id); if (part) this.bytes -= part.bytes; this.parts.delete(id); }
   clear() { this.parts.clear(); this.bytes = 0; }

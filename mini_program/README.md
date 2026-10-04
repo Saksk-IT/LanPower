@@ -1,10 +1,12 @@
 # LanPower 微信小程序
 
+Codex Remote 已解除单控制页面限制：多个网页和小程序可同时连接同一电脑，任务与审批状态同步，关闭一个页面不影响其他页面。版本与验证见 [多页面控制](../docs/codex-multiple-pages.md)。
+
 开发版与正式版独立保存授权和连接配置。开发版可在「连接 → 开发版 Cloud 地址」修改测试地址，正式版通过 HTTPS 授权二维码连接。环境切换和本机测试步骤见 [开发版与正式版](../docs/mini-program-environments.md)。
 
-当前源码版本：`2.1.7`；公开下载入口仍为 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增原生 Codex Remote 页面，采用白色会话列表、消息详情、底部输入栏、深色模式与单次审批弹层。协议仍为 `2`，现有 LAN/Cloud/唤醒功能保持兼容。包内使用公开 AppID 占位符，导入后配置自己的小程序身份。
+当前源码版本：`2.1.8`；公开下载入口仍为 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。新增原生 Codex Remote 页面，采用白色会话列表、消息详情、底部输入栏、深色模式与单次审批弹层。协议仍为 `2`，现有 LAN/Cloud/唤醒功能保持兼容。包内使用公开 AppID 占位符，导入后配置自己的小程序身份。
 
-本轮随 Windows / Cloud / Web `1.16.1` 更新版本标识。网页本轮自动恢复完整内容并取消下载，桌面和手机浏览器均可直接阅读，见 [完整会话显示](../docs/codex-history-content.md)。微信原生页面仅同步版本；微信页面的历史窗口与附件扩展仍属于改进清单 P1，微信真机和 5G 未在本轮验收。详见 [P0 记录](../docs/codex-remote-p0.md)。
+本轮随 Windows / Cloud / Web `1.16.2` 更新版本标识。网页本轮自动恢复完整内容并取消下载，桌面和手机浏览器均可直接阅读，见 [完整会话显示](../docs/codex-history-content.md)。微信原生页面仅同步版本；微信页面的历史窗口与附件扩展仍属于改进清单 P1，微信真机和 5G 未在本轮验收。详见 [P0 记录](../docs/codex-remote-p0.md)。
 
 第一版按 [v0.1 设计稿](../docs/design/codex-remote-mini-program-v0.1/README.md) 的 A 白色极简、B 深色模式和 C 审批弹层实现，使用原生 WXML 控件和 SocketTask，不嵌入网页。支持项目筛选、搜索近期会话、新建任务、实时输出、补充要求、暂停、文件修改摘要和一次审批。导入步骤、界面截图及真机待验收项见 [Codex Remote 小程序第一版](../docs/codex-remote-mini-program.md)。
 
@@ -71,6 +73,6 @@ node tests/test_mini_program_environments.js
 
 前三项检查分别覆盖旧版兼容、电源与长期授权、Codex 的长连接恢复及交互。Codex 检查包含只读桌面会话、恢复后发送、补充要求、暂停、审批防重复提交、断线不重发、旧连接隔离及安全富文本。另有 `tests/test_mini_program_codex_layout.cjs` 使用本机微信 WCC/WCSC 编译结果和浏览器 DOM 适配器，检查 320/390/430px、深色、审批及键盘布局；运行需配置微信编译器与 Playwright。此检查不代表微信真机验收。电源验证记录见 [小程序 v2](../docs/mini-program-v2.md)。
 
-小程序版本为 `2.1.7`、协议版本为 `2`；保留手机长期授权与自动续期。Codex 消息、代码、Diff 和审批内容仅保存在页面内存，退出页面关闭手机控制连接；已有任务仍由电脑运行，重新进入读取实际状态。项目不包含真实 Cloud 域名、LAN Token、Gateway 凭据或远程配对二维码。
+小程序版本为 `2.1.8`、协议版本为 `2`；保留手机长期授权与自动续期。Codex 消息、代码、Diff 和审批内容仅保存在页面内存，退出页面关闭手机控制连接；已有任务仍由电脑运行，重新进入读取实际状态。项目不包含真实 Cloud 域名、LAN Token、Gateway 凭据或远程配对二维码。
 
 本轮 Codex Remote 系统对齐见 [1.15 系统说明](../docs/codex-system-parity.md)：完整历史分段传输、原窗口状态与模型同步、电脑端项目/聊天组织、文件图片及能力目录。小程序保持原生简化界面，已支持同一大响应协议。

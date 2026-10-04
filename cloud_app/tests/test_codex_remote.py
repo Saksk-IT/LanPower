@@ -7,7 +7,7 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from cloud_app.app.platform import ADMIN_ID
-from cloud_app.app.remote import MAX_FRAME, Peer, ProtocolError, parse_frame, validate_request, validate_decision
+from cloud_app.app.remote import MAX_FRAME, Peer, SharedSession, ProtocolError, parse_frame, validate_request, validate_decision
 from cloud_app.tests.test_platform import login, make_client
 
 PROTOCOL = ["lanpower.codex.v1"]
@@ -35,6 +35,14 @@ def browser(client, creds, **kwargs):
         headers={"Origin": "https://power.example.com", **kwargs})
 
 
+def forwarded_request(up, request):
+    frame = up.receive_json()
+    assert frame["type"] == "rpc"
+    assert {**frame["payload"], "id": request["id"]} == request
+    assert frame["payload"]["id"] != request["id"]
+    return frame["payload"]["id"]
+
+
 @contextmanager
 def connected(client, creds):
     with agent(client, creds) as up:
@@ -55,8 +63,8 @@ def test_roundtrip_notifications_approval_interrupt_and_no_persistence(remote):
         request = {"id": "first", "method": "turn/start", "params": {"threadId": "thread-test",
             "input": [{"type": "text", "text": private}]}}
         down.send_json({"type": "rpc", "payload": request})
-        forwarded = up.receive_json(); assert forwarded == {"type": "rpc", "session": session, "payload": request}
-        up.send_json({"type": "rpc", "session": session, "payload": {"id": "first", "result": {"turn": {"id": "turn-test"}}}})
+        wire = forwarded_request(up, request)
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": wire, "result": {"turn": {"id": "turn-test"}}}})
         assert down.receive_json()["payload"]["id"] == "first"
         for method, params in [("item/agentMessage/delta", {"delta": private}), ("turn/diff/updated", {"diff": private})]:
             up.send_json({"type": "rpc", "session": session, "payload": {"method": method, "params": params}})
@@ -72,9 +80,9 @@ def test_roundtrip_notifications_approval_interrupt_and_no_persistence(remote):
         assert down.receive_json()["code"] == "approval_unavailable"
         down.send_json({"type": "rpc", "payload": {"id": 8, "method": "turn/interrupt",
             "params": {"threadId": "thread-test", "turnId": "turn-test"}}})
-        assert up.receive_json()["payload"]["method"] == "turn/interrupt"
-        up.send_json({"type": "rpc", "session": "wrong-device", "payload": {"id": 8, "result": {"ignored": True}}})
-        up.send_json({"type": "rpc", "session": session, "payload": {"id": 8, "result": {}}})
+        wire = up.receive_json()["payload"]["id"]
+        up.send_json({"type": "rpc", "session": "wrong-device", "payload": {"id": wire, "result": {"ignored": True}}})
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": wire, "result": {}}})
         assert down.receive_json()["payload"] == {"id": 8, "result": {}}
     assert private not in (temp / "platform.db").read_bytes().decode("latin1")
     assert private not in client.get("/activity").text
@@ -87,8 +95,9 @@ def test_steering_roundtrip_and_required_active_turn(remote):
         params = {"threadId": "thread-test", "expectedTurnId": "turn-test",
             "input": [{"type": "text", "text": "private-steer-sentinel"}]}
         down.send_json({"type": "rpc", "payload": {"id": "steer", "method": "turn/steer", "params": params}})
-        assert up.receive_json()["payload"]["params"] == params
-        up.send_json({"type": "rpc", "session": session, "payload": {"id": "steer", "result": {"turnId": "turn-test"}}})
+        forwarded = up.receive_json()["payload"]
+        assert forwarded["params"] == params
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": forwarded["id"], "result": {"turnId": "turn-test"}}})
         assert down.receive_json()["payload"]["result"]["turnId"] == "turn-test"
         for invalid in [{k: v for k, v in params.items() if k != "expectedTurnId"}, {**params, "model": "override"}]:
             with pytest.raises(ProtocolError):
@@ -104,11 +113,11 @@ def test_handoff_rpc_and_notification_roundtrip(remote):
     with connected(client, creds) as (up, down, session):
         request = {"id": "release", "method": "lanpower/session/release", "params": {"threadId": "chat"}}
         down.send_json({"type": "rpc", "payload": request})
-        assert up.receive_json()["payload"] == request
+        wire = forwarded_request(up, request)
         notification = {"method": "lanpower/session/released", "params": {"threadId": "chat"}}
         up.send_json({"type": "rpc", "session": session, "payload": notification})
         assert down.receive_json()["payload"] == notification
-        up.send_json({"type": "rpc", "session": session, "payload": {"id": "release", "result": {"released": True}}})
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": wire, "result": {"released": True}}})
         assert down.receive_json()["payload"]["result"] == {"released": True}
 
 
@@ -119,18 +128,18 @@ def test_recent_sessions_do_not_require_workspace_filter():
 def test_long_history_fragments_stream_without_cloud_assembly_or_persistence(remote):
     client, app, creds, _, temp = remote
     sentinel = "lossless-private-fragment-sentinel"
-    body = json.dumps({"id": "long-history", "result": {"text": ("中文🎨" * 90000) + sentinel}}, ensure_ascii=False)
-    pieces = [body[i:i + 16000] for i in range(0, len(body), 16000)]
     with connected(client, creds) as (up, down, session):
         down.send_json({"type": "rpc", "payload": {"id": "long-history", "method": "thread/turns/list", "params": {"threadId": "native", "limit": 8}}})
-        assert up.receive_json()["payload"]["method"] == "thread/turns/list"
+        wire = up.receive_json()["payload"]["id"]
+        body = json.dumps({"id": wire, "result": {"text": ("中文🎨" * 90000) + sentinel}}, ensure_ascii=False)
+        pieces = [body[i:i + 16000] for i in range(0, len(body), 16000)]
         received = []
         for index, data in enumerate(pieces):
-            up.send_json({"type": "rpc_chunk", "session": session, "id": "long-history", "index": index, "count": len(pieces), "data": data})
+            up.send_json({"type": "rpc_chunk", "session": session, "id": wire, "index": index, "count": len(pieces), "data": data})
             frame = down.receive_json()
-            assert frame == {"type": "rpc_chunk", "id": "long-history", "index": index, "count": len(pieces), "data": data}
+            assert frame == {"type": "rpc_chunk", "id": "long-history", "rpcId": wire, "index": index, "count": len(pieces), "data": data}
             received.append(frame["data"])
-            peer = app.state.codex_relay.clients[creds["device_id"]]
+            peer = next(iter(app.state.codex_relay.clients[creds["device_id"]].peers.values()))
             assert all(isinstance(n, int) for state in peer.fragments.values() for n in state)
         assert "".join(received) == body
         assert not peer.requests and not peer.fragments
@@ -141,8 +150,8 @@ def test_fragment_order_and_request_identity_are_checked(remote):
     client, _, creds, _, _ = remote
     with connected(client, creds) as (up, down, session):
         down.send_json({"type": "rpc", "payload": {"id": "page", "method": "thread/read", "params": {"threadId": "native"}}})
-        up.receive_json()
-        up.send_json({"type": "rpc_chunk", "session": session, "id": "page", "index": 1, "count": 2, "data": "bad-order"})
+        wire = up.receive_json()["payload"]["id"]
+        up.send_json({"type": "rpc_chunk", "session": session, "id": wire, "index": 1, "count": 2, "data": "bad-order"})
         assert up.receive_json()["code"] == "invalid_chunk"
 
 
@@ -184,14 +193,15 @@ def test_no_auth_query_tokens_protocol_or_wrong_device(remote):
             with client.websocket_connect(path, headers=headers, subprotocols=protocols): pass
 
 
-def test_second_controller_and_revocation(remote):
+def test_multiple_pages_and_device_revocation(remote):
     client, _, creds, csrf, _ = remote
     with connected(client, creds) as (up, down, _):
         with browser(client, creds) as other:
-            assert other.receive_json()["code"] == "controller_busy"
-        assert client.post(f"/devices/{creds['device_id']}/revoke", data={"csrf": csrf}).status_code == 200
-        with pytest.raises(WebSocketDisconnect): down.receive_json()
-        with pytest.raises(WebSocketDisconnect): up.receive_json()
+            assert other.receive_json()["state"] == "runtime_ready"
+            assert client.post(f"/devices/{creds['device_id']}/revoke", data={"csrf": csrf}).status_code == 200
+            with pytest.raises(WebSocketDisconnect): other.receive_json()
+            with pytest.raises(WebSocketDisconnect): down.receive_json()
+            with pytest.raises(WebSocketDisconnect): up.receive_json()
 
 
 def test_agent_replacement_and_offline_browser(remote):
@@ -269,7 +279,7 @@ def test_old_and_power_only_phones_do_not_gain_remote_development(remote, action
     assert app.state.platform.mobile.permits(phone["client_id"], "status")
 
 
-def test_mobile_roundtrip_approval_and_shared_controller_limit(remote):
+def test_mobile_roundtrip_approval_and_simultaneous_browser(remote):
     client, app, creds, _, _ = remote
     phone = phone_credentials(client, app, ["codex"])
     assert app.state.platform.mobile.permits(phone["client_id"], "status")
@@ -286,8 +296,8 @@ def test_mobile_roundtrip_approval_and_shared_controller_limit(remote):
             request = {"id": "phone-task", "method": "turn/start", "params": {
                 "threadId": "phone-thread", "input": [{"type": "text", "text": "phone-private-sentinel"}]}}
             down.send_json({"type": "rpc", "payload": request})
-            assert up.receive_json()["payload"] == request
-            up.send_json({"type": "rpc", "session": session, "payload": {"id": "phone-task", "result": {"ok": True}}})
+            wire = forwarded_request(up, request)
+            up.send_json({"type": "rpc", "session": session, "payload": {"id": wire, "result": {"ok": True}}})
             assert down.receive_json()["payload"]["result"] == {"ok": True}
             approval = {"id": "phone-approve", "method": "item/fileChange/requestApproval", "params": {"threadId": "phone-thread"}}
             up.send_json({"type": "rpc", "session": session, "payload": approval})
@@ -295,7 +305,8 @@ def test_mobile_roundtrip_approval_and_shared_controller_limit(remote):
             down.send_json({"type": "rpc", "payload": {"id": "phone-approve", "result": {"decision": "accept"}}})
             assert up.receive_json()["payload"]["result"] == {"decision": "accept"}
             with browser(client, creds) as other:
-                assert other.receive_json()["code"] == "controller_busy"
+                assert other.receive_json()["state"] == "runtime_ready"
+                assert other.receive_json()["payload"] == approval
     assert not app.state.codex_relay.clients
     assert "phone-private-sentinel" not in client.get("/activity").text
 

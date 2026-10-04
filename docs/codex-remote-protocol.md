@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.16.0 与小程序 2.1.6。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
+适用于 LanPower Windows / Cloud / Web 1.16.2 与小程序 2.1.8。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
 
 ## 认证与连接
 
@@ -11,15 +11,15 @@
 | `wss://<Cloud>/api/v2/remote/mobile/<device_id>` | `Authorization: Bearer <Mobile Access Token>` | 显式 `codex` 权限、账户和 Windows 归属；不接受 Cookie 代替、查询令牌或设备令牌 |
 | `GET /api/v2/remote/status/<device_id>` | 浏览器会话，或具备 `codex` 权限的手机 Bearer | 只返回 `state`、`connected`、`busy` 元数据 |
 
-两端必须选择子协议 `lanpower.codex.v1`。设备最多一个 Agent 和一个控制页面，新 Agent 替换旧连接（4410），第二控制页面返回 `controller_busy` 并关闭（4409）。认证失败关闭 4403，外层连接参数/子协议非法关闭 4400。主动撤销设备立即关闭，其他会话/凭据失效最多 5 秒复核。
+两端必须选择子协议 `lanpower.codex.v1`。每台设备保留一个 Agent，多个已授权网页和小程序共享同一个 Host 会话；新 Agent 替换旧连接（4410），新页面不替换已有页面，也不重新打开 Host。最后一个页面离开后才发送 `close`。认证失败关闭 4403，外层连接参数/子协议非法关闭 4400。主动撤销设备立即关闭所有页面，手机权限撤销仅关闭对应手机连接，其他会话/凭据失效最多 5 秒复核。旧 Cloud 的 4409 在新版客户端提示升级。
 
-网页和小程序共享同一控制连接限制，手机不需要 Cookie 或 Origin。旧手机的空权限列表只兼容既有电源操作，不赋予 Codex；新增/修改授权时勾选 `codex`，同时保留读取状态所需的 `status`。修改权限需要所属账户的浏览器 CSRF 表单，不轮换手机凭据。权限关闭或授权撤销在连接复核时生效。
+网页和小程序可以同时连接同一电脑，手机不需要 Cookie 或 Origin。旧手机的空权限列表只兼容既有电源操作，不赋予 Codex；新增/修改授权时勾选 `codex`，同时保留读取状态所需的 `status`。修改权限需要所属账户的浏览器 CSRF 表单，不轮换手机凭据。权限关闭或授权撤销在连接复核时生效。
 
 小程序沿用 CloudClient 的长期凭据续期，在短期访问凭据到期前重新连接；切后台关闭 SocketTask，前台重新读取状态、历史及待审批。退避 1–30 秒，旧连接回调按代次隔离；任务和决定均不自动重发。正文不进入手机本地存储，富文本仅生成固定节点，不解释 HTML。
 
 ## 外层消息
 
-浏览器不指定设备路由或 session，Cloud 根据认证连接绑定设备，生成 UUID `session`；Windows 仅接受当前绑定的 session。审批由 Host 映射为唯一远程请求 ID，响应和已处理通知按对应的会话连接还原；普通客户端请求由 Host 转为内部唯一 ID 调用 app-server，再恢复客户端 ID。
+浏览器不指定设备路由或 session，Cloud 根据认证连接绑定设备，同一电脑的页面共用 UUID `session`；Windows 仅接受当前绑定的 session。Cloud 将普通请求 ID 映射为唯一转发 ID，响应只还原给发起页面，即使网页和手机用了同一编号也不会串页。Host 再映射到 app-server 内部 ID。任务通知、状态和审批广播到所有页面，后来连接的页面补发尚未处理的审批；Cloud 对同一审批只允许一个在途决定，已处理通知同步移除所有页面中的审批。
 
 ```json
 {"type":"hello","protocol":1,"state":"host_ready"}
@@ -30,7 +30,7 @@
 {"type":"rpc","payload":{"id":"<client-id>","result":{"thread":{"id":"<thread-id>"}}}}
 {"type":"rpc","payload":{"method":"item/agentMessage/delta","params":{"threadId":"<thread-id>","itemId":"<item-id>","delta":"示例输出"}}}
 {"type":"rpc","payload":{"id":7,"result":{"decision":"decline"}}}
-{"type":"rpc_chunk","id":"<client-id>","index":0,"count":2,"data":"<JSON response fragment>"}
+{"type":"rpc_chunk","id":"<client-id>","rpcId":"<unique-relay-id>","index":0,"count":2,"data":"<JSON response fragment>"}
 {"type":"error","code":"method_not_allowed"}
 {"type":"ping"}
 {"type":"pong"}
@@ -40,7 +40,7 @@
 
 ### 大响应分段
 
-单帧继续限制为 1 MiB，单个 RPC 响应上限 16 MiB。Host 将超过单帧的响应 payload JSON 按最多 65536 个 UTF-16 字符分段，保持代理对完整；`rpc_chunk` 的 `id` 对应未完成的请求，`index` 从 0 连续递增，`count` 在全部分段中一致且不超过 512。Agent 顺序转发。Cloud 仅记录下一个序号、分段总数及累计 UTF-8 字节数，不拼接正文；客户端拼接后验证响应 ID。
+单帧继续限制为 1 MiB，单个 RPC 响应上限 16 MiB。Host 将超过单帧的响应 payload JSON 按最多 65536 个 UTF-16 字符分段，保持代理对完整；`rpc_chunk` 的 `id` 对应未完成的请求，`index` 从 0 连续递增，`count` 在全部分段中一致且不超过 512。Agent 顺序转发。Cloud 仅记录下一个序号、分段总数及累计 UTF-8 字节数，不拼接正文；Cloud 下发分段时将外层 `id` 还原为页面请求 ID，附带 `rpcId` 对应正文中的唯一转发 ID；客户端验证各段 `rpcId` 一致并与正文匹配后还原页面 ID，兼容没有 `rpcId` 的旧分段。
 
 Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装上限 32 MiB。乱序、重复、超限或数量变化拒绝为 `invalid_chunk`。请求超时、切换电脑、断开连接或授权失效时清理分段；不据此重发任务。超过 16 MiB 返回 `result_too_large`，不静默截断。过大的完成通知改发 `lanpower/historyChanged {threadId}`，客户端从本机历史补读。
 
@@ -158,3 +158,5 @@ Host 仅转发线程/任务状态、计划、item 开始/完成、AI/工具增�
 - 固定错误码包括 `invalid_frame`、`invalid_chunk`、`method_not_allowed`、`params_not_allowed`、`invalid_decision`、`approval_unavailable`、`request_busy`、`agent_offline`、`remote_backpressure`、`remote_revoked`、`rate_limited`。Host 拒绝返回 `-32000` 与固定类别 `request_rejected/desktop_session_busy/task_running/workspace_not_allowed/turn_changed/approval_unavailable/too_many_sessions/background_running/session_release_unavailable/result_too_large`，不暴露本机异常文本。本机 Runtime 接收上限为 16 MiB，超出 Relay 单帧的响应经分段传输。
 - Cloud 仅内存转发，审计记录固定事件类别、账户/设备编号与时间，不保存正文。浏览器内存和本机 Runtime 保存当前任务/历史，项目组织存于本机用户目录，PWA 不缓存会话内容。TLS 在 Cloud 终止，当前不是端到端加密。
 - 部署保持一个 worker/副本，重启丢弃路由与队列。任务是否继续以本机 Host/Runtime 为准，重连后读取状态和 Thread；不能根据超时自动重新执行。
+
+同一共享会话最多保留 64 个在途普通请求和 64 个待审批，待审批正文总量限制为 8 MiB，只保存在内存中。单个页面队列溢出只断开该页面，不撤销其他页面或电脑 Agent。

@@ -1,6 +1,6 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.16.1`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。本轮 Codex 相关 41 项测试通过。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.16.2`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。本轮 Codex 相关 41 项测试通过。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
 小程序 `2.1.0` 的首次使用及界面截图见 [第一版说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
 
@@ -8,7 +8,7 @@
 
 ## Codex Remote Relay
 
-登录后在 `/remote` 选择本账户的 Windows。浏览器沿用安全会话 Cookie，连接必须来自配置的同一 Origin；小程序连接 `/api/v2/remote/mobile/<device_id>`，使用手机 Bearer Header 并校验显式 `codex` 权限、账户和 Windows 归属。Agent 使用独立 Windows Bearer 凭据，不能借用手机或网关凭据。连接使用 `lanpower.codex.v1` WSS 子协议，令牌不得放在 URL。网页与小程序共享每台设备一个控制连接的限制；撤销或权限关闭后断开。复用既有唤醒接口，不改变电源路由。
+登录后在 `/remote` 选择本账户的 Windows。浏览器沿用安全会话 Cookie，连接必须来自配置的同一 Origin；小程序连接 `/api/v2/remote/mobile/<device_id>`，使用手机 Bearer Header 并校验显式 `codex` 权限、账户和 Windows 归属。Agent 使用独立 Windows Bearer 凭据，不能借用手机或网关凭据。连接使用 `lanpower.codex.v1` WSS 子协议，令牌不得放在 URL。多个网页与小程序可以同时连接同一电脑，请求回包只发送到对应页面，任务和审批通知同步；关闭一个页面不影响其他页面，撤销设备会关闭全部连接。复用既有唤醒接口，不改变电源路由。
 
 Relay 只在限额内存队列中转发 JSON-RPC；任务、代码、Diff、审批内容和 OpenAI 登录信息不写数据库、日志或 PWA 缓存。审计仅记录账户/设备编号、事件类型和时间。TLS 在 Cloud 终止，服务会短暂看到转发正文，当前 MVP 不提供端到端加密。使用自己的可信 Cloud；详见 [安全边界](../docs/security-model.md)、[使用说明](../docs/codex-remote.md) 和 [协议](../docs/codex-remote-protocol.md)。
 

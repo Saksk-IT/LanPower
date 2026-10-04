@@ -20,7 +20,7 @@ const errors: Record<string, string> = {
   submission_store_full: '电脑端有过多待确认提交，请先确认发送结果。',
   history_reference_expired: '内容引用已过期，正在重新读取对应历史。',
   history_item_too_large: '此内容超过电脑端临时缓存上限，请在原窗口取回。',
-  controller_busy: '另一页面正在控制此电脑，请关闭该页面后重连。',
+  controller_busy: '请将 Cloud 更新至 1.16.2，以支持多个页面同时连接。',
   remote_revoked: '开发权限已变化，请重新确认授权。',
   image_not_referenced: '此图片不属于当前聊天。', image_too_large: '图片超过 8 MB，请在电脑查看原图。', unsupported_image: '当前图片格式无法预览。',
 }
@@ -87,7 +87,7 @@ export class RemoteConnection {
     socket.onclose = ({ code }) => {
       if (this.socket !== socket || generation !== this.generation) return
       this.socket = null; this.rejectPending()
-      this.onState(code === 4409 ? 'controller_busy' : code === 4403 ? 'revoked' : 'disconnected')
+      this.onState(code === 4409 ? 'update_required' : code === 4403 ? 'revoked' : 'disconnected')
       if ([4400, 4403, 4409].includes(code)) return
       this.retry = setTimeout(() => { if (generation === this.generation) this.open() }, this.delay)
       this.delay = Math.min(30000, this.delay * 2)

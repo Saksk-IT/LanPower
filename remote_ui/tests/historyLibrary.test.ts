@@ -26,4 +26,11 @@ describe('native history and project library',() => {
     expect(() => fragments.accept({id:'lost',index:1,count:3,data:'missing'})).toThrow('invalid_chunk')
     fragments.clear()
   })
+  it('rejects routed response identity changes and mismatched bodies',() => {
+    const fragments = new RpcFragments()
+    fragments.accept({id:1,rpcId:'wire-a',index:0,count:2,data:'{"id":"wire-a",'})
+    expect(() => fragments.accept({id:1,rpcId:'wire-b',index:1,count:2,data:'"result":{}}'})).toThrow('invalid_chunk')
+    fragments.clear()
+    expect(() => fragments.accept({id:1,rpcId:'wire-a',index:0,count:1,data:'{"id":"wire-b","result":{}}'})).toThrow('invalid_chunk')
+  })
 })

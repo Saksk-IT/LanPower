@@ -127,7 +127,7 @@ const labels: Record<string, string[]> = {
   disabled: ['尚未授权', '请在电脑的 LanPower 启用 Codex Remote 并保存授权。'], host_ready: ['正在读取 Codex', '正在连接电脑上的 Codex。'],
   runtime_starting: ['正在读取 Codex', '正在读取原窗口的项目与最近会话。'], runtime_ready: ['已连接', ''],
   runtime_error: ['Codex 未就绪', '请在电脑的 LanPower 点击「连接原 Codex 窗口」。'],
-  disconnected: ['连接已断开', '正在重连；电脑上的任务会继续运行。'], controller_busy: ['另一页面正在控制', '关闭另一控制页面后点击重连。'],
+  disconnected: ['连接已断开', '正在重连；电脑上的任务会继续运行。'], update_required: ['需要更新 Cloud', '请更新至 1.16.2，以支持多个页面同时连接。'],
   revoked: ['开发授权已变化','请重新检查登录与开发权限后重连。'],
 }
 const stateLabel = computed(() => labels[state.value]?.[0] || '连接未就绪')
@@ -653,6 +653,6 @@ onMounted(() => {
   document.addEventListener('visibilitychange',restoreVisible)
   polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent(); void refreshStatus(); void loadThreads(); void queryReceipt() } }, 30000)
 })
-function restoreVisible(): void { if (document.visibilityState !== 'visible') return; if (ready.value) { void refreshCurrent(); void refreshStatus(); void queryReceipt() } else if (deviceId.value && state.value !== 'controller_busy' && state.value !== 'revoked') reconnect() }
+function restoreVisible(): void { if (document.visibilityState !== 'visible') return; if (ready.value) { void refreshCurrent(); void refreshStatus(); void queryReceipt() } else if (deviceId.value && state.value !== 'update_required' && state.value !== 'revoked') reconnect() }
 onBeforeUnmount(() => { document.removeEventListener('visibilitychange',restoreVisible); historyAbort?.abort(); resetContent(); drafts.clear(); queueEdits.clear(); settingsByThread.clear(); receipts.clear(); clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
 </script>

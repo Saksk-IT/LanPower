@@ -205,12 +205,11 @@ class Peer:
     queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=32))
     queued_bytes: int = 0
     requests: dict[str, tuple[str, float]] = field(default_factory=dict)
-    approvals: dict[str, str] = field(default_factory=dict)
-    deciding: set[str] = field(default_factory=set)
     last_seen: float = field(default_factory=time.monotonic)
     incoming: list[float] = field(default_factory=list)
     fragments: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     drained: asyncio.Event = field(default_factory=asyncio.Event)
+    failed: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def wait_for_capacity(self):
         while self.queued_bytes > 2 * MAX_FRAME or self.queue.qsize() >= 16:
@@ -234,11 +233,35 @@ class Peer:
             await asyncio.wait_for(self.socket.send_text(raw), 10)
 
 
+def deliver(peer: Peer, payload: dict):
+    # A slow page must not tear down the Agent or the other authorized pages.
+    if peer.failed.is_set(): return
+    try: peer.send(payload)
+    except ProtocolError: peer.failed.set()
+
+
+@dataclass
+class SharedSession:
+    session: str = field(default_factory=lambda: str(uuid.uuid4()))
+    peers: dict[str, Peer] = field(default_factory=dict)
+    requests: dict[str, tuple[Peer, str | int]] = field(default_factory=dict)
+    approvals: dict[str, dict] = field(default_factory=dict)
+    deciding: dict[str, Peer] = field(default_factory=dict)
+    approval_bytes: int = 0
+
+    def broadcast(self, payload: dict):
+        for peer in tuple(self.peers.values()): deliver(peer, payload)
+
+    def clear(self):
+        self.requests.clear(); self.approvals.clear(); self.deciding.clear(); self.approval_bytes = 0
+        for peer in self.peers.values(): peer.requests.clear(); peer.fragments.clear()
+
+
 class CodexRelay:
     def __init__(self, platform):
         self.platform = platform
         self.agents: dict[str, Peer] = {}
-        self.clients: dict[str, Peer] = {}
+        self.clients: dict[str, SharedSession] = {}
         self.states: dict[str, str] = {}
 
     def status(self, device: str) -> dict:
@@ -249,7 +272,8 @@ class CodexRelay:
         self.platform.record(peer.owner, event, peer.device)
 
     async def revoke(self, device: str):
-        for peer in (self.agents.get(device), self.clients.get(device)):
+        shared = self.clients.get(device)
+        for peer in (self.agents.get(device), *(tuple(shared.peers.values()) if shared else ())):
             if peer:
                 with suppress(RuntimeError, anyio.ClosedResourceError, anyio.BrokenResourceError): await peer.socket.close(4403)
 
@@ -295,25 +319,22 @@ class CodexRelay:
             await socket.close(4403); return
         await socket.accept(subprotocol="lanpower.codex.v1", headers=[(b"cache-control", b"no-store")])
         peer = Peer(socket, owner, device)
-        if not agent and device in self.clients:
-            await socket.send_json({"type": "error", "code": "controller_busy"})
-            await socket.close(4409); return
         if agent:
             old = self.agents.get(device)
             self.agents[device] = peer
             if old:
                 with suppress(RuntimeError, anyio.ClosedResourceError, anyio.BrokenResourceError): await old.socket.close(4410)
             self.states[device] = "host_offline"
-            client = self.clients.get(device)
-            if client:
-                client.requests.clear(); client.fragments.clear(); client.approvals.clear(); client.deciding.clear()
-                client.send({"type": "state", "state": "runtime_starting"})
-                peer.send({"type": "open", "session": client.session})
+            if shared := self.clients.get(device):
+                shared.clear()
+                shared.broadcast({"type": "state", "state": "runtime_starting"})
         else:
-            self.clients[device] = peer
+            first = device not in self.clients
+            shared = self.clients.setdefault(device, SharedSession())
+            shared.peers[peer.session] = peer
             peer.send({"type": "state", "state": self.status(device)["state"]})
-            if (upstream := self.agents.get(device)):
-                upstream.send({"type": "open", "session": peer.session})
+            if first and (upstream := self.agents.get(device)):
+                upstream.send({"type": "open", "session": shared.session})
         self.audit(peer, "remote_connected")
 
         async def monitor():
@@ -329,6 +350,11 @@ class CodexRelay:
                     raise ProtocolError("request_timeout")
 
         async def read():
+            if not agent:
+                # Replay only still-pending approvals, without reopening the Host.
+                for key, approval in tuple(shared.approvals.items()):
+                    await peer.wait_for_capacity()
+                    if shared.approvals.get(key) is approval: deliver(peer, {"type": "rpc", "payload": approval})
             while True:
                 try: raw = await socket.receive_text()
                 except KeyError: raise ProtocolError("invalid_frame") from None
@@ -338,8 +364,11 @@ class CodexRelay:
                     if message == {"type": "pong"}: continue
                     if message == {"type": "ping"}: peer.send({"type": "pong"}); continue
                     if agent:
-                        if message["type"] == "rpc_chunk" and (client := self.clients.get(device)):
-                            await client.wait_for_capacity()
+                        if message["type"] == "rpc_chunk" and (group := self.clients.get(device)):
+                            route = group.requests.get(rpc_id(message))
+                            if route and not route[0].failed.is_set():
+                                try: await route[0].wait_for_capacity()
+                                except asyncio.TimeoutError: route[0].failed.set()
                         self.from_agent(peer, message)
                     else:
                         if not valid(): raise ProtocolError("remote_revoked")
@@ -352,7 +381,11 @@ class CodexRelay:
                     peer.send({"type": "error", "code": str(error)})
                     if str(error) in {"frame_too_large", "remote_backpressure", "remote_revoked", "rate_limited"}: raise
 
-        tasks = [asyncio.create_task(fn()) for fn in (peer.write, read, monitor)]
+        async def failed():
+            await peer.failed.wait()
+            raise ProtocolError("remote_backpressure")
+
+        tasks = [asyncio.create_task(fn()) for fn in (peer.write, read, monitor, failed)]
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done: task.result()
@@ -368,37 +401,50 @@ class CodexRelay:
             with anyio.CancelScope(shield=True):
                 if agent and self.agents.get(device) is peer:
                     self.agents.pop(device, None); self.states.pop(device, None)
-                    if (client := self.clients.get(device)):
-                        client.requests.clear(); client.fragments.clear(); client.approvals.clear(); client.deciding.clear()
-                        with suppress(ProtocolError): client.send({"type": "state", "state": "cloud_offline"})
-                elif not agent and self.clients.get(device) is peer:
-                    self.clients.pop(device, None)
-                    if (upstream := self.agents.get(device)):
-                        with suppress(ProtocolError): upstream.send({"type": "close", "session": peer.session})
+                    if group := self.clients.get(device):
+                        group.clear()
+                        group.broadcast({"type": "state", "state": "cloud_offline"})
+                elif not agent and (group := self.clients.get(device)) and group.peers.get(peer.session) is peer:
+                    group.peers.pop(peer.session)
+                    for key, route in tuple(group.requests.items()):
+                        if route[0] is peer: group.requests.pop(key)
+                    if not group.peers:
+                        self.clients.pop(device, None)
+                        group.clear()
+                        if upstream := self.agents.get(device):
+                            with suppress(ProtocolError): upstream.send({"type": "close", "session": group.session})
                 for task in tasks: task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
-                peer.requests.clear(); peer.fragments.clear(); peer.approvals.clear(); peer.deciding.clear()
+                peer.requests.clear(); peer.fragments.clear()
                 with suppress(RuntimeError, anyio.ClosedResourceError, anyio.BrokenResourceError): await socket.close(1000)
 
     def from_client(self, peer: Peer, frame: dict):
         if set(frame) != {"type", "payload"} or frame["type"] != "rpc": raise ProtocolError()
         upstream = self.agents.get(peer.device)
         if upstream is None: raise ProtocolError("agent_offline")
+        shared = self.clients.get(peer.device)
+        if shared is None or shared.peers.get(peer.session) is not peer: raise ProtocolError("remote_revoked")
         payload = frame["payload"]
         if not isinstance(payload, dict): raise ProtocolError()
         key = rpc_id(payload)
         if "method" in payload:
             method = validate_request(payload)
-            if key in peer.requests or len(peer.requests) >= MAX_PENDING: raise ProtocolError("request_busy")
+            if key in peer.requests or key in shared.approvals or len(shared.requests) >= MAX_PENDING: raise ProtocolError("request_busy")
             peer.requests[key] = (method, time.monotonic())
+            wire_id = "r-" + uuid.uuid4().hex
+            wire_key = rpc_id({"id": wire_id})
+            shared.requests[wire_key] = (peer, payload["id"])
+            forwarded = {**payload, "id": wire_id}
         else:
-            if set(payload) != {"id", "result"} or key not in peer.approvals or key in peer.deciding: raise ProtocolError("approval_unavailable")
-            validate_decision(peer.approvals[key], payload["result"])
-            peer.deciding.add(key)
+            if set(payload) != {"id", "result"} or key not in shared.approvals or key in shared.deciding: raise ProtocolError("approval_unavailable")
+            validate_decision(shared.approvals[key]["method"], payload["result"])
+            shared.deciding[key] = peer
+            forwarded = payload
             method = "approval"
-        try: upstream.send({"type": "rpc", "session": peer.session, "payload": payload})
+        try: upstream.send({"type": "rpc", "session": shared.session, "payload": forwarded})
         except ProtocolError:
-            peer.requests.pop(key, None)
+            if method == "approval": shared.deciding.pop(key, None)
+            else: peer.requests.pop(key, None); shared.requests.pop(wire_key, None)
             raise
         if method in {"turn/start", "turn/interrupt", "approval"}:
             self.audit(peer, {"turn/start": "remote_task_started", "turn/interrupt": "remote_interrupted",
@@ -411,17 +457,19 @@ class CodexRelay:
             if set(frame) != {"type", "protocol", "state"} or frame["protocol"] != 1 or frame["state"] not in STATES:
                 raise ProtocolError()
             self.states[peer.device] = frame["state"]
-            client = self.clients.get(peer.device)
-            if client:
-                client.send({"type": "state", "state": frame["state"]})
-                peer.send({"type": "open", "session": client.session})
+            if shared := self.clients.get(peer.device):
+                shared.clear()
+                shared.broadcast({"type": "state", "state": frame["state"]})
+                peer.send({"type": "open", "session": shared.session})
             return
-        client = self.clients.get(peer.device)
-        if client is None or frame.get("session") != client.session: return
+        shared = self.clients.get(peer.device)
+        if shared is None or frame.get("session") != shared.session: return
         if kind == "rpc_chunk":
             if set(frame) != {"type", "session", "id", "index", "count", "data"}: raise ProtocolError()
             key = rpc_id(frame)
-            if key not in client.requests: return
+            route = shared.requests.get(key)
+            if route is None: return
+            client, original = route
             index, count, data = frame["index"], frame["count"], frame["data"]
             if (type(index) is not int or type(count) is not int or not 1 <= count <= 512 or
                     not 0 <= index < count or not isinstance(data, str) or not 1 <= len(data) <= 65536):
@@ -430,33 +478,43 @@ class CodexRelay:
             size += len(data.encode("utf-8"))
             if index != previous_index or count != previous_count or size > MAX_RESULT or (key not in client.fragments and len(client.fragments) >= 4):
                 raise ProtocolError("invalid_chunk")
-            client.send({k: v for k, v in frame.items() if k != "session"})
+            deliver(client, {**{k: v for k, v in frame.items() if k != "session"}, "id": original, "rpcId": frame["id"]})
             if index + 1 == count:
-                client.fragments.pop(key, None); client.requests.pop(key, None)
+                client.fragments.pop(key, None); client.requests.pop(rpc_id({"id": original}), None); shared.requests.pop(key)
             else: client.fragments[key] = (index + 1, count, size)
             return
         if kind == "state":
             if set(frame) != {"type", "session", "state"} or frame["state"] not in STATES: raise ProtocolError()
             self.states[peer.device] = frame["state"]
-            if frame["state"] != "runtime_ready": client.requests.clear(); client.fragments.clear(); client.approvals.clear(); client.deciding.clear()
-            client.send({"type": "state", "state": frame["state"]}); return
+            if frame["state"] != "runtime_ready": shared.clear()
+            shared.broadcast({"type": "state", "state": frame["state"]}); return
         if kind != "rpc" or set(frame) != {"type", "session", "payload"} or not isinstance(frame["payload"], dict):
             raise ProtocolError()
         payload = frame["payload"]
         if "id" in payload:
             key = rpc_id(payload)
             if "method" in payload:
-                if payload["method"] not in APPROVALS or len(client.approvals) >= MAX_PENDING: raise ProtocolError()
+                if (payload["method"] not in APPROVALS or key in shared.requests or
+                        len(shared.approvals) >= MAX_PENDING and key not in shared.approvals): raise ProtocolError()
                 if set(payload) != {"id", "method", "params"} or not isinstance(payload["params"], dict): raise ProtocolError()
-                client.approvals[key] = payload["method"]
-            elif key in client.requests:
-                client.requests.pop(key); client.fragments.pop(key, None)
-            elif key in client.deciding and "error" in payload:
-                client.deciding.discard(key)
+                previous = shared.approvals.get(key)
+                size = len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+                old_size = len(json.dumps(previous, ensure_ascii=False).encode("utf-8")) if previous else 0
+                if shared.approval_bytes + size - old_size > 8 * MAX_FRAME: raise ProtocolError("remote_backpressure")
+                shared.approval_bytes += size - old_size
+                shared.approvals[key] = payload
+                shared.broadcast({"type": "rpc", "payload": payload}); return
+            elif route := shared.requests.pop(key, None):
+                client, original = route
+                client.requests.pop(rpc_id({"id": original}), None); client.fragments.pop(key, None)
+                deliver(client, {"type": "rpc", "payload": {**payload, "id": original}}); return
+            elif key in shared.deciding and "error" in payload:
+                deliver(shared.deciding.pop(key), {"type": "rpc", "payload": payload}); return
             else: return
         elif payload.get("method") == "serverRequest/resolved":
             request = payload.get("params", {}).get("requestId")
             if request is not None:
                 key = rpc_id({"id": request})
-                client.approvals.pop(key, None); client.deciding.discard(key)
-        client.send({"type": "rpc", "payload": payload})
+                previous = shared.approvals.pop(key, None); shared.deciding.pop(key, None)
+                if previous: shared.approval_bytes -= len(json.dumps(previous, ensure_ascii=False).encode("utf-8"))
+        shared.broadcast({"type": "rpc", "payload": payload})

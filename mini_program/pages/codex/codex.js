@@ -323,7 +323,7 @@ Page({
   onEvent(message) {
     if (message.id !== undefined && message.method) { this.addApproval(message); return; }
     const p = message.params || {}, method = message.method;
-    if (method === 'lanpower/error') { if (p.code === 'controller_busy') this.setState('controller_busy'); this.notify(ERRORS[p.code] || '连接请求被拒绝，请检查电脑状态。'); return; }
+    if (method === 'lanpower/error') { if (p.code === 'controller_busy') this.setState('update_required'); this.notify(ERRORS[p.code] || '连接请求被拒绝，请检查电脑状态。'); return; }
     if (method === 'lanpower/approvalError') {
       const request = this.pendingApprovals.get(JSON.stringify(p.id)); if (request) request.submitted = false;
       this.renderApprovals(); this.notify('审批未被接收，请确认最新状态后再处理。'); return;

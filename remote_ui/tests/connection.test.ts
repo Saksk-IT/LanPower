@@ -42,7 +42,7 @@ describe('LanPower browser relay lifecycle', () => {
     expect(event).not.toHaveBeenCalled()
     expect(FakeSocket.sockets[1]!.url).toContain('/second')
   })
-  it('preserves approval identifiers and does not retry a controller rejection', async () => {
+  it('preserves approval identifiers and requests a Cloud update for legacy controller rejection', async () => {
     const state = vi.fn(); client.onState = state; client.connect('one')
     const socket = FakeSocket.sockets[0]!
     const decision = client.decide('lp-approval-native', { decision: 'accept' })
@@ -50,7 +50,7 @@ describe('LanPower browser relay lifecycle', () => {
     expect(socket.sent[0]).toEqual({ type: 'rpc', payload: { id: 'lp-approval-native', result: { decision: 'accept' } } })
     socket.onclose?.({ code: 4409 }); vi.advanceTimersByTime(60000)
     await rejected
-    expect(state).toHaveBeenLastCalledWith('controller_busy')
+    expect(state).toHaveBeenLastCalledWith('update_required')
     expect(FakeSocket.sockets).toHaveLength(1)
   })
   it('waits for a native approval receipt and prevents repeated decisions', async () => {
@@ -88,5 +88,14 @@ describe('LanPower browser relay lifecycle', () => {
     client.connect('two'); await rejected
     old.receive({type:'rpc_chunk',id,index:1,count:2,data:'"old"}'})
     expect(FakeSocket.sockets[1]!.sent).toEqual([])
+  })
+  it('restores the page request ID from a multiplexed large response',async () => {
+    client.connect('one'); const socket = FakeSocket.sockets[0]!
+    const pending = client.request('thread/read',{threadId:'shared'})
+    const id = socket.sent[0].payload.id, rpcId = 'r-other-page-namespace'
+    const raw = JSON.stringify({id:rpcId,result:{text:'中文🎨'.repeat(20000)}})
+    const parts = raw.match(/[\s\S]{1,16000}/g)!
+    parts.forEach((data,index) => socket.receive({type:'rpc_chunk',id,rpcId,index,count:parts.length,data}))
+    expect((await pending).text).toBe('中文🎨'.repeat(20000))
   })
 })

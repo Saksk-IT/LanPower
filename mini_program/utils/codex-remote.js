@@ -10,10 +10,9 @@ const STATES = {
   runtime_ready: ['Codex 已连接', '项目与会话来自你的电脑'],
   runtime_error: ['Codex 未就绪', '请在电脑确认 Codex 已登录且能正常运行'],
   disconnected: ['连接已断开', '恢复连接后同步进度，已有任务不会重复发送'],
-  controller_busy: ['另一页面正在控制', '关闭另一控制页面后，点击重新连接'],
   forbidden: ['需要开发权限', '在 Cloud → 手机授权 → 修改手机权限中开启 Codex Remote'],
   reauthorize: ['手机授权需要更新', '在连接页重新扫描 Cloud 授权码'],
-  update_required: ['需要更新 Cloud', '请将 Cloud 更新至 1.12.0 后再连接']
+  update_required: ['需要更新 Cloud', '请将 Cloud 更新至 1.16.2，以支持多个页面同时连接']
 };
 const ERRORS = {
   desktop_session_busy: '桌面仍占用这条会话，释放后才能继续。',
@@ -107,7 +106,7 @@ class CodexConnection {
     this.socket = null; this.opened = false;
     this.clearTimer(this.openTimeout); this.clearTimer(this.renewal); this.rejectPending();
     try { socket.close({}); } catch (_) {}
-    if (code === 4409) { this.state('controller_busy'); return; }
+    if (code === 4409) { this.state('update_required'); return; }
     if (code === 4400) { this.state('update_required'); return; }
     this.state('disconnected'); this.retryLater(generation);
   }
