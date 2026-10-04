@@ -1,4 +1,6 @@
-# Cloud Docker 快速部署
+# CodexDock Cloud Docker 部署
+
+Docker 部署承载 Codex Remote 网页工作台与 HTTPS/WSS 授权中继，附带电脑状态、电源管理及可选 Wake Gateway。远程开发入口为 `/remote`，使用流程见 [Codex Remote 指南](../../docs/codex-remote.md)。沿用现有 `lanpower-dev` 项目与数据卷，名称变更不会新建空数据库；参见 [名称约定](../../docs/project-identity.md)。
 
 本机启动脚本支持同一网段访问，保留 `localhost` 并增加选定物理网卡的 HTTPS 入口；其他设备需信任公开开发 CA。局域网部署配置版本为 `1.0.0`，详见 [局域网访问指南](../../docs/local-lan-access.md)。
 

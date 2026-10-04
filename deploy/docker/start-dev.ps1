@@ -4,7 +4,7 @@ param([switch]$Build, [switch]$WebOnly, [switch]$LocalOnly, [string]$LanAddress)
 
 $ErrorActionPreference = 'Stop'
 $composeArgs = @('compose', '-p', 'lanpower-dev', '-f', (Join-Path $PSScriptRoot 'compose.dev.yml'))
-$image = 'lanpower-cloud:1.21.0-dev.1'
+$image = 'codexdock-cloud:1.21.1-dev.1'
 $privateDir = Join-Path $PSScriptRoot 'private'
 $envFile = Join-Path $PSScriptRoot '.env.dev'
 $loginFile = Join-Path $privateDir 'dev-login.txt'
@@ -102,7 +102,7 @@ if ($network -and -not (Test-DevLanFirewall -Network $network)) {
 }
 $health = Invoke-RestMethod -Uri 'https://localhost:8443/healthz' -TimeoutSec 15
 if (-not $health.ok) { throw 'The Cloud health check failed.' }
-Write-Output ('LanPower Cloud ' + $health.version + ' is ready: https://localhost:8443')
+Write-Output ('CodexDock Cloud ' + $health.version + ' is ready: https://localhost:8443')
 if ($network) {
     $lanUrl = 'https://' + $network.Address + ':8443'
     $lanHealth = Invoke-RestMethod -Uri ($lanUrl + '/healthz') -TimeoutSec 15

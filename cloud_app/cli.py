@@ -35,7 +35,7 @@ def migrate_v1(settings: Settings) -> tuple[str, str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="LanPower Cloud maintenance")
+    parser = argparse.ArgumentParser(description="CodexDock Cloud maintenance")
     parser.add_argument("command", choices=["migrate-v1"])
     args = parser.parse_args()
     settings = Settings.from_environment()

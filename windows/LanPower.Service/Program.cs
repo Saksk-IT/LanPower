@@ -116,7 +116,7 @@ app.MapGet("/setup", (HttpContext context) =>
     var safeUrl = HtmlEncoder.Default.Encode(url);
     var html = """
         <!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1"><title>LanPower 配对</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1"><title>CodexDock 配对</title>
         <link rel="stylesheet" href="/app.css"></head><body><main class="setup">
         <div class="setup-card"><p class="eyebrow">仅在这台电脑上显示</p><h1>用手机扫码配对</h1>
         <p>让手机连接家中的 Wi-Fi，在微信小程序中扫描此二维码。</p>

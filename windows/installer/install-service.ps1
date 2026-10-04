@@ -112,8 +112,8 @@ try {
     $stage = '注册 Windows 服务'
     if (-not $service) {
         $binaryPath = '"' + $serviceExe + '" --config "' + $configPath + '"'
-        New-Service -Name $serviceName -DisplayName 'LanPower Service' -BinaryPathName $binaryPath `
-            -StartupType Automatic -Description 'LanPower 局域网电源服务' | Out-Null
+        New-Service -Name $serviceName -DisplayName 'CodexDock Service' -BinaryPathName $binaryPath `
+            -StartupType Automatic -Description 'Codex 远程开发中继与配套电源服务' | Out-Null
         $serviceCreated = $true
     } else {
         if ($service.Status -ne 'Stopped') {
@@ -124,10 +124,12 @@ try {
         $binaryPath = '"' + $serviceExe + '" --config "' + $configPath + '"'
         $changed = Invoke-CimMethod -InputObject $installed -MethodName Change -Arguments @{
             PathName = $binaryPath
+            DisplayName = 'CodexDock Service'
             StartMode = 'Automatic'
         }
         if ($changed.ReturnValue -ne 0) { throw '无法更新服务安装路径。' }
     }
+    Set-Service -Name $serviceName -Description 'Codex 远程开发中继与配套电源服务'
     $serviceAccount = (Get-CimInstance Win32_Service -Filter "Name = 'LanPowerService'").StartName
     if ($serviceAccount -notin @('LocalSystem', 'NT AUTHORITY\SYSTEM')) { throw '服务必须以 LocalSystem 运行。' }
     $stage = '启动 Windows 服务'

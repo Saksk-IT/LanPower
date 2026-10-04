@@ -34,7 +34,7 @@ $expected = @(
     'Desktop/LanPower.Desktop.exe', 'Desktop/D3DCompiler_47_cor3.dll', 'Desktop/PenImc_cor3.dll',
     'Desktop/PresentationNative_cor3.dll', 'Desktop/vcruntime140_cor3.dll', 'Desktop/wpfgfx_cor3.dll',
     'CodexHost/LanPower.CodexHost.exe',
-    'CodexServer/1.21.0/LanPower.CodexServer.exe',
+    'CodexServer/1.21.1/LanPower.CodexServer.exe',
     'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'codex-startup.ps1', 'uninstall-service.ps1'
 )
 $seen = @()
@@ -72,4 +72,4 @@ foreach ($file in $files) {
 }
 & (Join-Path $appDir 'install-service.ps1') -AppDir $appDir
 if (-not $?) { throw '服务安装失败。' }
-Write-Output '安装完成，请用 Open.cmd 打开 LanPower。'
+Write-Output '安装完成，请用 Open.cmd 打开 CodexDock。'

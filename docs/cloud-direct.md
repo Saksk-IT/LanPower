@@ -1,6 +1,8 @@
-# Cloud Direct（源码版本 1.5.0）
+# CodexDock Cloud Direct（连接与配套电源管理）（源码版本 1.5.0）
 
-LanPower Windows Service 在保留局域网接口的同时，主动通过 HTTPS 连接 Cloud。Cloud Web 面向浏览器提供设备列表和电源控制。没有 Wake Gateway 时，在线电脑仍可远程查看状态、睡眠、休眠、重启和关机；远程唤醒不可用。
+Codex Remote 的主功能为远程开发；本文介绍共用的 Windows → Cloud 出站连接和配套电源控制。开发会话的授权、原窗口连接与网页操作见 [Codex Remote 指南](codex-remote.md)。
+
+CodexDock Windows Service 在保留局域网接口的同时，主动通过 HTTPS 连接 Cloud。Cloud Web 面向浏览器提供设备列表和电源控制。没有 Wake Gateway 时，在线电脑仍可远程查看状态、睡眠、休眠、重启和关机；远程唤醒不可用。
 
 ## 连接 Windows
 

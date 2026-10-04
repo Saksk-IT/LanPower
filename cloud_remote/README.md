@@ -1,4 +1,6 @@
-# LanPower Remote Cloud
+# CodexDock 旧版 Remote Cloud（兼容组件）
+
+本目录保留原 LanPower v1 电源中继兼容实现。当前主功能 Codex 远程开发使用 `cloud_app/`、Windows 用户 Host 与网页或小程序，见 [Codex Remote 指南](../docs/codex-remote.md) 和 [新版 Cloud](../cloud_app/README.md)。
 
 这是 v1.1.2 远程中继实现，继续保留供现有部署使用。新的浏览器控制端与 Docker 部署见 [Cloud Web 说明](../cloud_app/README.md)；它继续提供原有 `/api/v1/*` 路径。
 

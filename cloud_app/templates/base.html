@@ -9,7 +9,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="lp-csrf" content="{{ csrf }}">
   <meta name="theme-color" content="#f5f7f9">
-  <title>{% block title %}控制台{% endblock %} · LanPower</title>
+  <title>{% block title %}控制台{% endblock %} · CodexDock</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/static/app.css?v={{ version }}">
@@ -21,7 +21,7 @@
   <a href="#main-content" class="skip-link">跳到主要内容</a>
   <div class="shell">
     <aside class="sidebar" id="main-navigation">
-      <a class="brand" href="/dashboard"><span class="brand-icon">{{ icon('power', 24) }}</span><span>LanPower<small>让连接，触手可及</small></span></a>
+      <a class="brand" href="/dashboard"><span class="brand-icon">{{ icon('computer', 24) }}</span><span>CodexDock<small>远程开发，随时继续</small></span></a>
       <nav aria-label="主要导航">
         <span class="nav-label">工作空间</span>
         {% for key, label, glyph, url in [('dashboard','总览','grid','/dashboard'),('devices','我的电脑','computer','/devices'),('remote','Codex Remote','computer','/remote'),('gateways','远程唤醒','gateway','/gateways'),('clients','手机授权','phone','/clients')] %}
@@ -33,7 +33,7 @@
         {% endfor %}
       </nav>
       <div class="sidebar-bottom">
-        <a class="version-link" href="/settings#service">{{ icon('cloud', 18) }}<span>LanPower Cloud<small>v{{ version }}</small></span></a>
+        <a class="version-link" href="/settings#service">{{ icon('cloud', 18) }}<span>CodexDock Cloud<small>v{{ version }}</small></span></a>
         <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="icon-button" type="submit" aria-label="退出登录" title="退出登录">{{ icon('logout', 18) }}</button></form>
       </div>
     </aside>
@@ -41,7 +41,7 @@
       <header class="topbar"><button type="button" class="secondary mobile-menu" {% if page != 'remote' %}data-nav-toggle{% endif %} aria-controls="main-navigation" aria-expanded="false" aria-label="展开导航">☰ 菜单</button><div class="breadcrumb">个人控制台 <span>/</span> <strong>{{ page_names.get(nav_page, '控制台') }}</strong></div><div class="account"><span class="avatar">管</span><span>管理员</span></div></header>
       <main class="content" id="main-content" tabindex="-1">
         {% block content %}{% endblock %}
-        <footer class="workspace-footer"><span>LanPower · 连接你的每一台电脑</span><span>Cloud {{ version }}</span></footer>
+        <footer class="workspace-footer"><span>CodexDock · 连接你的 Codex 工作台</span><span>Cloud {{ version }}</span></footer>
       </main>
     </div>
   </div>

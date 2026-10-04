@@ -27,7 +27,7 @@
 <form method="post" action="/settings/notifications/{{ config.id }}/delete" data-confirm-message="删除此接收人的离线通知？"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="danger-quiet">删除</button></form>
 </div></div>{% endfor %}
 </section>
-<section class="card" id="service"><div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('cloud', 25) }}</span><div><span class="device-type">服务信息</span><h2>LanPower Cloud</h2></div></div><span class="badge">v{{ version }}</span></div>
+<section class="card" id="service"><div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('cloud', 25) }}</span><div><span class="device-type">服务信息</span><h2>CodexDock Cloud</h2></div></div><span class="badge">v{{ version }}</span></div>
   <label class="field-label" for="cloud-address">Cloud 地址</label><div class="copy-field"><input id="cloud-address" value="{{ public_url }}" readonly><button type="button" class="secondary" data-copy="cloud-address">{{ icon('copy', 16) }}复制</button></div><p class="hint">在 Windows 应用中填写此地址，即可发起连接。</p>
   <dl class="fact-grid service-facts"><div><dt>账户模式</dt><dd>单管理员</dd></div><div><dt>在线控制</dt><dd>Windows 云端直连</dd></div><div><dt>离线唤醒</dt><dd>通过唤醒网关</dd></div></dl>
 </section>

@@ -1,6 +1,6 @@
 {
-  "name": "lanpower-codex-ui",
-  "version": "1.21.0",
+  "name": "codexdock-web",
+  "version": "1.21.1",
   "private": true,
   "type": "module",
   "scripts": {

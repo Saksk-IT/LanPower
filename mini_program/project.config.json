@@ -1,4 +1,6 @@
 {
+  "projectname": "CodexDock",
+  "description": "Codex 远程开发与会话控制，附带电源管理",
   "appid": "touristappid",
   "compileType": "miniprogram",
   "miniprogramRoot": "./",

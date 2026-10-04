@@ -67,12 +67,12 @@ public partial class App : Application
                 _trayIcons[color] = (Drawing.Icon)original.Clone();
             }
             _trayMenu = new Forms.ContextMenuStrip();
-            _trayMenu.Items.Add("打开 LanPower", null, (_, _) => RestoreWindow());
+            _trayMenu.Items.Add("打开 CodexDock", null, (_, _) => RestoreWindow());
             _trayMenu.Items.Add("手机配对", null, (_, _) => RestoreWindow("pairing"));
             _trayMenu.Items.Add("查看日志", null, (_, _) => RestoreWindow("logs"));
             _trayMenu.Items.Add(new Forms.ToolStripSeparator());
             _trayMenu.Items.Add("退出界面", null, async (_, _) => await ExitInterfaceAsync());
-            _tray = new Forms.NotifyIcon { Icon = _trayIcons["gray"], Text = "LanPower · 服务未运行", ContextMenuStrip = _trayMenu, Visible = true };
+            _tray = new Forms.NotifyIcon { Icon = _trayIcons["gray"], Text = "CodexDock · 服务未运行", ContextMenuStrip = _trayMenu, Visible = true };
             _tray.DoubleClick += (_, _) => RestoreWindow();
             _trayTimer.Tick += async (_, _) => await RefreshTrayAsync();
             _trayTimer.Start();
@@ -98,8 +98,8 @@ public partial class App : Application
     }
 
     internal static (string Color, string Tooltip) TrayState(bool serviceRunning, bool cloudConnected) =>
-        !serviceRunning ? ("gray", "LanPower · 服务未运行") : cloudConnected
-            ? ("green", "LanPower · 已连接云端") : ("yellow", "LanPower · 未连接云端");
+        !serviceRunning ? ("gray", "CodexDock · 服务未运行") : cloudConnected
+            ? ("green", "CodexDock · 已连接云端") : ("yellow", "CodexDock · 未连接云端");
 
     private async Task RefreshTrayAsync()
     {
@@ -132,7 +132,7 @@ public partial class App : Application
     {
         if (_tray is null || _trayHintShown) return;
         _trayHintShown = true;
-        _tray.ShowBalloonTip(3000, "LanPower 已收起到托盘", "双击图标即可打开。后台服务继续运行。", Forms.ToolTipIcon.Info);
+        _tray.ShowBalloonTip(3000, "CodexDock 已收起到托盘", "双击图标即可打开。后台服务继续运行。", Forms.ToolTipIcon.Info);
     }
 
     public async Task ExitInterfaceAsync()

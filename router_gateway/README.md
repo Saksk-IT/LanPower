@@ -1,8 +1,10 @@
-# AX3000T Router Gateway
+# CodexDock Wake Gateway（配套唤醒）
 
-当前源码版本：Wake Gateway `2.1.2`，协议 2，兼容协议 1；公开 Linux ARM64 程序仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。
+Wake Gateway 是 Codex Remote 的可选电源配套组件，用于在电脑离线时发送 WOL 唤醒及提供已启用的备用电源控制。在线电脑的 Codex 远程开发不依赖网关。现有程序名、凭据和部署目录沿用 `lanpower` 标识，见 [名称约定](../docs/project-identity.md)。
 
-本目录是 Xiaomi AX3000T / RD03（MediaTek MT7981、aarch64）的 LanPower Gateway。它只主动连接 Cloud，不在路由器上开放控制端口。WOL 已纳入 Go 程序；Windows 的 LAN Token 只存于 Windows 和路由器。
+该轮源码版本：Wake Gateway `2.1.2`，协议 2，兼容协议 1；公开 Linux ARM64 程序仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。
+
+本目录是 Xiaomi AX3000T / RD03（MediaTek MT7981、aarch64）的 CodexDock Gateway。它只主动连接 Cloud，不在路由器上开放控制端口。WOL 已纳入 Go 程序；Windows 的 LAN Token 只存于 Windows 和路由器。
 
 ## Gateway v2
 

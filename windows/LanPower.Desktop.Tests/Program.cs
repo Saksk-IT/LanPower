@@ -27,9 +27,9 @@ internal static class Program
             // Dispatcher pumping must not launch or activate the installed app.
             var app = new App { LaunchShell = false };
             app.InitializeComponent();
-            Check(App.TrayState(false, false) == ("gray", "LanPower · 服务未运行"), "stopped service tray state");
-            Check(App.TrayState(true, false) == ("yellow", "LanPower · 未连接云端"), "disconnected cloud tray state");
-            Check(App.TrayState(true, true) == ("green", "LanPower · 已连接云端"), "connected cloud tray state");
+            Check(App.TrayState(false, false) == ("gray", "CodexDock · 服务未运行"), "stopped service tray state");
+            Check(App.TrayState(true, false) == ("yellow", "CodexDock · 未连接云端"), "disconnected cloud tray state");
+            Check(App.TrayState(true, true) == ("green", "CodexDock · 已连接云端"), "connected cloud tray state");
             foreach (var color in new[] { "gray", "yellow", "green" })
             {
                 using var stream = Application.GetResourceStream(new Uri($"pack://application:,,,/LanPower.Desktop;component/Resources/tray-{color}.ico")).Stream;

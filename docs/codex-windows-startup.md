@@ -1,6 +1,6 @@
 # Windows Codex Remote 自动启动与重连
 
-Windows / Cloud / Web `1.18.2`、小程序 `3.0.3` 修复重启后需要手动打开 LanPower 的问题。安装或升级后，已登录的 Windows 用户无需点击桌面图标，即可运行已授权的 Codex Remote。
+Windows / Cloud / Web `1.18.2`、小程序 `3.0.3` 修复重启后需要手动打开 CodexDock 的问题。安装或升级后，已登录的 Windows 用户无需点击桌面图标，即可运行已授权的 Codex Remote。
 
 ## 启动与恢复
 
@@ -12,7 +12,7 @@ Windows / Cloud / Web `1.18.2`、小程序 `3.0.3` 修复重启后需要手动�
 
 自动启动任务使用 Windows 交互用户组和最低权限，不保存 Windows 密码。电池供电不会停用任务，运行没有默认三天时限。升级会移除指向本安装目录的旧启动文件夹快捷方式。
 
-电脑开机但尚未登录 Windows 时，Codex Remote 会等待用户登录。原窗口控制仍要求官方 Codex 已打开、已登录并启用本机连接接口；首次使用按 [原窗口整合](codex-original-window.md) 连接。LanPower 不会强制关闭或重启官方 Codex。
+电脑开机但尚未登录 Windows 时，Codex Remote 会等待用户登录。原窗口控制仍要求官方 Codex 已打开、已登录并启用本机连接接口；首次使用按 [原窗口整合](codex-original-window.md) 连接。CodexDock 不会强制关闭或重启官方 Codex。
 
 ## 验证
 

@@ -68,7 +68,7 @@ public partial class MainWindow
     private async void OpenSharedCodex(object sender, RoutedEventArgs e)
     {
         var executable = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "CodexHost", "LanPower.CodexHost.exe"));
-        if (!File.Exists(executable)) { CodexRemoteState.Text = "请重新安装最新版 LanPower。"; return; }
+        if (!File.Exists(executable)) { CodexRemoteState.Text = "请重新安装最新版 CodexDock。"; return; }
         try
         {
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true };
@@ -80,7 +80,7 @@ public partial class MainWindow
             {
                 CodexRemoteState.Text = launcher.ExitCode switch {
                     2 => "未找到官方 Codex 桌面程序，请确认当前用户已安装。",
-                    3 => "缺少 Codex 共享服务，请重新安装最新版 LanPower。",
+                    3 => "缺少 Codex 共享服务，请重新安装最新版 CodexDock。",
                     4 => "Codex 共享服务暂未就绪，请稍后重试。",
                     5 => "无法访问共享服务或桌面目录，请检查当前用户权限。",
                     _ => "共享窗口启动失败，请重试；原有桌面任务继续运行。" };
@@ -89,7 +89,7 @@ public partial class MainWindow
             LoadCodexRemoteSettings(); StartCodexHost();
             CodexRemoteState.Text = "已打开官方 Codex 双端控制窗口。请在该窗口继续会话，网页会连接同一个任务。";
         }
-        catch { CodexRemoteState.Text = "无法启动共享窗口，请检查 LanPower 安装和当前用户目录权限。"; }
+        catch { CodexRemoteState.Text = "无法启动共享窗口，请检查 CodexDock 安装和当前用户目录权限。"; }
     }
 
     private async void ConnectCodexDesktop(object sender, RoutedEventArgs e)

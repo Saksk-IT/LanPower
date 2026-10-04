@@ -3,7 +3,7 @@
   "darkmode": true,
   "themeLocation": "theme.json",
   "window": {
-    "navigationBarTitleText": "LanPower",
+    "navigationBarTitleText": "CodexDock",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f5f6f7",

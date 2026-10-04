@@ -20,7 +20,7 @@
       <view class="intro-list">
         <view class="section-title">第一次使用，完成这三步</view>
         <view class="steps-group">
-          <view class="step-card"><view class="step-number">1</view><view><view class="step-title">让电脑连接 Cloud</view><view class="step-copy">打开 Windows 版 LanPower，完成 Cloud 配对。</view></view></view>
+          <view class="step-card"><view class="step-number">1</view><view><view class="step-title">让电脑连接 Cloud</view><view class="step-copy">打开 Windows 版 CodexDock，完成 Cloud 配对。</view></view></view>
           <view class="step-card"><view class="step-number">2</view><view><view class="step-title">在网页生成手机授权码</view><view class="step-copy">登录同一个 Cloud，在“已授权客户端”添加手机。</view></view></view>
           <view class="step-card"><view class="step-number">3</view><view><view class="step-title">用小程序扫码，选择电脑</view><view class="step-copy">点击上方扫码按钮，确认服务地址后即可开始。</view></view></view>
         </view>
@@ -36,7 +36,7 @@
     <view wx:if="{{connected && !devices.length}}" class="empty-card">
       <view class="empty-symbol"><view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view></view>
       <view class="onboarding-title">{{cloudState == 'unavailable' || needsReauthorize ? '暂时无法读取电脑列表' : devicesLoaded ? '还没有添加电脑' : '正在读取电脑列表'}}</view>
-      <view class="onboarding-copy">{{cloudState == 'unavailable' || needsReauthorize ? '请检查手机网络和 Cloud 服务，或按提示重新授权。' : devicesLoaded ? '手机已授权。接下来在 Windows 版 LanPower 连接同一个 Cloud，电脑就会显示在这里。' : '正在连接 Cloud，请稍候。'}}</view>
+      <view class="onboarding-copy">{{cloudState == 'unavailable' || needsReauthorize ? '请检查手机网络和 Cloud 服务，或按提示重新授权。' : devicesLoaded ? '手机已授权。接下来在 Windows 版 CodexDock 连接同一个 Cloud，电脑就会显示在这里。' : '正在连接 Cloud，请稍候。'}}</view>
       <button class="outline-button compact-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">更新电脑列表</button>
       <button class="text-button centered-button" bindtap="switchTab" data-tab="help">查看连接步骤</button>
     </view>
@@ -86,13 +86,13 @@
       <view wx:if="{{selectedId}}" class="setting-row"><text>当前电脑</text><text class="setting-value">{{device}}</text></view>
       <view wx:else class="setting-copy prerequisite">先完成手机授权，并在“我的电脑”选择一台电脑。</view>
       <button class="outline-button compact-button" bindtap="scanLocal" disabled="{{busy || updatingList || !selectedId}}">{{paired ? '重新扫描电脑配对码' : '扫描电脑配对码'}}</button>
-      <view wx:if="{{selectedId}}" class="setting-copy">在这台电脑的 Windows 版 LanPower → 手机配对，点击“显示配对二维码”。</view>
+      <view wx:if="{{selectedId}}" class="setting-copy">在这台电脑的 Windows 版 CodexDock → 手机配对，点击“显示配对二维码”。</view>
       <button wx:if="{{paired}}" class="setting-row row-button" bindtap="toggleLan"><text>局域网唤醒设置</text><text class="row-end"><text wx:if="{{wakeDirty}}" class="draft-label">未保存</text><text class="chevron">{{lanOpen ? '−' : '+'}}</text></text></button>
       <view wx:if="{{paired && lanOpen}}" class="advanced-settings">
         <view class="setting-copy">用于电脑离线时发送唤醒包。配对码只包含连接信息，以下参数需要手动填写。</view>
         <label class="field-label" for="wake-mac">电脑有线网卡 MAC 地址</label>
         <input id="wake-mac" value="{{mac}}" bindinput="editMac" placeholder="例如 02-11-22-33-44-55" maxlength="17" disabled="{{busy}}" />
-        <view class="field-help">在 Windows 版 LanPower 首页的“网络与唤醒”中查看网卡 MAC。</view>
+        <view class="field-help">在 Windows 版 CodexDock 首页的“网络与唤醒”中查看网卡 MAC。</view>
         <label class="field-label" for="wake-broadcast">局域网广播地址</label>
         <input id="wake-broadcast" value="{{broadcast}}" bindinput="editBroadcast" placeholder="例如 192.168.1.255" maxlength="15" disabled="{{busy}}" />
         <view class="field-help">可先使用默认的 255.255.255.255；指定网段地址需与家中网络一致。</view>
@@ -114,7 +114,7 @@
     </view>
     <view wx:if="{{helpTopic == 'remote'}}" class="help-card">
       <view class="help-card-title">在外也能管理电脑</view>
-      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">电脑连接 Cloud</view><view class="step-copy">在 Windows 版 LanPower 中完成 Cloud 配对，并在网页确认电脑已出现。</view></view></view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">电脑连接 Cloud</view><view class="step-copy">在 Windows 版 CodexDock 中完成 Cloud 配对，并在网页确认电脑已出现。</view></view></view>
       <view class="help-step"><view class="help-number">2</view><view><view class="step-title">为手机生成授权码</view><view class="step-copy">在同一个 Cloud 网页的“已授权客户端”中添加手机。二维码十分钟有效，只能使用一次。</view></view></view>
       <view class="help-step"><view class="help-number">3</view><view><view class="step-title">扫码后选择电脑</view><view class="step-copy">在小程序“连接”中扫码，回到“我的电脑”选择设备。电脑在线且控制通道可用时，即可执行电源操作。</view></view></view>
       <button class="primary-button" bindtap="switchTab" data-tab="connect">去授权手机</button>
@@ -140,7 +140,7 @@
       <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="sleep"><text>睡眠和休眠有什么区别？</text><text class="chevron">{{faqOpen == 'sleep' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'sleep'}}" class="faq-answer">睡眠把当前状态保留在内存，耗电较低、恢复较快；休眠先把状态写入磁盘，再进入低功耗或断电状态，恢复通常更慢。操作前仍建议保存文件；休眠需要 Windows 已启用此功能。</view></view>
       <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="auth"><text>授权失效后怎么办？</text><text class="chevron">{{faqOpen == 'auth' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'auth'}}" class="faq-answer">新版 Cloud 与小程序支持一次扫码长期授权，断网或退出微信后会自动恢复。主动撤销授权、清除小程序数据，或旧版已丢失有效凭据时，需在 Cloud 生成新码再扫描。重新授权同一 Cloud 后，已保存的局域网关联会保留。</view></view>
     </view>
-    <view class="about-copy">LanPower · {{environmentLabel}} · 小程序 v{{version}}<view>电脑电源，随手管理</view></view>
+    <view class="about-copy">CodexDock · {{environmentLabel}} · 小程序 v{{version}}<view>远程继续 Codex，随手管理电脑</view></view>
   </view>
 
   <view class="tabbar">

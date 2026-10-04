@@ -35,6 +35,7 @@ function New-Service {
     if ($script:mode -eq 'registration failure') { throw 'original install failure' }
     $script:createdService++
 }
+function Set-Service { param($Name, $Description) }
 function Get-CimInstance {
     param($ClassName, $Filter)
     $account = if ($script:mode -eq 'account failure') { 'test-user' } else { 'LocalSystem' }

@@ -208,7 +208,7 @@ public partial class MainWindow
             HideQrButton.Visibility = Visibility.Visible;
             ShowQrButton.Content = "刷新二维码";
             _qrExpires = DateTimeOffset.UtcNow.AddMinutes(2);
-            PairingNotice.Text = "在 LanPower 小程序中选择扫描配对。请勿分享或截图传播二维码。";
+            PairingNotice.Text = "在 CodexDock 小程序中选择扫描配对。请勿分享或截图传播二维码。";
             UpdateQrExpiry();
         }
         catch (OperationCanceledException)

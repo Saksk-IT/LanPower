@@ -1,6 +1,24 @@
-# LanPower 架构与实现状态
+# CodexDock 架构与实现状态
 
-Cloud 是设备与账户平台；Windows 是可直接连接 Cloud 的设备；Wake Gateway 用于远程开机和可选备用控制。电源动作按目标 Windows 编号请求，由 Cloud 选择路径。1.8.0 新增独立 Codex Remote 链路，继续沿用现有身份和设备归属。
+CodexDock 以远程开发和原 Codex 会话控制为主。网页与微信小程序通过 Cloud 授权中继连接 Windows 用户 Host，任务由当前用户的原 Codex 窗口与原服务执行。电源管理、LAN 控制及可选 Wake Gateway 为开发电脑提供配套支持。名称和兼容标识见 [项目名称与定位](project-identity.md)。
+
+## Codex Remote 主链路
+
+```mermaid
+flowchart LR
+    Web[网页 / PWA] -->|授权 WSS| Cloud[CodexDock Cloud 内存中继]
+    Mini[微信小程序 Codex 工作台] -->|独立手机授权 WSS| Cloud
+    Agent[Windows Service Agent] -->|主动出站 WSS| Cloud
+    Agent <-->|ACL 命名管道| Host[当前 Windows 用户 Codex Host]
+    Host <-->|当前用户本机连接| Desktop[原 Codex 窗口与原服务]
+    Desktop --> Project[本机项目与聊天历史]
+```
+
+多个已授权网页和小程序共享同一电脑端连接，并同步任务、队列和审批状态。Cloud 不保存任务正文；断线后读取电脑端状态与历史，任务不会因为网页退出而自动结束。Windows 用户登录、Codex 登录和电脑端项目授权是远程开发的前提。原窗口连接与备用共享服务的边界见 [原窗口整合](codex-original-window.md)，传输和授权见 [Relay 协议](codex-remote-protocol.md)。
+
+## 电源管理与唤醒（配套链路）
+
+Cloud 同时提供设备状态和限定电源动作。在线电脑优先使用 Windows 直连；Wake Gateway 用于远程唤醒离线电脑及已启用的备用控制，不是 Codex 远程开发的必需组件。配套链路如下：
 
 ```mermaid
 flowchart LR
@@ -12,21 +30,6 @@ flowchart LR
     Gateway -->|WOL 或备用 LAN 控制| Windows
     Desktop[Windows 桌面端] -->|命名管道| Windows
 ```
-
-## 正式模式
-
-Codex Remote 连接关系如下；Host 在当前交互用户下运行，Service 负责出站连接，两个进程都不新增 TCP 监听。Cloud 只转发正文，Codex 登录、会话历史与代码留在 Windows。
-
-```mermaid
-flowchart LR
-    PWA[Web / PWA] -->|同源会话 WSS| Relay[Cloud 内存 Relay]
-    Agent[Windows Service Agent] -->|主动出站 WSS| Relay
-    Agent <-->|ACL 命名管道| Host[Windows 用户 Codex Host]
-    Host <-->|本机 stdio JSONL| Runtime[官方 Codex app-server]
-    Runtime --> Project[本机项目与 Codex 历史]
-```
-
-每台电脑保留一个用户 Host，多个已授权网页和小程序共享同一个 Host 会话；Cloud 将请求回包分流到发起页面，并广播任务状态和审批。已发送任务在浏览器断线后继续运行；重连读取本机状态和历史，Relay 不回放任务正文。Cloud 使用单个 worker，重启丢弃转发队列。项目只能在电脑端授权，Runtime 按 `workspace-write` / `on-request` 启动；远端不能修改 Codex 配置、登录或调用任意 Shell RPC。具体能力与验收见 [Codex Remote](codex-remote.md)。
 
 | 模式 | 组件 | 能力 |
 |---|---|---|
@@ -41,10 +44,10 @@ Windows 直连在线时优先 `windows_direct`。`wake` 只能显式选择，走
 
 | 组件 | 实现 | 主要职责 |
 |---|---|---|
-| Windows | `windows/`，.NET 10、WPF、Windows Service | LAN API、Cloud Agent、DPAPI 凭据、命名管道、安装包 |
-| Codex Host | `windows/LanPower.CodexHost/`，当前 Windows 用户 | 本地授权、app-server 生命周期、白名单 RPC、任务快照与受限审批 |
-| Cloud | `cloud_app/`，FastAPI、SQLAlchemy、Alembic、Jinja2 | Passkey、恢复码、设备/客户端授权、命令路由、网页、审计 |
-| 小程序 | `mini_program/pages/cloud/` | 独立客户端授权、多电脑选择、LAN First、Cloud Fallback |
+| Windows | `windows/`，.NET 10、WPF、Windows Service | Codex 连接授权、Cloud Agent、用户 Host、配套 LAN API、安装包 |
+| Codex Host | `windows/LanPower.CodexHost/`，当前 Windows 用户 | 原 Codex 窗口接入、本地授权、白名单 RPC、任务状态、队列与审批 |
+| Cloud | `cloud_app/`，FastAPI、SQLAlchemy、Alembic、Jinja2 | Codex 网页工作台、授权 WSS 中继、Passkey、恢复码、配套电源命令与审计 |
+| 小程序 | `mini_program/pages/codex/`、`pages/cloud/` | Codex 工作台、独立手机授权、多电脑选择、配套电源管理 |
 | Gateway | `router_gateway/`，Go | 设备注册、多电脑配置、WOL、备用控制、防重复执行 |
 | 部署 | `deploy/docker/` | Cloud、可选 Caddy、持久化数据、旧协议叠加配置 |
 | 兼容层 | `source/`、`LanPower/`、`cloud_remote/`、小程序旧入口 | 保留旧 Python Windows、LAN API 和 `/api/v1/*` |

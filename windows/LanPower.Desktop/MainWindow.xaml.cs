@@ -289,7 +289,7 @@ public partial class MainWindow : Window
         catch
         {
             LogText.Text = "无法连接服务，请检查服务是否正在运行。";
-            LogNotice.Text = "打开 Windows 服务管理，检查 LanPower Service 是否已启动。";
+            LogNotice.Text = "打开 Windows 服务管理，检查 CodexDock Service 是否已启动。";
         }
         finally { _loadingLogs = false; RefreshLogsButton.IsEnabled = true; }
     }

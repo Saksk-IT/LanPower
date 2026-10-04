@@ -60,7 +60,7 @@ dotnet run --project windows/LanPower.Tests -c Release -- "$env:TEMP/LanPower-po
 
 - 手动运行默认只构建和保存工作流产物，不上传 Release 或 GHCR。
 - 发布仅在版本标签触发，或手动选择版本标签并明确开启 `publish` 时执行。
-- 发布标签必须与根目录 `VERSION`、Windows 和 Cloud 版本一致；当前源码的候选标签为 `v1.8.0`，尚未创建或推送。分支和错误版本会被拒绝。
+- 发布标签必须与根目录 `VERSION`、Windows 和 Cloud 版本一致；当前源码的候选标签为 `v1.21.1`，尚未创建或推送。分支和错误版本会被拒绝。
 - Windows 文件和 Cloud 镜像均构建、验证成功后，才进入上传步骤。Cloud 镜像保存为 `ghcr.io/<仓库所有者小写>/lanpower-cloud:<产品版本>` 和 `sha-<源码提交>`，不覆盖 `latest`。
 - Release 只上传五个明确列出的文件；说明来自 `docs/release-notes.md`。已有相同版本 Release 时更新对应附件。
 

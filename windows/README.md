@@ -1,4 +1,8 @@
-# Windows 应用
+# CodexDock Windows 应用
+
+Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.21.1`，小程序为 `3.2.3`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
+
+## 更新与兼容记录
 
 Windows `1.21.0` 接收并校验完整分块请求，原样交给 Codex；删除图片、文字、技能、队列、项目数量及大回复等额外上限，支持普通附件上传。保留现有配置、身份、授权和原窗口。详见 [完整输入](../docs/codex-image-submission.md)。
 
@@ -10,7 +14,7 @@ Windows `1.21.0` 接收并校验完整分块请求，原样交给 Codex；删除
 
 运行中的“已处理时间”移至本轮工作内容开头；完成后的查看图片记录与过程插图收进整轮“用时…”入口，展开可查看完整过程和图片预览。Windows / Cloud / Web `1.20.0`，小程序 `3.1.2`；说明见 [整轮工作过程](../docs/codex-conversation-ui.md)。
 
-`1.20.0` 安装器注册登录后自动启动和每分钟恢复的后台任务；原 Codex 窗口断开后自动重连，无需打开 LanPower 界面。Host 同时负责把原生额度、上下文通知和能力目录摘要安全地返回给网页及小程序。开机后仍需登录 Windows，并打开已登录、已启用本机连接的官方 Codex。详见 [自动启动与重连](../docs/codex-windows-startup.md) 和 [原生状态说明](../docs/codex-native-status.md)。
+`1.20.0` 安装器注册登录后自动启动和每分钟恢复的后台任务；原 Codex 窗口断开后自动重连，无需打开 CodexDock 界面。Host 同时负责把原生额度、上下文通知和能力目录摘要安全地返回给网页及小程序。开机后仍需登录 Windows，并打开已登录、已启用本机连接的官方 Codex。详见 [自动启动与重连](../docs/codex-windows-startup.md) 和 [原生状态说明](../docs/codex-native-status.md)。
 
 工作过程图片已增加折叠标题：默认收起，展开显示 140×140 等比例缩略图，点击可查看大图。Windows / Cloud / Web `1.20.0`，小程序 `3.1.2`；行为和验证见 [图片折叠预览](../docs/codex-image-preview.md)。
 
@@ -18,7 +22,7 @@ Windows `1.21.0` 接收并校验完整分块请求，原样交给 Codex；删除
 
 Codex Remote 已解除单控制页面限制：多个网页和小程序可同时连接同一电脑，任务与审批状态同步，关闭一个页面不影响其他页面。版本与验证见 [多页面控制](../docs/codex-multiple-pages.md)。
 
-当前源码版本：Windows `1.20.1`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。Host 修复大图片导致整轮隐藏，稳定复用内容引用；网页自动恢复正文、图片及完整工具输出，详见 [完整会话显示](../docs/codex-history-content.md)。既有发送回执、状态版本及原生控制恢复继续保留，见 [P0 验收记录](../docs/codex-remote-p0.md)。小程序 `3.1.3` 通过 Cloud `1.20.1` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用；会话展示见 [说明](../docs/codex-conversation-ui.md)，本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
+该轮源码版本：Windows `1.20.1`；当前公开安装器和便携包仍见 [v1.6.1 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1)。Host 修复大图片导致整轮隐藏，稳定复用内容引用；网页自动恢复正文、图片及完整工具输出，详见 [完整会话显示](../docs/codex-history-content.md)。既有发送回执、状态版本及原生控制恢复继续保留，见 [P0 验收记录](../docs/codex-remote-p0.md)。小程序 `3.1.3` 通过 Cloud `1.20.1` 连接既有用户 Codex Host，无需新增 Windows 入站端口。用户登录和项目授权继续适用；会话展示见 [说明](../docs/codex-conversation-ui.md)，本机更新记录见 [开发指南](../docs/local-development.md)。现有三色托盘和电源功能见 [v1.7 升级说明](../docs/upgrade-v1.7.md)。
 
 微信小程序 `3.1.2` 已接入完整远程控制接口，使用原生界面与独立状态控制器；详见 [小程序重构说明](../docs/codex-remote-mini-program.md)。本轮只更新本机 Docker 与 Windows，保留设备身份、配对和开发授权。
 
@@ -28,7 +32,7 @@ Codex Remote 已解除单控制页面限制：多个网页和小程序可同时�
 
 ## Codex Remote
 
-Setup 和便携包包含用户 Host 及 `CodexServer/1.20.0/LanPower.CodexServer.exe`。保存远程授权后，优先点击「连接原 Codex 窗口」。若使用「打开备用共享窗口」，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 LanPower Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
+Setup 和便携包包含用户 Host 及 `CodexServer/1.21.1/LanPower.CodexServer.exe`。保存远程授权后，优先点击「连接原 Codex 窗口」。若使用「打开备用共享窗口」，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 CodexDock Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
 
 本地授权保存在 `%LOCALAPPDATA%\LanPower\codex-remote.json`，不限制普通本机目录数量，拒绝 UNC、符号链接和目录联接。关闭授权立即断开远程访问；共享模式保留桌面任务，独立模式结束自有执行进程。共享凭据仅通过当前用户管道传递，私有目录仅允许当前用户及 SYSTEM 访问。浏览器断线不重发任务，重新连接读取活动编号、历史、队列与审批。完整步骤见 [Codex Remote](../docs/codex-remote.md)。
 
@@ -44,7 +48,7 @@ dotnet run --project windows/LanPower.Desktop.Tests -c Release --no-build
 ./windows/installer/build-installer.ps1
 ```
 
-服务与命名管道演练运行 `dotnet run --project windows/LanPower.Tests -c Release --no-build`。仅在未运行已安装 LanPower Service 的测试环境执行：此演练使用默认命名管道，并包含取消 Cloud 连接等写操作。已有实际服务的电脑使用上面的单元测试与无服务依赖的桌面检查。
+服务与命名管道演练运行 `dotnet run --project windows/LanPower.Tests -c Release --no-build`。仅在未运行已安装 CodexDock Service 的测试环境执行：此演练使用默认命名管道，并包含取消 Cloud 连接等写操作。已有实际服务的电脑使用上面的单元测试与无服务依赖的桌面检查。
 
 桌面检查可传入截图目录，例如 `dotnet run --project windows/LanPower.Desktop.Tests -c Release --no-build -- windows/out/screenshots`；截图使用示例设备数据，覆盖六个页面的常规和最小客户区尺寸。图标源文件位于 `LanPower.Desktop/Assets/LanPower.svg`；在 Windows 运行 `scripts/generate-app-icon.ps1` 可重建 16–256 像素 ICO 与 PNG。
 

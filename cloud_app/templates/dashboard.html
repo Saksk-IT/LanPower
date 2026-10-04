@@ -38,7 +38,7 @@
 {% endfor %}
 </div>
 {% else %}
-<section class="card empty-state"><span class="empty-icon">{{ icon('computer', 34) }}</span><h2>从连接第一台电脑开始</h2><p>在电脑上打开 LanPower，连接 Cloud 后输入配对码。<br>电脑在线后，即可在这里管理电源。</p><a class="button-link" href="/enroll">连接第一台电脑 {{ icon('arrow', 18) }}</a><span class="hint">在线控制无需安装唤醒网关</span></section>
+<section class="card empty-state"><span class="empty-icon">{{ icon('computer', 34) }}</span><h2>从连接第一台电脑开始</h2><p>在电脑上打开 CodexDock，连接 Cloud 后输入配对码。<br>电脑在线后，即可在这里管理电源。</p><a class="button-link" href="/enroll">连接第一台电脑 {{ icon('arrow', 18) }}</a><span class="hint">在线控制无需安装唤醒网关</span></section>
 {% endif %}
 <section class="card activity-preview"><div class="card-heading"><h2>{{ icon('clock', 19) }}最近操作</h2><a href="/activity">全部记录 {{ icon('arrow', 15) }}</a></div>
 {% if commands %}<ul class="timeline">{% for command in commands[:4] %}<li><div><strong>{{ command.action | action_label }}</strong><span>{{ device_names.get(command.target_device_id, '已移除电脑') }} · {{ command.route | route_label }} · {{ command.issued_at | relative_time }}</span></div><span class="result-status {{ command.state }}">{{ command.state | state_label }}</span></li>{% endfor %}</ul>

@@ -1,6 +1,8 @@
 <Project>
   <PropertyGroup>
-    <Version>1.21.0</Version>
-    <FileVersion>1.21.0.0</FileVersion>
+    <Product>CodexDock</Product>
+    <Description>Codex 远程开发与会话控制，附带电脑电源管理</Description>
+    <Version>1.21.1</Version>
+    <FileVersion>1.21.1.0</FileVersion>
   </PropertyGroup>
 </Project>

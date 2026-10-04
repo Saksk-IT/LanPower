@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="lp-csrf" content="{{ csrf }}">
   <meta name="theme-color" content="#f8f8f8">
-  <title>Codex Remote · LanPower</title>
+  <title>CodexDock · CodexDock</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/static/codex-ui/codex.css?v={{ version }}">
@@ -14,6 +14,6 @@
 <body data-page="remote">
   <script id="lanpower-codex-config" type="application/json">{"csrf":{{ csrf|tojson }},"devices":[{% for device in devices %}{"id":{{ device.id|tojson }},"name":{{ device.name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]}</script>
   <div id="codex-app"></div>
-  <noscript>请启用 JavaScript 后使用 Codex Remote。<a href="/dashboard">返回 LanPower</a></noscript>
+  <noscript>请启用 JavaScript 后使用 Codex Remote。<a href="/dashboard">返回 Codex Remote</a></noscript>
 </body>
 </html>

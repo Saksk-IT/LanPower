@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.21.0 与小程序 3.2.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
+适用于 CodexDock Windows / Cloud / Web 1.21.0 与小程序 3.2.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
 
 ## 认证与连接
 
@@ -61,7 +61,7 @@
 | `lanpower/history/action` | `threadId`, `turnId`, `expectedTailTurnId`, `action`（`fork` / `rollback`）；电脑端稳定轮次定位与操作前检查 |
 | `lanpower/files/list` | `cwd`, `path`, `cursor`；授权目录内分页浏览 |
 | `lanpower/files/read` | `cwd`, `path`；授权目录内文本预览 |
-| `lanpower/files/upload` | `cwd`, `name`, `base64`；原始文件上传至当前 Windows 用户的 LanPower 附件目录，名称不可含路径/流，新编号隔离文件，不覆盖既有文件 |
+| `lanpower/files/upload` | `cwd`, `name`, `base64`；原始文件上传至当前 Windows 用户的 CodexDock 附件目录，名称不可含路径/流，新编号隔离文件，不覆盖既有文件 |
 | `lanpower/files/search` | `cwd`, `query`；授权目录内文件名/路径搜索 |
 | `lanpower/image/read` | `threadId`, `path`；当前授权会话引用的本地图片 |
 | `lanpower/automations/list` | 无；读取授权项目的本机自动化配置，不创建或调度 |
@@ -144,7 +144,7 @@ Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联�
 
 ## 原 Codex 窗口
 
-`desktopControl:true` 表示用户 Host 通过已启用的本机调试接口连接原窗口 AppServerManager，继承该窗口的会话、任务、权限、队列和审批；不为原窗口 turn/start 覆盖 sandbox / approvalPolicy。目录和资源仍受 LanPower 本机授权检查。连接、断线与升级不自动关闭或重启官方桌面。
+`desktopControl:true` 表示用户 Host 通过已启用的本机调试接口连接原窗口 AppServerManager，继承该窗口的会话、任务、权限、队列和审批；不为原窗口 turn/start 覆盖 sandbox / approvalPolicy。目录和资源仍受 CodexDock 本机授权检查。连接、断线与升级不自动关闭或重启官方桌面。
 
 原窗口 conversationState / streamRole / turnCompleted 转为 `lanpower/conversation/changed`、`lanpower/stream/changed` 与 `lanpower/historyChanged`；`thread/settings/updated` 更新会话模型、思考强度和协作模式。网页以事件驱动刷新，30 秒检查用于断线或遗漏后的恢复。CDP 通知队列拥塞时记录有界的待补读会话；Host 输出拥塞时也合并历史更新提示，不靠丢掉最终输出维持连接。审批请求不能作为普通增量静默丢弃。
 

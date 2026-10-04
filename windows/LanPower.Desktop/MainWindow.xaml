@@ -1,7 +1,7 @@
 <Window x:Class="LanPower.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LanPower · 电脑电源管理" Width="1140" Height="800" MinWidth="960" MinHeight="660"
+        Title="CodexDock · 远程开发与电脑管理" Width="1140" Height="800" MinWidth="960" MinHeight="660"
         WindowStartupLocation="CenterScreen" Icon="Assets/LanPower.ico"
         Background="{StaticResource Surface}" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="13"
         Foreground="{StaticResource Ink}" UseLayoutRounding="True" Loaded="OnLoaded">
@@ -14,8 +14,8 @@
           <StackPanel Orientation="Horizontal" Margin="8,0,0,8">
             <Image Source="Assets/LanPower.png" Width="40" Height="40" Margin="0,0,11,0"/>
             <StackPanel VerticalAlignment="Center">
-              <TextBlock Text="LanPower" Foreground="White" FontSize="23" FontWeight="SemiBold"/>
-              <TextBlock Text="让连接与控制更简单" Foreground="#9DB9C2" FontSize="11" Margin="0,2,0,0"/>
+              <TextBlock Text="CodexDock" Foreground="White" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock Text="远程开发与电脑管理" Foreground="#9DB9C2" FontSize="11" Margin="0,2,0,0"/>
             </StackPanel>
           </StackPanel>
           <TextBlock Text="工作空间" Foreground="#789DA9" FontSize="11" Margin="16,32,0,14"/>
@@ -73,8 +73,8 @@
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel>
-                  <TextBlock Text="欢迎使用 LanPower" FontSize="16" FontWeight="SemiBold"/>
-                  <TextBlock Text="先用手机配对，即可在家控制电脑。云端连接可随时配置。" Style="{StaticResource Caption}" Margin="0,6,12,0"/>
+                  <TextBlock Text="欢迎使用 CodexDock" FontSize="16" FontWeight="SemiBold"/>
+                  <TextBlock Text="连接 Cloud 并启用 Codex Remote，即可在网页或小程序继续开发。" Style="{StaticResource Caption}" Margin="0,6,12,0"/>
                 </StackPanel>
                 <Button Grid.Column="1" Content="开始使用" Click="FinishWelcome" VerticalAlignment="Center"/>
               </Grid>
@@ -178,7 +178,7 @@
               <UniformGrid Columns="3">
                 <StackPanel><TextBlock Text="01  连接同一网络" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/><TextBlock Text="手机与电脑接入家中局域网" Style="{StaticResource Caption}" Margin="0,8,14,0"/></StackPanel>
                 <StackPanel><TextBlock Text="02  显示配对二维码" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/><TextBlock Text="点击下方按钮，在本机显示" Style="{StaticResource Caption}" Margin="0,8,14,0"/></StackPanel>
-                <StackPanel><TextBlock Text="03  用小程序扫码" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/><TextBlock Text="在 LanPower 小程序中完成配对" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
+                <StackPanel><TextBlock Text="03  用小程序扫码" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/><TextBlock Text="在 CodexDock 小程序中完成配对" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
               </UniformGrid>
             </Border>
             <Border Style="{StaticResource Section}" Padding="28">
@@ -314,7 +314,7 @@
                 </Grid>
                 <TextBox x:Name="LogText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" Background="#F5F8FA"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Height="345" AutomationProperties.Name="服务日志"/>
-                <TextBlock x:Name="LogNotice" Text="服务未连接时，可打开 Windows 服务管理查看 LanPower Service。" Style="{StaticResource Caption}" Margin="0,16,0,12"/>
+                <TextBlock x:Name="LogNotice" Text="服务未连接时，可打开 Windows 服务管理查看 CodexDock Service。" Style="{StaticResource Caption}" Margin="0,16,0,12"/>
                 <WrapPanel><Button Content="Windows 服务管理" Click="OpenServices" Style="{StaticResource SecondaryButton}" Margin="0,0,10,8"/><Button Content="复制日志" Click="CopyLogs" Style="{StaticResource SecondaryButton}" Margin="0,0,0,8"/></WrapPanel>
               </StackPanel>
             </Border>
@@ -340,7 +340,7 @@
             </Border>
             <Border Style="{StaticResource Section}">
               <StackPanel>
-                <StackPanel Orientation="Horizontal"><Image Source="Assets/LanPower.png" Width="42" Height="42" Margin="0,0,14,0"/><StackPanel><TextBlock Text="LanPower" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Windows 电脑电源管理" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></StackPanel>
+                <StackPanel Orientation="Horizontal"><Image Source="Assets/LanPower.png" Width="42" Height="42" Margin="0,0,14,0"/><StackPanel><TextBlock Text="CodexDock" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Codex 远程开发 · 附带电源管理" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></StackPanel>
                 <TextBlock Text="局域网控制 · 云端连接 · 可选远程唤醒" Foreground="{StaticResource Muted}" Margin="0,18,0,0"/>
               </StackPanel>
             </Border>

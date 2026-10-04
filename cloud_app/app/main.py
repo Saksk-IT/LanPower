@@ -39,7 +39,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.21.0"
+VERSION = "1.21.1"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -143,7 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await run_in_threadpool(scheduler.stop)
             engine.dispose()
 
-    app = FastAPI(title="LanPower Cloud", version=VERSION, docs_url=None, redoc_url=None,
+    app = FastAPI(title="CodexDock Cloud", version=VERSION, docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)
     app.state.platform = platform
     app.state.identity = identity
@@ -236,7 +236,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/manifest.webmanifest")
     def pwa_manifest():
-        return Response(json.dumps({"name": "LanPower Codex Remote", "short_name": "LanPower",
+        return Response(json.dumps({"name": "CodexDock", "short_name": "CodexDock",
             "start_url": "/remote", "scope": "/", "display": "standalone", "lang": "zh-CN",
             "background_color": "#f5f7f9", "theme_color": "#147d6a",
             "icons": [{"src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]}),

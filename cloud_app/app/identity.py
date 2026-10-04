@@ -132,7 +132,7 @@ class Identity:
             existing = list(db.scalars(select(Passkey).where(Passkey.owner_id == owner_id)))
         challenge_id, challenge = self._challenge(owner_id, "setup" if setup else "register", binding)
         options = generate_registration_options(
-            rp_id=self.rp_id, rp_name="LanPower Cloud", user_id=uuid.UUID(owner_id).bytes,
+            rp_id=self.rp_id, rp_name="CodexDock Cloud", user_id=uuid.UUID(owner_id).bytes,
             user_name=owner.username, user_display_name=owner.username,
             challenge=challenge, timeout=60000,
             authenticator_selection=AuthenticatorSelectionCriteria(

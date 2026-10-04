@@ -1,10 +1,22 @@
 # 本机 Docker 开发环境
 
-当前功能与更新记录见 [网页图片发送](codex-image-submission.md)、下方侧边栏配色、[网页权限切换](codex-permissions.md)和 [会话更新时间](codex-session-recency.md)。Windows / Cloud / Web `1.21.0`、小程序 `3.2.0`，镜像 `lanpower-cloud:1.21.0-dev.1`；升级保留原数据库、配对、授权、CA 和局域网 HTTPS 配置。
+当前产品名称为 **CodexDock**，以 Codex Remote 远程开发与会话控制为主，电源管理和唤醒为配套能力。Windows / Cloud / Web `1.21.1`、小程序 `3.2.3`，本机镜像 `codexdock-cloud:1.21.1-dev.1`；名称与兼容标识见 [项目定位](project-identity.md)。历史功能与各轮真实验证见下方记录。
 
 默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
 
-应用源码版本为 `1.21.0`，小程序 `3.2.0`，本地部署配置版本为 `1.21.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.21.1`，小程序 `3.2.3`，本地部署配置版本为 `1.21.1-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+
+## 本机 1.21.1 项目更名与定位（2026-10-05）
+
+项目名称统一为 **CodexDock**，主功能为 Codex Remote 远程开发与原窗口会话控制，电源管理及唤醒作为配套功能。README 增加主功能、首次连接和文档导航；Cloud、Windows、小程序、架构及部署文档同步新名称。Windows / Cloud / Web 为 `1.21.1`，小程序为 `3.2.3`；同机另一轮已完成的小程序 `3.2.2` 首页调整完整保留。
+
+最小验证：网页构建通过；Cloud 身份、版本兼容和远程桌面下载相关 39 项检查通过；Windows 42 项界面检查通过；安装配置、准备、恢复与编译后的成功/失败流程通过；小程序 LAN、Cloud、环境隔离检查通过。当前名称与版本配置一致，修改的 Markdown 文件链接检查通过。
+
+本机 Docker 已切换到 `codexdock-cloud:1.21.1-dev.1`，正常证书校验的 HTTPS 健康版本为 `1.21.1`，登录页显示 CodexDock，PWA 名称为 CodexDock。升级前使用 SQLite backup API 备份；升级后九张身份、设备、配对、授权和配置表的既有编号保留，完整性 `ok`、外键错误 0。沿用原数据卷、Compose 项目、CA 与局域网 HTTPS 入口。
+
+Windows 已在原目录就地升级到 `1.21.1.0`，产品元数据为 CodexDock，后台服务显示为 CodexDock Service 且正常运行。安装器退出码 0，四组件安装/构建哈希一致；设备身份、Cloud 地址、局域网配置、用户授权、聊天组织和桌面设置均保留，原 Codex 与既有共享服务进程保留。
+
+构建快照、数据库备份和安装检查报告保存在忽略目录 `private/project-rename-1.21.1`。本轮未执行真实电源动作或向原会话发送开发任务；微信平台名称、真机和公网 5G 验收仍由用户后续处理。未推送远程仓库、改名公开仓库或部署远程服务器。
 
 ## 本机 1.21.0 Codex Remote 完整输入（2026-10-05）
 
@@ -74,7 +86,7 @@ Windows Setup 就地安装 `1.19.0.0`，四组件哈希与隔离构建一致，S
 
 ## 本机 1.19.0 自动启动与恢复（2026-10-04）
 
-Windows Setup 就地更新成功，登录启动任务以交互用户最低权限运行；Host 自动启动，LanPower 界面未运行时结束 Host，58.1 秒后后台自动恢复，单实例和原窗口只读接入正常。原配置、LAN 配对、Cloud 地址、设备身份、用户项目授权和聊天组织配置保留，官方 Codex 进程继续运行。启动任务不保存 Windows 密码，允许电池供电，没有三天运行时限；旧启动快捷方式已清理。
+Windows Setup 就地更新成功，登录启动任务以交互用户最低权限运行；Host 自动启动，CodexDock 界面未运行时结束 Host，58.1 秒后后台自动恢复，单实例和原窗口只读接入正常。原配置、LAN 配对、Cloud 地址、设备身份、用户项目授权和聊天组织配置保留，官方 Codex 进程继续运行。启动任务不保存 Windows 密码，允许电池供电，没有三天运行时限；旧启动快捷方式已清理。
 
 本机 Docker 更新为 `lanpower-cloud:1.19.0-dev.1`，HTTPS 与镜像包版本均为 `1.19.0`，Cloud/Caddy 健康。通过 SQLite backup API 备份后核对九张身份、授权和配置表，既有编号全部保留；数据库完整性为 `ok`，外键错误为 0。原登录配置、数据卷、CA 和局域网 HTTPS 继续使用，已完成的图片折叠功能保留。
 
@@ -177,7 +189,7 @@ Remove-Item -LiteralPath 'Cert:\LocalMachine\Root\<开发 CA 指纹>'
 
 ## 本机 1.13.1 双端控制（2026-10-03）
 
-实际官方桌面与 LanPower 产品共享连接完成双向暂停、引导、原生队列显示；共享服务用户管道与无 Bearer Header 桌面网关验证通过。Windows 76 项、Cloud 200 项与浏览器检查通过；安装版双端入口实际点击成功，真实 Cloud/Agent/Host/共享服务/官方桌面链路通过新会话与刷新检查。当前官方额度用完阻止此次完整网页任务复测，详见 [验证记录](codex-remote-takeover.md)。
+实际官方桌面与 CodexDock 产品共享连接完成双向暂停、引导、原生队列显示；共享服务用户管道与无 Bearer Header 桌面网关验证通过。Windows 76 项、Cloud 200 项与浏览器检查通过；安装版双端入口实际点击成功，真实 Cloud/Agent/Host/共享服务/官方桌面链路通过新会话与刷新检查。当前官方额度用完阻止此次完整网页任务复测，详见 [验证记录](codex-remote-takeover.md)。
 
 本机镜像为 `lanpower-cloud:1.13.1-dev.1`，正常 HTTPS 返回 1.13.1，Cloud/Caddy 健康。切换前使用 SQLite backup API 备份，完整性与九张身份/配置表的主键及引用保持，原数据卷、登录配置与 CA 保留。Windows Setup 就地安装，Service、Desktop、Host、版本化共享服务与构建匹配；LAN 配置与用户项目授权保留，Cloud 地址和设备身份一致，续期凭据正常轮换。原有官方工作窗口与运行中的共享服务未重启。
 

@@ -9,7 +9,7 @@
 
   <view class="notice-card"><view class="notice-icon">i</view><view><view class="notice-title">无需 Cloud，也能在家控制</view><view class="notice-copy">扫描电脑配对码即可局域网直连。本页也兼容已有的 v1 远程配对；新建远程连接请使用首页的手机授权。</view></view></view>
 
-  <view wx:if="{{!paired}}" class="section-card"><view class="section-title">连接这台电脑</view><view class="section-copy">在电脑上打开 LanPower 配对页，用微信扫描一次即可保存局域网凭据。</view><button class="primary-button" bindtap="scanPairing">扫描电脑配对码</button></view>
+  <view wx:if="{{!paired}}" class="section-card"><view class="section-title">连接这台电脑</view><view class="section-copy">在电脑上打开 CodexDock 配对页，用微信扫描一次即可保存局域网凭据。</view><button class="primary-button" bindtap="scanPairing">扫描电脑配对码</button></view>
   <view wx:else class="section-card"><view class="section-title-row"><view><view class="section-title">局域网配对</view><view class="section-copy">已保存这台电脑的局域网凭据</view></view><text class="status-text">已配对</text></view><view class="setting-row"><text>电脑地址</text><text class="setting-value">{{host}}</text></view><button class="outline-button" bindtap="scanPairing">重新扫描配对码</button></view>
 
   <view wx:if="{{paired}}" class="section-card">
@@ -19,7 +19,7 @@
     <view wx:if="{{wakeOpen}}" class="wake-settings">
       <label class="field-label" for="legacy-mac">电脑有线网卡 MAC 地址</label>
       <input id="legacy-mac" value="{{mac}}" bindinput="editMac" placeholder="例如 02-11-22-33-44-55" maxlength="17" disabled="{{busy}}" />
-      <view class="section-copy">在 Windows 版 LanPower 首页的“网络与唤醒”中查看。</view>
+      <view class="section-copy">在 Windows 版 CodexDock 首页的“网络与唤醒”中查看。</view>
       <label class="field-label" for="legacy-broadcast">局域网广播地址</label>
       <input id="legacy-broadcast" value="{{broadcast}}" bindinput="editBroadcast" placeholder="例如 192.168.1.255" maxlength="15" disabled="{{busy}}" />
       <view class="section-copy">请按家中网段填写，也可先尝试 255.255.255.255。</view>

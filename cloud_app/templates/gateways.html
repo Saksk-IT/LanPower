@@ -36,7 +36,7 @@
   {{ manage_device(device, csrf) }}
 </section>
 {% else %}
-<section class="card empty-state"><span class="empty-icon">{{ icon('gateway', 34) }}</span><h2>为远程开机准备一个网关</h2><p>在家中常在线的路由器或设备上安装 LanPower 网关，<br>再使用网关显示的短码完成连接。</p><a class="button-link" href="/enroll?type=gateway">输入网关配对码 {{ icon('arrow', 18) }}</a><span class="hint">仅控制在线电脑时，无需配置网关</span></section>
+<section class="card empty-state"><span class="empty-icon">{{ icon('gateway', 34) }}</span><h2>为远程开机准备一个网关</h2><p>在家中常在线的路由器或设备上安装 Codex Remote 网关，<br>再使用网关显示的短码完成连接。</p><a class="button-link" href="/enroll?type=gateway">输入网关配对码 {{ icon('arrow', 18) }}</a><span class="hint">仅控制在线电脑时，无需配置网关</span></section>
 {% endfor %}
 <details class="help-details"><summary>配置前需要准备什么？</summary><p>电脑和网关需位于同一局域网，并升级到支持自动配置的版本。电脑需要在 BIOS 与网卡设置中开启网络唤醒。</p><p>配置完成表示网关可以发送唤醒包，实际开机效果请在方便时测试。仅唤醒不需要填写电脑的局域网控制密钥。</p></details>
 {% endblock %}
