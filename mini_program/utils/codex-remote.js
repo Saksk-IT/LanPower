@@ -17,6 +17,7 @@ const STATES = {
   update_required: ['需要更新 Cloud', '请将 Cloud 更新至 1.16.2，以支持多个页面同时连接']
 };
 const ERRORS = {
+  capability_cursor_expired: '能力目录快照已过期或变化，请刷新后继续翻页。',
   invalid_params: '内容或参数不符合限制，未发送，请修改后重试。',
   params_not_allowed: '当前组件不支持这些参数，未发送。',
   method_not_allowed: '当前组件不支持此操作，未发送。',
@@ -129,7 +130,7 @@ class CodexConnection {
     this.pending.delete(payload.id); this.fragments.drop(payload.id); this.clearTimer(call.timeout); call.cleanup();
     if (payload.error) {
       const code = payload.error.code === -32601 ? 'unsupported_method' : payload.error.message;
-      call.reject(failure(ERRORS[code] || '本机未能完成请求，请检查会话与授权。', code,
+      call.reject(failure(ERRORS[code] || (['account/rateLimits/read','skills/list','plugin/list','app/list','mcpServerStatus/list'].includes(call.method) ? '原生接口读取失败：' + String(code).slice(0,1000).replace(/(?:Bearer\s+|sk-)[\w-]+/g,'[已隐藏凭据]') : '本机未能完成请求，请检查会话与授权。'), code,
         !(payload.error.data && payload.error.data.notSent) && ![-32601, -32602].includes(payload.error.code) && !['turn_changed', 'task_running', 'workspace_not_allowed', 'submission_store_full', 'submission_store_unavailable','history_changed'].includes(code)));
     }
     else call.resolve(payload.result || {});
@@ -170,7 +171,7 @@ class CodexConnection {
       const remove = () => { this.pending.delete(id); this.fragments.drop(id); this.clearTimer(timeout); cleanup(); };
       const timeout = this.timer(() => { remove(); reject(failure('请求超时，请查询回执；任务不会自动重发。', 'TIMEOUT', true)); }, 35000);
       if (scope) cleanup = scope.subscribe(() => { remove(); reject(failure('已取消读取。', 'CANCELLED')); });
-      this.pending.set(id, {resolve, reject, timeout, cleanup});
+      this.pending.set(id, {method, resolve, reject, timeout, cleanup});
       this.sendFrame({type: 'rpc', payload: {id, method, params}}).catch(error => {
         const call = this.pending.get(id); if (!call) return;
         remove(); reject(error);

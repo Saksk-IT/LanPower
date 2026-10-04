@@ -37,7 +37,7 @@ public sealed class RuntimeClient : IAsyncDisposable
     public bool Shared => _socket is not null || Desktop;
     public bool Running => (_desktop?.Running == true || _socket?.State == WebSocketState.Open || _process is { HasExited: false }) && !_reader.IsCompleted;
     public JsonArray PendingApprovals => new(_approvals.Values.Select(value => value.Request.DeepClone()).ToArray());
-    private static readonly HashSet<string> Notifications = ["thread/started", "thread/archived", "thread/unarchived", "thread/status/changed", "turn/started",
+    private static readonly HashSet<string> Notifications = ["account/rateLimits/updated", "thread/started", "thread/archived", "thread/unarchived", "thread/status/changed", "turn/started",
         "turn/completed", "turn/diff/updated", "turn/plan/updated", "item/started", "item/completed",
         "item/agentMessage/delta", "item/plan/delta", "item/commandExecution/outputDelta",
         "item/fileChange/outputDelta", "serverRequest/resolved", "thread/queue/changed", "thread/name/updated", "thread/settings/updated", "thread/tokenUsage/updated", "item/reasoning/summaryTextDelta", "error",

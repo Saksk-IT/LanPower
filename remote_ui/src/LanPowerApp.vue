@@ -10,6 +10,7 @@
     <main v-show="view === 'chat'" class="lp-conversation">
       <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表"><IconTablerLayoutSidebar /></button><button v-if="sidebarCollapsed" class="lp-expand lp-icon-button" @click="sidebarCollapsed = false" aria-label="展开侧栏"><IconTablerLayoutSidebar /></button><div><h1>{{ currentTitle }}</h1></div><button v-if="currentCwd" class="lp-header-pill" @click="openFiles(currentCwd)" aria-label="浏览项目文件"><IconTablerFolder /><span>{{ projectName(currentCwd) }}</span></button><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button :disabled="loadingAllHistory" @click="jumpToBeginning">跳至对话开头</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button></div></details></header>
       <div class="lp-chat-status" role="status"><span>{{ stateLabel }}</span><span>{{ taskLabel }}</span><span>{{ syncLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
+      <details v-if="threadId" class="lp-native-context"><summary>上下文 · {{ threadUsage.usage?.remainingContextPercent === null || !threadUsage.usage ? '待原生数据' : `${threadUsage.usage.remainingContextPercent}% 剩余` }}</summary><TokenUsageStatus :usage="threadUsage.usage" :reason="threadUsage.reason" /></details>
       <p v-if="feedback" class="lp-feedback" role="status">{{ feedback }}<button @click="feedback = ''" aria-label="关闭提示">×</button></p>
       <template v-if="threadId">
         <p v-if="historyProgress" class="lp-history-progress" role="status">{{ historyProgress }} <button v-if="loadingAllHistory" @click="cancelHistory">取消读取</button><button v-else-if="historyResume" :disabled="!ready" @click="resumeHistory">继续读取</button></p>
@@ -27,7 +28,7 @@
       </template>
       <div v-else class="lp-welcome"><div>✳</div><h2>继续你的工作</h2><p>选择最近聊天，或在项目中新建聊天。</p><button class="lp-primary" :disabled="!ready" @click="openNewThread()">＋ 新聊天</button><p v-if="!ready">{{ stateHint }}</p></div>
     </main>
-    <RemoteFeaturePage v-if="view !== 'chat'" :view="view" :ready="ready" :projects="projects" :cwd="currentCwd || projectCwd" :send-with-enter="sendWithEnter" :in-progress-mode="inProgressMode" @back="chatOpen = false" @close="view = 'chat'; chatOpen = true" @use-skill="useSkill" @theme="setTheme" @update:send-with-enter="setSendWithEnter" @update:in-progress-mode="setInProgressMode" />
+    <RemoteFeaturePage v-if="view !== 'chat'" :key="deviceId" :view="view" :ready="ready" :projects="projects" :cwd="currentCwd || projectCwd" :send-with-enter="sendWithEnter" :in-progress-mode="inProgressMode" :quota="nativeState" :context="threadUsage" :capability-paging="capabilityPaging" @refresh-quota="nativeUsage.readQuota()" @back="chatOpen = false" @close="view = 'chat'; chatOpen = true" @use-skill="useSkill" @theme="setTheme" @update:send-with-enter="setSendWithEnter" @update:in-progress-mode="setInProgressMode" />
     <RemoteFilesPanel v-if="filesCwd" :key="`${deviceId}:${filesCwd}:${filePath}`" :cwd="filesCwd" :ready="ready" :initial-path="filePath" @close="filesCwd = ''; filePath = ''" @attach="attachProjectFile" />
     <Teleport to="body"><div v-if="newThreadDialog" class="lp-dialog-overlay" @click.self="newThreadDialog = false"><form class="lp-dialog" role="dialog" aria-modal="true" aria-label="新建聊天" @submit.prevent="createFromDialog"><h2>新建聊天</h2><p>选择已授权的项目目录。</p><ComposerDropdown v-model="projectCwd" :options="projects.filter(p => p.kind !== 'chat').map(p => ({value:p.path,label:p.name}))" placeholder="选择项目" enable-search search-placeholder="搜索项目" /><footer><button type="button" @click="newThreadDialog = false">取消</button><button class="lp-primary" :disabled="!projectCwd || busy">创建聊天</button></footer></form></div><div v-if="renameDialog" class="lp-dialog-overlay" @click.self="renameDialog = false"><form class="lp-dialog" role="dialog" aria-modal="true" aria-label="重命名聊天" @submit.prevent="saveThreadName"><h2>重命名聊天</h2><input v-model="renameDraft" aria-label="聊天名称" autofocus maxlength="1000" /><footer><button type="button" @click="renameDialog = false">取消</button><button class="lp-primary" :disabled="!renameDraft.trim()">保存</button></footer></form></div></Teleport>
   </div>
@@ -45,6 +46,8 @@ import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import IconTablerLayoutSidebar from './components/icons/IconTablerLayoutSidebar.vue'
 import IconTablerFolder from './components/icons/IconTablerFolder.vue'
 import RemoteFeaturePage from './components/content/RemoteFeaturePage.vue'
+import TokenUsageStatus from './components/content/TokenUsageStatus.vue'
+import { NativeUsage } from './lanpower/nativeStatus'
 import RemoteFilesPanel from './components/content/RemoteFilesPanel.vue'
 import { mergeHistory, readPage, readThread, newBeginning, findBeginning, HistoryContentReader, refreshHistoryTurn, type BeginningJob } from './lanpower/history'
 import { newSettings, observeSettings, effectiveSettings, modelId, validEfforts, type ModelCapability, type ThreadSettings, type SendSettings } from './lanpower/settings'
@@ -65,6 +68,11 @@ const sendWithEnter = ref(true), inProgressMode = ref<'queue' | 'steer'>('queue'
 const skills = ref<Array<{name:string;path:string;description:string;scope?:string;enabled?:boolean}>>([])
 const conversation = ref<{jumpToStart:()=>Promise<void>;jumpToLatest:()=>void} | null>(null)
 const ready = computed(() => state.value === 'runtime_ready')
+const nativeState = shallowRef<any>({snapshots:[],loading:false,reason:'连接所选电脑后读取原生额度与用量。'})
+const nativeUsage = new NativeUsage(connection, () => ready.value, () => { nativeState.value = {...nativeUsage.state} })
+const threadUsage = computed(() => { void nativeState.value; return nativeUsage.context(threadId.value) })
+const capabilityPaging = ref(false)
+let quotaTimer: ReturnType<typeof setTimeout> | undefined
 const threads = shallowRef<any[]>([]), current = shallowRef<any>(null), projects = ref<Array<{ name: string; path: string; kind?:string }>>([])
 const libraryCatalog = ref(false), libraryQuery = ref(''), searchRows = shallowRef<any[]>([])
 const displayedThreads = computed(() => libraryQuery.value && libraryCatalog.value ? searchRows.value : threads.value)
@@ -176,6 +184,8 @@ function addApproval(event: RpcEvent): void {
 }
 function onState(value: string): void {
   const wasReady = ready.value; state.value = value
+  if (!ready.value) { clearTimeout(quotaTimer); nativeUsage.reset('电脑连接未就绪，无法取得当前额度与上下文。') }
+  else if (!wasReady) void nativeUsage.readQuota()
   if (!ready.value) { epoch++; busy.value = false; syncing = false; recovering.value = false; loadingLibrary.value = false; loadingChat.value = false; loadingEarlier.value = false; interrupting.value = false; historyAbort?.abort(); libraryDraft = null; resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }; clock.clear() }
   else if (!wasReady) void restore()
 }
@@ -199,6 +209,7 @@ async function restore(): Promise<void> {
   finally { if (e === epoch) recovering.value = false }
 }
 function applyStatus(status: any, stamp = clock.capture()): void {
+  capabilityPaging.value = status.capabilityPaging === true
   desktopControl.value = Boolean(status.desktopControl); sharedControl.value = Boolean(status.sharedControl); queueSupported.value = Boolean(status.queueSupported)
   receiptsSupported.value = Boolean(status.submissionReceipts); unsupportedMethods.value = status.unsupportedMethods || []
   targetedHistoryActions.value = Boolean(status.targetedHistoryActions)
@@ -532,6 +543,8 @@ watch(ready,value => { if (!value) pauseContent(); else retryContent() })
 function onEvent(event: RpcEvent): void {
   const p = event.params || {}, id = p.threadId || p.thread?.id
   if (id && !clock.event(id,p.lanpowerRevision)) return
+  if (nativeUsage.event(event.method,p)) return
+  if (event.method === 'turn/completed') { clearTimeout(quotaTimer); quotaTimer = setTimeout(() => { void nativeUsage.readQuota() },300) }
   if (event.id !== undefined) { addApproval(event); return }
   if (event.method === 'serverRequest/resolved') {
     const key = JSON.stringify(p.requestId), localId = approvalKeys.get(key)
@@ -630,7 +643,7 @@ async function wake(): Promise<void> {
 }
 function changeDevice(id: string): void {
   saveDraft(); resetHistory(); clock.clear()
-  epoch++; selection++; deviceId.value = id; threadId.value = ''; current.value = null; threads.value = []; projects.value = []; models.value = []; queue.value = []; resetApprovals(); activeTurns.value = {}; editingQueue.value = ''; listCursor.value = ''; historyCursor.value = ''; powerText.value = ''; wakeAvailable.value = false; feedback.value = ''; chatOpen.value = false
+  epoch++; selection++; nativeUsage.reset(); capabilityPaging.value = false; deviceId.value = id; threadId.value = ''; current.value = null; threads.value = []; projects.value = []; models.value = []; queue.value = []; resetApprovals(); activeTurns.value = {}; editingQueue.value = ''; listCursor.value = ''; historyCursor.value = ''; powerText.value = ''; wakeAvailable.value = false; feedback.value = ''; chatOpen.value = false
   loadingChat.value = false; loadingLibrary.value = false; loadingEarlier.value = false; loadingAllHistory.value = false; busy.value = false; skills.value = []; filesCwd.value = ''; chatSupported.value = false; view.value = 'chat'; archivedView.value = false; newThreadDialog.value = false; renameDialog.value = false
   libraryDraft = null; libraryQuery.value = ''; searchRows.value = []; libraryCatalog.value = false; libraryState.value = {revision:0,preferences:defaultLibraryPreferences()}; filePath.value = ''; clearTimeout(libraryTimer); clearTimeout(reconcileTimer); resetRemoteImages()
   selectedModel.value = ''; selectedEffort.value = ''; selectedMode.value = 'default'; nativeModels.value = []; lastSync.value = 0; syncFailed.value = false; queryingReceipt.value = false; receiptVersion.value++; interrupting.value = false
@@ -688,5 +701,5 @@ onMounted(() => {
   polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent(); void refreshStatus(); void loadThreads(); void queryReceipt() } }, 30000)
 })
 function restoreVisible(): void { if (document.visibilityState !== 'visible') return; if (ready.value) { void refreshCurrent(); void refreshStatus(); void queryReceipt() } else if (deviceId.value && state.value !== 'update_required' && state.value !== 'revoked') reconnect() }
-onBeforeUnmount(() => { document.removeEventListener('visibilitychange',restoreVisible); historyAbort?.abort(); resetContent(); drafts.clear(); queueEdits.clear(); settingsByThread.clear(); receipts.clear(); clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
+onBeforeUnmount(() => { document.removeEventListener('visibilitychange',restoreVisible); historyAbort?.abort(); resetContent(); drafts.clear(); queueEdits.clear(); settingsByThread.clear(); receipts.clear(); clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); clearTimeout(quotaTimer); nativeUsage.reset(); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
 </script>

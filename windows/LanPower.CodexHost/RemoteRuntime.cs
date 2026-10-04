@@ -28,6 +28,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     private readonly Dictionary<string, string> _recentDiffs = new();
     private readonly RemoteLibraryStore _library = new();
     private readonly RemoteLibraryCatalog _libraryCatalog = new();
+    private readonly RemoteCapabilityCatalog _capabilityCatalog = new();
     private readonly SemaphoreSlim _libraryCatalogGate = new(1, 1);
     private DateTimeOffset _libraryCatalogUpdated;
     private readonly RemoteImages _images = new();
@@ -137,7 +138,8 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             if (message["method"]?.GetValue<string>() == "thread/settings/updated" && id is not null && p is JsonObject changed)
                 ObserveSettings(id, changed["settings"] as JsonObject ?? changed);
             if (p?["turn"] is JsonObject turn) p["turn"] = RemoteHistory.VisibleTurns(new JsonArray(turn.DeepClone())).FirstOrDefault()?.DeepClone();
-            if (id is not null && _threads.ContainsKey(id)) { _images.Observe(id, p); Notify(message); }
+            if (message["method"]?.GetValue<string>() == "account/rateLimits/updated") Notify(message);
+            else if (id is not null && _threads.ContainsKey(id)) { _images.Observe(id, p); Notify(message); }
         };
         await _runtime.InitializeAsync(token);
         await RefreshCatalogAsync(token);
@@ -629,7 +631,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         {
             var roots = parameters["cwd"] is { } root ? new[] { root.GetValue<string>() } : _projects.Where(p => !CodexProjects.IsChatPath(p.Path)).Take(8).Select(p => p.Path).ToArray();
             foreach (var rootPath in roots) RequireWorkspace(rootPath);
-            var response = await _runtime!.CallAsync(method, new() { ["cwds"] = new JsonArray(roots.Select(p => (JsonNode)JsonValue.Create(p)!).ToArray()) }, token);
+            var response = await _capabilityCatalog.ReadAsync(method, roots, parameters, (nativeMethod, nativeParams, ct) => _runtime!.CallAsync(nativeMethod, nativeParams, ct), token);
             response["id"] = request["id"]!.DeepClone(); return response;
         }
         if (method == "lanpower/status")
@@ -650,7 +652,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                 ["autoDiscover"] = config.AutoDiscover, ["loggedIn"] = account["result"]?["account"] is not null, ["sessionHandoff"] = !_runtime.Shared,
                 ["sharedControl"] = _runtime.Shared, ["queueSupported"] = _runtime.Shared && !_unsupported.Contains("thread/queue/list"), ["desktopControl"] = _runtime.Desktop,
                 ["lanpowerRevision"] = revision, ["submissionReceipts"] = true, ["largeHistory"] = true,
-                ["targetedHistoryActions"] = _runtime.Shared, ["historyReferenceLeases"] = true, ["libraryCatalog"] = true,
+                ["targetedHistoryActions"] = _runtime.Shared, ["historyReferenceLeases"] = true, ["libraryCatalog"] = true, ["capabilityPaging"] = true,
                 ["unsupportedMethods"] = new JsonArray(_unsupported.Select(m => (JsonNode)JsonValue.Create(m)!).ToArray()),
                 ["chatSupported"] = config.AutoDiscover && _runtime.Shared,
                 ["library"] = await _library.ReadAsync(token),
@@ -844,6 +846,6 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         _initialized = false; if (_runtime is not null) await _runtime.DisposeAsync(); _runtime = null;
         foreach (var worker in _writers.Values) await worker.Client.DisposeAsync();
         _writers.Clear(); _threads.Clear(); _sharedThreads.Clear(); _newThreads.Clear(); _threadSettings.Clear(); _recentDiffs.Clear(); _projects.Clear(); _lastThread = null;
-        _history.Clear(); _libraryCatalog.Clear(); _libraryCatalogUpdated = default; _unsupported.Clear();
+        _history.Clear(); _libraryCatalog.Clear(); _capabilityCatalog.Clear(); _libraryCatalogUpdated = default; _unsupported.Clear();
     }
 }

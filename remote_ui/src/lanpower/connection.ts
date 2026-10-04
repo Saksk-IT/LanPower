@@ -1,12 +1,13 @@
 import { RpcFragments } from './fragments'
 export type RpcEvent = { id?: string | number; method: string; params?: any }
-type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; cleanup?: () => void }
+type Pending = { method?: string; resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; cleanup?: () => void }
 
 export class RemoteError extends Error {
   constructor(public code: string, message: string, public uncertain = false) { super(message) }
 }
 
 const errors: Record<string, string> = {
+  capability_cursor_expired: '能力目录快照已过期或变化，请刷新后继续翻页。',
   invalid_params: '内容或参数不符合限制，未发送，请修改后重试。',
   invalid_input: '文字或附件不符合限制，未发送，请修改后重试。',
   params_not_allowed: '当前版本不支持这些参数，未发送，请更新组件。',
@@ -90,7 +91,7 @@ export class RemoteConnection {
         return
       }
       this.pending.delete(payload.id); this.fragments.drop(payload.id); clearTimeout(call.timer); call.cleanup?.()
-      if (payload.error) call.reject(new RemoteError(payload.error.code === -32601 ? 'unsupported_method' : payload.error.message, payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || '本机未能完成请求，请检查会话和授权。', payload.error.data?.notSent !== true && ![-32601,-32602].includes(payload.error.code) && !['turn_changed','task_running','workspace_not_allowed','submission_store_full','submission_store_unavailable','history_changed'].includes(payload.error.message)))
+      if (payload.error) call.reject(new RemoteError(payload.error.code === -32601 ? 'unsupported_method' : payload.error.message, payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || (['account/rateLimits/read','skills/list','plugin/list','app/list','mcpServerStatus/list'].includes(call.method || '') ? `原生接口读取失败：${String(payload.error.message || payload.error.code).slice(0,1000).replace(/(?:Bearer\s+|sk-)[\w-]+/g,'[已隐藏凭据]')}` : '本机未能完成请求，请检查会话和授权。'), payload.error.data?.notSent !== true && ![-32601,-32602].includes(payload.error.code) && !['turn_changed','task_running','workspace_not_allowed','submission_store_full','submission_store_unavailable','history_changed'].includes(payload.error.message)))
       else call.resolve(payload.result)
     }
     socket.onerror = () => {}
@@ -113,7 +114,7 @@ export class RemoteConnection {
       const remove = () => { this.pending.delete(id); this.fragments.drop(id); clearTimeout(timer); signal?.removeEventListener('abort', abort) }
       const abort = () => { remove(); reject(new DOMException('已取消读取。', 'AbortError')) }
       const timer = setTimeout(() => { remove(); reject(new RemoteError('timeout', '请求超时，请查询发送回执；任务不会自动重发。', true)) }, 35000)
-      this.pending.set(id, { resolve, reject, timer, cleanup: () => signal?.removeEventListener('abort', abort) })
+      this.pending.set(id, { method, resolve, reject, timer, cleanup: () => signal?.removeEventListener('abort', abort) })
       signal?.addEventListener('abort', abort, {once:true})
       try { this.socket!.send(data) } catch { remove(); reject(new RemoteError('not_sent', '连接已断开，请重新连接。')) }
     })

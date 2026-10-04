@@ -1,7 +1,8 @@
 const {previewText} = require('./conversation');
+const {NativeDirectory} = require('./native-status');
 class ResourceBrowser {
-  constructor(client, valid, changed) { this.client = client; this.valid = valid; this.changed = changed; this.sequence = 0; this.reset(); }
-  reset() { this.sequence++; this.state = {cwd: '', directory: '.', branch: '', files: [], cursor: '', query: '', selected: null, loading: false, error: '', truncated: false}; this.catalog = {kind: 'skill', cwd: '', rows: [], loading: false, error: ''}; }
+  constructor(client, valid, changed) { this.client = client; this.valid = valid; this.changed = changed; this.sequence = 0; this.paging = true; this.catalogPager = new NativeDirectory(client,valid,() => { this.catalog = this.catalogPager.state; this.changed(); },() => this.paging === true); this.reset(); }
+  reset() { this.sequence++; this.state = {cwd: '', directory: '.', branch: '', files: [], cursor: '', query: '', selected: null, loading: false, error: '', truncated: false}; this.catalogPager.reset(); this.catalog = this.catalogPager.state; }
   async files(method, params, append = false) {
     const sequence = ++this.sequence, cwd = this.state.cwd; this.state.loading = true; this.state.error = ''; this.changed();
     try {
@@ -19,19 +20,7 @@ class ResourceBrowser {
   search(query) { this.state.query = query; this.state.selected = null; return query.trim() ? this.files('lanpower/files/search', {query: query.trim()}) : this.directory(this.state.directory); }
   more() { if (!this.state.cursor || this.state.loading) return; return this.files('lanpower/files/list', {path: this.state.directory, cursor: this.state.cursor}, true); }
   async directoryCatalog(kind, cwd) {
-    const sequence = ++this.sequence; this.catalog = {kind, cwd, rows: [], loading: true, error: ''}; this.changed();
-    const methods = {skill: 'skills/list', plugin: 'plugin/list', app: 'app/list', mcp: 'mcpServerStatus/list', automations: 'lanpower/automations/list'};
-    try {
-      let cursor = ''; const all = [], seen = new Set();
-      do {
-        const params = ['skill', 'plugin'].includes(kind) && cwd ? {cwd} : {}; if (cursor) params.cursor = cursor; if (['app', 'mcp'].includes(kind)) params.limit = 50;
-        const result = await this.client.request(methods[kind], params); if (!this.valid() || sequence !== this.sequence) return;
-        const page = kind === 'skill' ? (result.data || []).flatMap(entry => entry.skills || []) : kind === 'plugin' ? (result.marketplaces || []).flatMap(entry => (entry.plugins || []).map(row => ({...row, displayName: row.interface && row.interface.displayName || row.name, description: row.description || row.interface && row.interface.shortDescription, marketplace: entry.name}))) : result.data || [];
-        all.push(...page); const next = result.nextCursor || ''; if (next && (seen.has(next) || next === cursor)) throw new Error('能力目录游标未推进。'); if (next) seen.add(next); cursor = next;
-      } while (cursor);
-      this.catalog.rows = Array.from(new Map(all.map(row => [row.path || row.id || row.name, row])).values());
-    } catch (error) { if (sequence === this.sequence) this.catalog.error = error.message; }
-    finally { if (sequence === this.sequence) { this.catalog.loading = false; this.changed(); } }
+    return this.catalogPager.load(kind,cwd,'',1,true);
   }
   fileView() {
     const state = this.state, parts = state.directory.replace(/\\/g, '/').split('/').filter(part => part !== '.' && part);

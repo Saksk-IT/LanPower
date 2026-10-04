@@ -6,6 +6,7 @@ const {CodexController} = require('../../utils/codex/controller');
 const {modelId, effectiveSettings, validEfforts} = require('../../utils/codex/model');
 const {previewText} = require('../../utils/codex/conversation');
 const {ImageCache} = require('../../utils/codex/resources');
+const {capabilityStatus} = require('../../utils/codex/native-status');
 const {projectName} = require('../../utils/codex-format');
 const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2', CACHE_KEY = 'lanpower_device_cache_v2';
 const dataOf = event => event.currentTarget.dataset;
@@ -20,7 +21,8 @@ Page({
     selectedModel: '', selectedEffort: '', selectedMode: 'default', models: [], efforts: [], planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
     receiptState: '', receiptLabel: '', queryingReceipt: false, queue: [], editingQueue: '', approvals: [], approval: null, responding: false, keyboardHeight: 0, scrollTarget: '', showJump: false,
     renameTitle: '', renameDraft: '', newProjects: [], newProjectQuery: '', projectMenu: null, threadMenuPinned: false,
-    catalogKind: 'skill', catalogQuery: '', catalogRows: [], catalogLoading: false, catalogError: '', catalogHasMore: false, catalogCwdIndex: 0,
+    catalogKind: 'skill', catalogQuery: '', catalogRows: [], catalogLoading: false, catalogError: '', catalogHasMore: false, catalogCwdIndex: 0, catalogPage: 1, catalogHasPrevious: false,
+    quotaRows: [], quotaLoading: false, quotaReason: '连接电脑后读取原生额度。', contextText: '', contextReason: '尚未收到原生用量通知。',
     fileState: {files: [], cwd: '', directory: '.', cursor: '', selected: null, breadcrumbs: []}, fileHasPrevious: false, fileHasNext: false,
     detailTitle: '', detailText: '', detailPage: 1, detailPages: 1, detailKind: '', sendWithEnter: false, wakeAvailable: false, powerText: '', waking: false},
   onLoad(options = {}) {
@@ -68,6 +70,10 @@ Page({
     if (sheet === 'approval' && !approval) sheet = '';
     const canSend = c.canControl && !c.busy && !c.sendBlocked && !approvals.length && !!(draft.text.trim() || draft.images.length || draft.skills.length || draft.files.length);
     const value = {ready: c.ready, state: c.state, stateTitle: labels[0], stateHint: labels[1], recovering: c.recovering, loading: c.loadingLibrary || c.loadingThread, busy: c.busy, feedback: c.feedback,
+      quotaLoading: c.nativeUsage.state.loading, quotaReason: c.nativeUsage.state.reason,
+      quotaRows: c.nativeUsage.state.snapshots.map(row => ({id:row.limitId || row.limitName || 'default',name:row.limitName || row.limitId || '额度',metrics:[row.primary,row.secondary].filter(Boolean).map(window => `${window.windowDurationMins ? window.windowDurationMins % 60 === 0 ? window.windowDurationMins / 60 + ' 小时' : window.windowDurationMins + ' 分钟' : '原生窗口'} · ${Math.max(0,Math.min(100,Math.round(100 - window.usedPercent)))}% 剩余${window.resetsAt ? ' · 重置 ' + new Date(window.resetsAt * 1000).toLocaleString('zh-CN') : ''}`).join('\n'),credits:row.credits ? row.credits.unlimited ? '无限积分' : row.credits.balance ? '积分 ' + row.credits.balance : row.credits.hasCredits ? '有积分' : '原生状态：无积分' : ''})),
+      contextText: (() => { const usage = c.nativeUsage.context(c.threadId).usage; return usage ? `当前 ${usage.currentContextTokens}${usage.modelContextWindow ? ' / ' + usage.modelContextWindow : ''} tokens${usage.remainingContextPercent !== null ? ' · ' + usage.remainingContextPercent + '% 剩余' : ''} · 累计 ${usage.total.totalTokens} tokens` : ''; })(),
+      contextReason: c.nativeUsage.context(c.threadId).reason,
       groups, chats: rows(library.chats.slice(this.chatOffset, this.chatOffset + 15)), chatsHasPrevious: this.chatOffset > 0, chatsHasNext: this.chatOffset + 15 < library.chats.length, pinned: rows(library.pinned.slice(0, 30)), hiddenProjects: library.hidden.map(group => ({id: group.id, name: group.name})),
       libraryHasPrevious: this.libraryOffset > 0, libraryHasNext: this.libraryOffset + 12 < library.projects.length, archived: c.archived, threadArchived: c.threadArchived, hasMore: !!c.listCursor, chatSupported: c.chatSupported, chatsFirst: !!prefs.chatsFirst, sections: prefs.sections, sort: prefs.sort,
       projects: c.projects.filter(project => project.kind !== 'chat').map(project => ({name: project.name, path: project.path})), title: previewText(c.current && (c.current.name || c.current.preview) || '新聊天', 100), project: projectName(c.current && c.current.cwd), cwd: c.current && c.current.cwd || '',
@@ -95,10 +101,11 @@ Page({
     }
     if (['catalog', 'automations'].includes(this.data.view)) {
       const query = this.data.catalogQuery.trim().toLowerCase(), catalog = resource.catalog, all = catalog.rows.filter(row => [row.name, row.displayName, row.description].join(' ').toLowerCase().includes(query));
-      this.setData({catalogRows: all.slice(0, this.catalogLimit).map((row, index) => ({index: catalog.rows.indexOf(row), key: row.path || row.id || row.name, name: row.displayName || row.interface && row.interface.displayName || row.name || row.id,
-        description: previewText(row.description || row.interface && row.interface.shortDescription || '', 260), path: row.path || '', enabled: row.enabled !== false,
-        badge: catalog.kind === 'automations' ? row.status === 'PAUSED' ? '已暂停' : '启用中' : row.authStatus || (row.enabled === false ? '未启用' : row.scope || '可用'),
-        schedule: catalog.kind === 'automations' ? row.rrule || '' : '', projects: (row.cwds || []).map(projectName).join(' · ')})), catalogHasMore: all.length > this.catalogLimit, catalogLoading: catalog.loading, catalogError: catalog.error});
+      this.setData({catalogRows: all.map(row => ({index: catalog.rows.indexOf(row), key: row.path || row.id || row.name, name: row.displayName || row.interface && row.interface.displayName || row.name || row.id,
+        description: previewText(row.description || row.interface && row.interface.shortDescription || '', 260), path: row.path || '', enabled: row.enabled === true,
+        badge: catalog.kind === 'automations' ? row.status === 'PAUSED' ? '已暂停' : '启用中' : capabilityStatus(catalog.kind,row).label,
+        status: catalog.kind === 'automations' ? '' : capabilityStatus(catalog.kind,row).state, reason: catalog.kind === 'automations' ? '' : capabilityStatus(catalog.kind,row).reason,
+        schedule: catalog.kind === 'automations' ? row.rrule || '' : '', projects: (row.cwds || []).map(projectName).join(' · ')})), catalogHasMore: !!catalog.nextCursor, catalogHasPrevious: catalog.page > 1, catalogPage: catalog.page, catalogLoading: catalog.loading, catalogError: catalog.error});
     }
   },
   async loadDevices(connect = true) {
@@ -243,9 +250,11 @@ Page({
   chooseCatalogCwd(event) { this.setData({catalogCwdIndex: Number(event.detail.value)}); return this.refreshCatalog(); },
   refreshCatalog() { if (!this.controller.ready) return; const project = this.data.projects[this.data.catalogCwdIndex], cwd = project && project.path || this.controller.current && this.controller.current.cwd || ''; return this.controller.resources.directoryCatalog(this.data.catalogKind, cwd); },
   catalogSearch(event) { this.setData({catalogQuery: event.detail.value}); this.catalogLimit = 30; this.paintResources(); },
-  catalogMore() { this.catalogLimit += 30; this.paintResources(); },
+  catalogMore() { return this.controller.resources.catalogPager.next(); },
+  catalogPrevious() { return this.controller.resources.catalogPager.previous(); },
+  refreshQuota() { return this.controller.nativeUsage.readQuota(); },
   catalogDetail(event) { const row = this.controller.resources.catalog.rows[Number(dataOf(event).index)]; if (row) this.showDetail(row.displayName || row.name || row.id, [row.description, row.path, row.rrule, ...(row.tools || []).map(tool => `${tool.title || tool.name}\n${tool.description || ''}`)].filter(Boolean).join('\n\n')); },
-  useSkill(event) { const row = this.controller.resources.catalog.rows[Number(dataOf(event).index)]; if (!row || row.enabled === false) return; try { this.controller.addSkill(row); this.setData({view: 'chat', sheet: ''}); this.auxReturn = ''; this.paint(); } catch (error) { this.controller.notify(error.message); } },
+  useSkill(event) { const row = this.controller.resources.catalog.rows[Number(dataOf(event).index)]; if (!row || row.enabled !== true) return; try { this.controller.addSkill(row); this.setData({view: 'chat', sheet: ''}); this.auxReturn = ''; this.paint(); } catch (error) { this.controller.notify(error.message); } },
   async reloadMcp() { if (!this.controller.ready) return; try { await this.connection.request('config/mcpServer/reload'); await this.refreshCatalog(); } catch (error) { this.controller.notify(error.message); } },
   setEnter(event) { this.setData({sendWithEnter: !!event.detail.value}); this.saveInputPreferences(); },
   saveInputPreferences() { wx.setStorageSync(this.inputKey, {mode: this.data.sendMode, enter: this.data.sendWithEnter}); },

@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.16.2 与小程序 2.1.8。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。完整历史和能力来源见 [系统对齐说明](codex-system-parity.md)。
+适用于 LanPower Windows / Cloud / Web 1.19.0 与小程序 3.1.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
 
 ## 认证与连接
 
@@ -48,7 +48,7 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 
 | 方法 | 允许参数 |
 |---|---|
-| `lanpower/status` | 无；Host 返回项目/聊天目录、登录布尔值、活动 Thread/Turn、最近 Diff、待审批、实际控制能力及 `library` |
+| `lanpower/status` | 无；Host 返回项目/聊天目录、登录布尔值、活动 Thread/Turn、最近 Diff、待审批、实际控制能力、`capabilityPaging` 及 `library` |
 | `lanpower/session/release` | `threadId`；只释放本地授权范围内的闲置远程会话 |
 | `lanpower/chat/start` | `model`；仅自动发现与共享控制启用时，在当前用户 Documents/Codex 下新建独立聊天 |
 | `lanpower/library/update` | `revision`, `preferences`；电脑端收纳状态的版本检查与原子更新 |
@@ -60,11 +60,11 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 | `lanpower/files/search` | `cwd`, `query`；授权目录内文件名/路径搜索 |
 | `lanpower/image/read` | `threadId`, `path`；当前授权会话引用的本地图片 |
 | `lanpower/automations/list` | 无；读取授权项目的本机自动化配置，不创建或调度 |
-| `skills/list`, `plugin/list` | `cwd`；Host 转换为已授权的本机 `cwds`，未指定时至多取 8 个项目 |
+| `skills/list`, `plugin/list` | `cwd`, `cursor`, `limit`（1–24）, `refresh`；Host 转换为已授权的本机 `cwds`，页面参数不传给原生接口；旧客户端无分页参数时保留原完整响应 |
 | `app/list` | `cursor`, `limit`, `threadId` |
 | `mcpServerStatus/list` | `cursor`, `limit` |
 | `config/mcpServer/reload` | 无；重新加载本机 MCP 配置 |
-| `account/rateLimits/read`, `collaborationMode/list` | 无；原窗口实际额度和协作模式目录 |
+| `account/rateLimits/read`, `collaborationMode/list` | 无；原窗口实际额度和协作模式目录。额度更新通知只转发原生字段 |
 | `model/list` | `cursor`, `limit` |
 | `thread/list` | `cursor`, `limit`, `cwd`, `archived` |
 | `thread/start` | `cwd`, `model` |
@@ -151,7 +151,7 @@ Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联�
 
 Host 使用只读目录连接及最多 8 个独立会话进程；每会话按自己的活动编号校验引导/暂停。任务结束约 2–4 秒后检查加载状态、全部活动子任务、审批及后台命令，安全时释放该进程并发送 `lanpower/session/released`（`params.threadId`）。主动交还拒绝运行中任务；无法确认后台状态时不释放。其他会话不受影响。断开网页连接仍不结束运行中任务，完成后的释放检查继续进行。
 
-Host 仅转发线程/任务状态、计划、item 开始/完成、AI/工具增量、`turn/diff/updated`、`serverRequest/resolved` 和 Runtime `error` 通知，不转发账号登录/凭据通知。
+Host 仅转发线程/任务状态、计划、item 开始/完成、AI/工具增量、`turn/diff/updated`、`serverRequest/resolved`、`account/rateLimits/updated` 和 Runtime `error` 通知；账号登录结果和凭据通知仍不转发。
 
 | Server Request | 允许响应 |
 |---|---|

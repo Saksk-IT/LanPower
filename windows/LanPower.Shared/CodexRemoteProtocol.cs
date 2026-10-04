@@ -14,14 +14,14 @@ public static class CodexRemoteProtocol
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
         ["lanpower/status"] = [], ["lanpower/session/release"] = ["threadId"], ["model/list"] = ["cursor", "limit"],
-        ["lanpower/chat/start"] = ["model"], ["skills/list"] = ["cwd"], ["lanpower/automations/list"] = [],
+        ["lanpower/chat/start"] = ["model"], ["skills/list"] = ["cwd", "cursor", "limit", "refresh"], ["lanpower/automations/list"] = [],
         ["lanpower/files/list"] = ["cwd", "path", "cursor"], ["lanpower/files/read"] = ["cwd", "path"],
         ["lanpower/files/search"] = ["cwd", "query"],
         ["lanpower/library/update"] = ["revision", "preferences"], ["lanpower/image/read"] = ["threadId", "path"],
         ["lanpower/library/list"] = ["query", "cursor", "limit", "archived", "refresh"], ["lanpower/library/check"] = ["threadIds", "archived"],
         ["lanpower/submission/read"] = ["threadId", "submissionId"], ["lanpower/history/item/read"] = ["threadId", "reference", "offset"],
         ["lanpower/history/action"] = ["threadId", "turnId", "expectedTailTurnId", "action"],
-        ["plugin/list"] = ["cwd"], ["app/list"] = ["cursor", "limit", "threadId"], ["mcpServerStatus/list"] = ["cursor", "limit"],
+        ["plugin/list"] = ["cwd", "cursor", "limit", "refresh"], ["app/list"] = ["cursor", "limit", "threadId"], ["mcpServerStatus/list"] = ["cursor", "limit"],
         ["config/mcpServer/reload"] = [], ["account/rateLimits/read"] = [], ["collaborationMode/list"] = [],
         ["thread/list"] = ["cursor", "limit", "cwd", "archived"],
         ["thread/start"] = ["cwd", "model"], ["thread/resume"] = ["threadId"],
@@ -125,6 +125,7 @@ public static class CodexRemoteProtocol
         if (args.ContainsKey("limit") && (args["limit"] is not JsonValue limit ||
             !limit.TryGetValue<int>(out var count) || count is < 1 or > 50))
             throw new InvalidDataException("invalid_params");
+        if (method is "skills/list" or "plugin/list" && args["limit"]?.GetValue<int>() is > 24) throw new InvalidDataException("invalid_params");
         if (method == "thread/rollback" && (args["numTurns"] is not JsonValue turns ||
             !turns.TryGetValue<int>(out var turnCount) || turnCount is < 1 or > 100000))
             throw new InvalidDataException("invalid_params");

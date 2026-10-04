@@ -1,5 +1,21 @@
 :root { --lp-sidebar: #f1f5f9; --lp-surface: #fff; --lp-hover: #e4e7eb; --lp-text: #334155; --lp-muted: #71717a; --lp-border: #e4e4e7; }
 :root.dark { --lp-sidebar: #202023; --lp-surface: #18181b; --lp-hover: #34343a; --lp-text: #e4e4e7; --lp-muted: #a1a1aa; --lp-border: #3f3f46; }
+.lp-native-context { margin: 2px 20px 8px; font-size: 12px; color: var(--lp-muted); }
+.lp-native-context summary { cursor: pointer; }
+.lp-token-status { padding: 10px 0; font-size: 13px; }
+.lp-token-status p { margin: 6px 0; overflow-wrap: anywhere; }
+.lp-native-reason { color: var(--lp-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.lp-native-status .rate-limit-status { margin-top: 12px; align-items: stretch; }
+.lp-native-status .rate-limit-card { max-width: none; background: var(--lp-surface); border-color: var(--lp-border); text-align: left; }
+.lp-native-status .rate-limit-card-header,.lp-native-status .rate-limit-card-metrics { justify-content: flex-start; }
+:root.dark .rate-limit-card-title,:root.dark .rate-limit-card-footer { color: var(--lp-muted); }
+:root.dark .rate-limit-card-plan { background: var(--lp-hover); color: var(--lp-text); }
+:root.dark .rate-limit-card-metric { background: #45340b; color: #fde68a; }
+.lp-catalog-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0; font-size: 12px; color: var(--lp-muted); }
+.lp-catalog-pagination div { display: flex; gap: 8px; }
+.lp-card-badge[data-state='unknown'],.lp-card-badge[data-state='disabled'],.lp-card-badge[data-state='not-installed'] { background: var(--lp-hover); color: var(--lp-muted); }
+.lp-card-badge[data-state='needs-auth'] { background: #fff2cf; color: #805300; }
+:root.dark .lp-card-badge[data-state='needs-auth'] { background: #45340b; color: #fde68a; }
 .lp-codex { grid-template-columns: 330px minmax(0,1fr); background: var(--lp-surface); color: var(--lp-text); }
 .lp-library { padding: 0; background: var(--lp-sidebar); border-color: var(--lp-border); }
 .lp-sidebar { height: 100%; display: flex; flex-direction: column; min-height: 0; }

@@ -1,5 +1,12 @@
 .codex-page { --cr-bg:#ffffff;--cr-surface:#f5f6f8;--cr-hover:#edf0f3;--cr-text:#242628;--cr-muted:#777e86;--cr-line:#e9ebee;--cr-button:#242628;--cr-button-text:#ffffff;position:fixed;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column;overflow:hidden;background:var(--cr-bg);color:var(--cr-text);font-size:15px;line-height:1.5;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; }
 .cr-dark { --cr-bg:#17181a;--cr-surface:#242629;--cr-hover:#2e3135;--cr-text:#eceef1;--cr-muted:#a2a8b1;--cr-line:#32353a;--cr-button:#eceef1;--cr-button-text:#17181a; }
+.cr-native-context { margin:0 16px 8px;display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--cr-muted); }
+.cr-native-reason { display:block;color:var(--cr-muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere; }
+.cr-quota-card { display:flex;flex-direction:column;gap:7px;padding:12px;border:1px solid var(--cr-line);border-radius:12px;background:var(--cr-surface); }
+.cr-quota-metrics { white-space:pre-wrap;font-size:13px; }
+.cr-badge.cr-capability-unknown,.cr-badge.cr-capability-disabled,.cr-badge.cr-capability-not-installed { background:var(--cr-hover);color:var(--cr-muted); }
+.cr-badge.cr-capability-needs-auth { background:#fff2cf;color:#805300; }
+.cr-dark .cr-badge.cr-capability-needs-auth { background:#45340b;color:#fde68a; }
 .codex-page view,.codex-page text,.codex-page input,.codex-page textarea { box-sizing:border-box; }
 .codex-page button { box-sizing:border-box;margin:0;border:0;color:inherit;background:transparent;font-size:14px;font-weight:500;line-height:1.4;display:flex;align-items:center;justify-content:center;min-height:36px;padding:6px 10px;border-radius:10px; }
 .codex-page button::after { border:none; }

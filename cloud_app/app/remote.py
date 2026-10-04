@@ -20,14 +20,14 @@ MAX_PENDING = 64
 MAX_RESULT = 16 * MAX_FRAME
 FIELDS = {
     "lanpower/status": set(),
-    "lanpower/chat/start": {"model"}, "skills/list": {"cwd"}, "lanpower/automations/list": set(),
+    "lanpower/chat/start": {"model"}, "skills/list": {"cwd", "cursor", "limit", "refresh"}, "lanpower/automations/list": set(),
     "lanpower/files/list": {"cwd", "path", "cursor"}, "lanpower/files/read": {"cwd", "path"},
     "lanpower/files/search": {"cwd", "query"},
     "lanpower/library/update": {"revision", "preferences"}, "lanpower/image/read": {"threadId", "path"},
     "lanpower/library/list": {"query", "cursor", "limit", "archived", "refresh"}, "lanpower/library/check": {"threadIds", "archived"},
     "lanpower/submission/read": {"threadId", "submissionId"}, "lanpower/history/item/read": {"threadId", "reference", "offset"},
     "lanpower/history/action": {"threadId", "turnId", "expectedTailTurnId", "action"},
-    "plugin/list": {"cwd"}, "app/list": {"cursor", "limit", "threadId"}, "mcpServerStatus/list": {"cursor", "limit"},
+    "plugin/list": {"cwd", "cursor", "limit", "refresh"}, "app/list": {"cursor", "limit", "threadId"}, "mcpServerStatus/list": {"cursor", "limit"},
     "config/mcpServer/reload": set(), "account/rateLimits/read": set(), "collaborationMode/list": set(),
     "lanpower/session/release": {"threadId"},
     "model/list": {"cursor", "limit"},
@@ -116,6 +116,8 @@ def validate_request(payload: dict) -> str:
             raise ProtocolError()
     if "threadId" in params and (not isinstance(params["threadId"],str) or not 1 <= len(params["threadId"]) <= 100): raise ProtocolError()
     if "limit" in params and (type(params["limit"]) is not int or not 1 <= params["limit"] <= 50):
+        raise ProtocolError()
+    if method in {"skills/list", "plugin/list"} and params.get("limit", 24) > 24:
         raise ProtocolError()
     if "historyLimit" in params and (type(params["historyLimit"]) is not int or not 1 <= params["historyLimit"] <= 8): raise ProtocolError()
     if "submissionId" in params and (not isinstance(params["submissionId"], str) or not 1 <= len(params["submissionId"]) <= 100): raise ProtocolError()

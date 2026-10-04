@@ -3,6 +3,7 @@ const {ReadScope, readThread, readPage, mergeHistory, advanceCursor, newBeginnin
 const {projectConversation, conversationWindow, userContent} = require('./conversation');
 const {approvalView, approvalResult} = require('./approvals');
 const {ResourceBrowser} = require('./resources');
+const {NativeUsage} = require('./native-status');
 const {elapsed} = require('../codex-format');
 const error = (message, code = 'not_sent') => Object.assign(new Error(message), {code, uncertain: false});
 let submissionSequence = 0;
@@ -15,6 +16,7 @@ class CodexController {
     this.drafts = new Map(); this.settings = new Map(); this.receipts = new Map(); this.epoch = 0; this.selection = 0;
     this.state = 'idle'; this.deviceId = ''; this.threadId = ''; this.current = null; this.feedback = '';
     this.resources = new ResourceBrowser(connection, () => this.ready, () => this.emit());
+    this.nativeUsage = new NativeUsage(connection, () => this.ready, () => this.emit());
     this.resetDevice();
   }
   emit() { this.changed(); }
@@ -35,6 +37,7 @@ class CodexController {
     this.windowOffset = null; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.expandedImages = new Set(); this.contentProgress = {}; this.contentFailures = new Map(); this.rows = [];
   }
   resetDevice() {
+    this.nativeUsage.reset(); this.capabilityPaging = false; this.resources.paging = false;
     this.resetHistory(); this.activeTurns = new Map(); this.approvals = new Map(); this.approvalAnswers = new Map(); this.queue = []; this.threads = []; this.projects = []; this.models = [];
     this.listCursor = ''; this.listSeen = new Set(); this.archived = false; this.threadArchived = false; this.library = {revision: 0, preferences: defaultPreferences()};
     this.sharedControl = false; this.desktopControl = false; this.queueSupported = false; this.planSupported = false; this.chatSupported = false; this.receiptsSupported = false;
@@ -50,11 +53,12 @@ class CodexController {
   onState(state) {
     const wasReady = this.ready; this.state = state;
     if (!this.ready) {
+      clearTimeout(this.quotaTimer); this.nativeUsage.reset('电脑连接未就绪，无法取得当前额度与上下文。');
       this.epoch++; this.busy = false; this.syncing = false; this.statusReading = false; this.queryingReceipt = false; this.readingHistory = false; this.loadingThread = false; this.loadingLibrary = false; this.recovering = false; this.interrupting = false; this.responding = false;
       this.approvals.clear(); this.queue = []; this.resources.reset(); this.clock.clear(); this.libraryDraft = null; this.synced = false;
       if (this.historyScope) this.historyScope.cancel(); if (this.contentScope) this.contentScope.cancel();
       this.contentRun++; this.restoringContent = false; clearTimeout(this.contentRetry); this.overlay = {label: '', plan: [], error: ''};
-    } else if (!wasReady) { this.recovering = true; void this.restore(); }
+    } else if (!wasReady) { this.recovering = true; void this.nativeUsage.readQuota(); void this.restore(); }
     this.emit();
   }
   async restore() {
@@ -73,6 +77,7 @@ class CodexController {
     finally { if (e === this.epoch) { this.recovering = false; this.emit(); void this.restoreContent(); } }
   }
   applyStatus(status, stamp = this.clock.capture()) {
+    this.capabilityPaging = status.capabilityPaging === true; this.resources.paging = this.capabilityPaging;
     this.sharedControl = !!status.sharedControl; this.desktopControl = !!status.desktopControl; this.queueSupported = !!status.queueSupported; this.chatSupported = !!status.chatSupported; this.receiptsSupported = !!status.submissionReceipts;
     this.targetedHistoryActions = !!status.targetedHistoryActions;
     this.libraryCatalog = !!status.libraryCatalog;
@@ -325,6 +330,8 @@ class CodexController {
     if (!this.ready) return;
     const p = event.params || {}, id = p.threadId || p.thread && p.thread.id;
     if (id && !this.clock.event(id, p.lanpowerRevision)) return;
+    if (this.nativeUsage.event(event.method,p)) return;
+    if (event.method === 'turn/completed') { clearTimeout(this.quotaTimer); this.quotaTimer = setTimeout(() => { void this.nativeUsage.readQuota(); },300); }
     if (event.id !== undefined) { this.approvals.set(JSON.stringify(event.id), event); this.emit(); return; }
     if (event.method === 'serverRequest/resolved') { this.approvals.delete(JSON.stringify(p.requestId)); this.approvalAnswers.delete(JSON.stringify(p.requestId)); this.emit(); return; }
     if (['lanpower/error', 'lanpower/approvalError'].includes(event.method)) { this.notify(p.message || '操作未完成，请恢复会话确认。'); this.reconcile(); return; }
@@ -422,6 +429,6 @@ class CodexController {
     if (!this.ready) return '任务状态待恢复'; if (this.selectedApprovals.length) return '等待你的回复'; if (!this.activeTurn) return '当前无运行任务'; if (this.interrupting) return '正在停止'; return this.overlay.label || '正在工作';
   }
   duration() { const turn = this.current && (this.current.turns || []).find(value => value.id === this.activeTurn), start = timestamp(turn && turn.startedAt || this.current && this.current.live && this.current.live.startedAt); return start ? elapsed((Date.now() - start) / 1000) : ''; }
-  dispose() { this.epoch++; this.resetHistory(); clearTimeout(this.reconcileTimer); clearTimeout(this.libraryTimer); clearTimeout(this.contentRetry); this.resources.reset(); this.drafts.clear(); this.settings.clear(); this.receipts.clear(); this.connection.stop(); }
+  dispose() { clearTimeout(this.quotaTimer); this.nativeUsage.reset(); this.epoch++; this.resetHistory(); clearTimeout(this.reconcileTimer); clearTimeout(this.libraryTimer); clearTimeout(this.contentRetry); this.resources.reset(); this.drafts.clear(); this.settings.clear(); this.receipts.clear(); this.connection.stop(); }
 }
 module.exports = {CodexController};

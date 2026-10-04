@@ -3,7 +3,7 @@
     const protocol = 1;
     const globalName = "__LANPOWER_GLOBAL__";
     const bindingName = "__LANPOWER_BINDING__";
-    const notificationMethods = ["error","thread/started","thread/archived","thread/unarchived","thread/queue/changed","thread/name/updated","thread/settings/updated","thread/status/changed","thread/tokenUsage/updated","turn/started","turn/completed","turn/diff/updated","turn/plan/updated","item/started","item/completed","item/agentMessage/delta","item/plan/delta","item/reasoning/summaryTextDelta","item/commandExecution/outputDelta","item/commandExecution/terminalInteraction","item/fileChange/outputDelta","item/fileChange/patchUpdated","serverRequest/resolved"];
+    const notificationMethods = ["error","account/rateLimits/updated","thread/started","thread/archived","thread/unarchived","thread/queue/changed","thread/name/updated","thread/settings/updated","thread/status/changed","thread/tokenUsage/updated","turn/started","turn/completed","turn/diff/updated","turn/plan/updated","item/started","item/completed","item/agentMessage/delta","item/plan/delta","item/reasoning/summaryTextDelta","item/commandExecution/outputDelta","item/commandExecution/terminalInteraction","item/fileChange/outputDelta","item/fileChange/patchUpdated","serverRequest/resolved"];
     const root = globalThis.__codexRoot && globalThis.__codexRoot._internalRoot
       ? globalThis.__codexRoot._internalRoot.current
       : null;

@@ -523,7 +523,6 @@ type AttachmentBatchStats = {
   failed: number
 }
 
-const CONTEXT_WINDOW_BASELINE_TOKENS = 12000
 const PASTED_TEXT_FILE_THRESHOLD = 2000
 const PROMPT_OPTION_PREFIX = 'prompt:'
 
@@ -917,18 +916,8 @@ function formatBreakdownSummary(breakdown: UiTokenUsageBreakdown): string {
 }
 
 function calculateContextPercentRemaining(tokensInContext: number, contextWindow: number): number {
-  // Mirror official Codex normalization so the first prompt does not look artificially "used".
-  if (!Number.isFinite(tokensInContext) || !Number.isFinite(contextWindow) || contextWindow <= 0) {
-    return 0
-  }
-  if (contextWindow <= CONTEXT_WINDOW_BASELINE_TOKENS) {
-    const remaining = Math.max(0, contextWindow - Math.max(0, tokensInContext))
-    return Math.max(0, Math.min(100, Math.round((remaining / contextWindow) * 100)))
-  }
-  const effectiveWindow = contextWindow - CONTEXT_WINDOW_BASELINE_TOKENS
-  const used = Math.max(0, tokensInContext - CONTEXT_WINDOW_BASELINE_TOKENS)
-  const remaining = Math.max(0, effectiveWindow - used)
-  return Math.max(0, Math.min(100, Math.round((remaining / effectiveWindow) * 100)))
+  if (!Number.isFinite(tokensInContext) || !Number.isFinite(contextWindow) || contextWindow <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((contextWindow - Math.max(0,tokensInContext)) / contextWindow * 100)))
 }
 
 function buildContextUsageView(
