@@ -163,6 +163,53 @@ public sealed class SharedCodexTests
         finally { Directory.Delete(root, true); }
     }
 
+    [TestMethod]
+    public async Task ExplicitPermissionPresetsUseNativeSettingsAndKeepActiveTaskAndFuturePermissions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "LanPowerPermissionTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var server = new SharedFixture(root) { NoRolloutUntilStart = true };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20)); var token = timeout.Token;
+            await using var remote = new RemoteRuntime(() => new(true,[root],AutoDiscover:false,SharedControl:true), t => RuntimeClient.ConnectAsync(server.Endpoint,server.Bearer,t));
+            await remote.OpenAsync(token);
+            var changed = await remote.HandleAsync(Request("lanpower/permissions/set",new() { ["threadId"] = "native-chat", ["permissionMode"] = "full-access" }), token);
+            Assert.AreEqual("never",changed!["result"]!["thread"]!["approvalPolicy"]!.GetValue<string>());
+            Assert.AreEqual("dangerFullAccess",changed["result"]!["thread"]!["sandbox"]!["type"]!.GetValue<string>());
+            Assert.AreEqual(0,server.Mutations,"Selecting a preset must not start or interrupt a task.");
+            Assert.AreEqual(0,server.ResumeParameters.Count,"An empty chat must accept permission changes without requiring a persisted rollout.");
+            await remote.HandleAsync(Request("turn/start",new() { ["threadId"] = "native-chat", ["input"] = Input("继续") }), token);
+            Assert.IsFalse(server.TurnParameters.Single().ContainsKey("approvalPolicy"),"Starting a turn must inherit the native policy instead of resetting it.");
+            Assert.IsFalse(server.TurnParameters.Single().ContainsKey("sandboxPolicy"));
+            changed = await remote.HandleAsync(Request("lanpower/permissions/set",new() { ["threadId"] = "native-chat", ["permissionMode"] = "auto-review" }), token);
+            Assert.AreEqual("auto_review",changed!["result"]!["thread"]!["approvalsReviewer"]!.GetValue<string>());
+            Assert.AreEqual(root,server.PermissionWrites.Last()["sandboxPolicy"]!["writableRoots"]![0]!.GetValue<string>());
+            Assert.IsTrue(server.Active); Assert.AreEqual(1,server.Mutations);
+            server.RejectPermissions = true;
+            var denied = await remote.HandleAsync(Request("lanpower/permissions/set",new() { ["threadId"] = "native-chat", ["permissionMode"] = "full-access" }), token);
+            Assert.AreEqual("managed_permissions_denied",denied!["error"]!["message"]!.GetValue<string>());
+            var read = await remote.HandleAsync(Request("thread/read",new() { ["threadId"] = "native-chat", ["includeTurns"] = true }), token);
+            Assert.AreEqual("auto_review",read!["result"]!["thread"]!["approvalsReviewer"]!.GetValue<string>());
+            await Assert.ThrowsAsync<InvalidDataException>(() => remote.HandleAsync(Request("lanpower/permissions/set",new() { ["threadId"] = "outside", ["permissionMode"] = "full-access" }), token));
+            Assert.AreEqual(2,server.PermissionWrites.Count);
+        }
+        finally { Directory.Delete(root,true); }
+    }
+
+    [TestMethod]
+    [DataRow("ask")]
+    [DataRow("auto-review")]
+    [DataRow("full-access")]
+    public void PermissionsProtocolOnlyAcceptsThreePresets(string mode)
+    {
+        var request = Request("lanpower/permissions/set",new() { ["threadId"] = "native", ["permissionMode"] = mode });
+        Assert.AreEqual("lanpower/permissions/set",CodexRemoteProtocol.ValidateRequest(request));
+        request["params"]!["sandboxPolicy"] = new JsonObject { ["type"] = "dangerFullAccess" };
+        Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(request));
+        request["params"]!.AsObject().Remove("sandboxPolicy"); request["params"]!["permissionMode"] = "never";
+        Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(request));
+    }
+
     private sealed class SharedFixture : IAsyncDisposable
     {
         private readonly HttpListener _listener = new(); private readonly CancellationTokenSource _stop = new();
@@ -178,9 +225,13 @@ public sealed class SharedCodexTests
         public bool NoRolloutUntilStart { get; set; }
         public string MissingHistory { get; set; } = "no rollout found for thread id native-chat";
         public ConcurrentBag<JsonObject> ResumeParameters { get; } = new();
+        public List<JsonObject> PermissionWrites { get; } = new();
+        public List<JsonObject> TurnParameters { get; } = new();
+        private JsonObject _permissions = new();
+        public bool RejectPermissions { get; set; }
         public SharedFixture(string root)
         {
-            _root = root; var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); var port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
+            _root = root; _permissions = RemotePermissions.Parameters("native-chat",root,"ask"); var reserve = new TcpListener(IPAddress.Loopback, 0); reserve.Start(); var port = ((IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
             Endpoint = new("ws://127.0.0.1:" + port + "/"); _listener.Prefixes.Add("http://127.0.0.1:" + port + "/"); _listener.Start(); _accept = Accept();
         }
         private async Task Accept()
@@ -210,14 +261,21 @@ public sealed class SharedCodexTests
                 if (method == "account/read") result["account"] = new JsonObject { ["type"] = "fixture" };
                 if (method == "thread/list") result["data"] = HideHistory ? new JsonArray() : new JsonArray(Thread());
                 if (method == "thread/loaded/list") result["data"] = Loaded ? new JsonArray("native-chat") : new JsonArray();
+                if (method == "thread/settings/update")
+                {
+                    if (RejectPermissions) { await Send(peer,new() { ["id"] = request["id"]!.DeepClone(), ["error"] = new JsonObject { ["code"] = -32600, ["message"] = "managed_permissions_denied" } }); continue; }
+                    PermissionWrites.Add((JsonObject)p.DeepClone()); _permissions = (JsonObject)p.DeepClone();
+                    await Broadcast(new() { ["method"] = "thread/settings/updated", ["params"] = new JsonObject { ["threadId"] = "native-chat", ["threadSettings"] = _permissions.DeepClone() } });
+                }
                 if (method == "thread/resume" && NoRolloutUntilStart)
                 {
                     await Send(peer, new() { ["id"] = request["id"]!.DeepClone(), ["error"] = new JsonObject { ["code"] = -32600, ["message"] = MissingHistory } });
                     continue;
                 }
                 if (method is "thread/read" or "thread/resume") { if (method == "thread/resume") ResumeParameters.Add((JsonObject)p.DeepClone()); result["thread"] = Thread(p["threadId"]?.GetValue<string>() == "outside"); }
+                if (method == "thread/resume") foreach (var key in new[] { "approvalPolicy", "approvalsReviewer", "sandboxPolicy" }) result[key == "sandboxPolicy" ? "sandbox" : key] = _permissions[key]?.DeepClone();
                 if (method == "thread/turns/list") result["data"] = Thread()["turns"]!.DeepClone();
-                if (method == "turn/start") { Active = true; NoRolloutUntilStart = false; result["turn"] = new JsonObject { ["id"] = "same-turn", ["status"] = "inProgress" }; }
+                if (method == "turn/start") { TurnParameters.Add((JsonObject)p.DeepClone()); Active = true; NoRolloutUntilStart = false; result["turn"] = new JsonObject { ["id"] = "same-turn", ["status"] = "inProgress" }; }
                 if (method == "turn/steer") result["turnId"] = "same-turn";
                 if (method == "thread/queue/add") { var entry = new JsonObject { ["id"] = "queued-one", ["clientUserMessageId"] = p["clientUserMessageId"]!.DeepClone(), ["input"] = p["input"]!.DeepClone() }; _queue.Add(entry); result["queuedSubmission"] = entry.DeepClone(); }
                 if (method == "thread/queue/list") result["data"] = _queue.DeepClone();

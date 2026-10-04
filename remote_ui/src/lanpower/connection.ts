@@ -7,6 +7,7 @@ export class RemoteError extends Error {
 }
 
 const errors: Record<string, string> = {
+  permissions_unavailable: '电脑端没有确认生效的权限，请刷新会话读取实际设置。',
   capability_cursor_expired: '能力目录快照已过期或变化，请刷新后继续翻页。',
   invalid_params: '内容或参数不符合限制，未发送，请修改后重试。',
   invalid_input: '文字或附件不符合限制，未发送，请修改后重试。',
@@ -91,7 +92,7 @@ export class RemoteConnection {
         return
       }
       this.pending.delete(payload.id); this.fragments.drop(payload.id); clearTimeout(call.timer); call.cleanup?.()
-      if (payload.error) call.reject(new RemoteError(payload.error.code === -32601 ? 'unsupported_method' : payload.error.message, payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || (['account/rateLimits/read','skills/list','plugin/list','app/list','mcpServerStatus/list'].includes(call.method || '') ? `原生接口读取失败：${String(payload.error.message || payload.error.code).slice(0,1000).replace(/(?:Bearer\s+|sk-)[\w-]+/g,'[已隐藏凭据]')}` : '本机未能完成请求，请检查会话和授权。'), payload.error.data?.notSent !== true && ![-32601,-32602].includes(payload.error.code) && !['turn_changed','task_running','workspace_not_allowed','submission_store_full','submission_store_unavailable','history_changed'].includes(payload.error.message)))
+      if (payload.error) call.reject(new RemoteError(payload.error.code === -32601 ? 'unsupported_method' : payload.error.message, payload.error.code === -32601 ? '当前 Codex 版本暂不支持此功能。' : errors[payload.error.message] || (['account/rateLimits/read','skills/list','plugin/list','app/list','mcpServerStatus/list','lanpower/permissions/set'].includes(call.method || '') ? `原生接口读取失败：${String(payload.error.message || payload.error.code).slice(0,1000).replace(/(?:Bearer\s+|sk-)[\w-]+/g,'[已隐藏凭据]')}` : '本机未能完成请求，请检查会话和授权。'), payload.error.data?.notSent !== true && ![-32601,-32602].includes(payload.error.code) && !['turn_changed','task_running','workspace_not_allowed','submission_store_full','submission_store_unavailable','history_changed'].includes(payload.error.message)))
       else call.resolve(payload.result)
     }
     socket.onerror = () => {}

@@ -310,6 +310,12 @@
           if (typeof cached?.latestModel === 'string' && cached.latestModel.length <= 256) settings.model = cached.latestModel;
           if (cached?.latestReasoningEffort === null || ['none','minimal','low','medium','high','xhigh','max','ultra'].includes(cached?.latestReasoningEffort)) settings.reasoningEffort = cached.latestReasoningEffort;
           if (['default','plan'].includes(cached?.latestCollaborationMode?.mode)) settings.collaborationMode = { mode: cached.latestCollaborationMode.mode };
+          for (const native of [cached?.latestThreadSettings, cached?.currentPermissions]) {
+            if (!native || typeof native !== 'object') continue;
+            for (const key of ['approvalPolicy','approvalsReviewer','sandboxPolicy','activePermissionProfile']) {
+              if (Object.prototype.hasOwnProperty.call(native,key)) settings[key] = native[key];
+            }
+          }
           return { ...result, ...settings };
         }
         if (method === 'codex-web/local/history/action') {

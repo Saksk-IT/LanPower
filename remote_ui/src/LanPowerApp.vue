@@ -22,7 +22,7 @@
           <ThreadPendingRequestPanel v-if="selectedApprovals.length" :request="selectedApprovals[0]!" :request-count="selectedApprovals.length" :has-queue-above="queueRows.length > 0" :single-turn-only="true" :is-responding="respondingApproval" @respond-server-request="respondApproval" />
           <p v-if="sendReceipt" class="lp-send-receipt" role="status">{{ receiptLabel }}<button v-if="sendReceipt.state === 'uncertain' || sendReceipt.state === 'sending'" :disabled="!ready || queryingReceipt" @click="queryReceipt">查询发送回执</button><button v-if="sendReceipt.state === 'uncertain'" @click="refreshCurrent">查阅原窗口会话</button><button v-if="sendReceipt.state === 'uncertain'" @click="confirmNotAccepted">确认未执行并恢复草稿</button></p>
           <p v-if="settingsHint" class="lp-settings-hint">{{ settingsHint }}<button @click="inheritSettings">采用原窗口参数</button></p>
-          <ThreadComposer v-show="!selectedApprovals.length" :key="`${deviceId}:${threadId}`" ref="composer" :active-thread-id="threadId" :cwd="currentCwd" :models="models" :valid-reasoning-efforts="effortOptions" :skills="skills" :supports-plan-mode="planSupported" :selected-model="selectedModel" :selected-reasoning-effort="selectedEffort" :selected-collaboration-mode="selectedMode" selected-speed-mode="standard" :is-turn-in-progress="Boolean(activeTurn)" :is-interrupting-turn="interrupting" :disabled="!canControl || busy || loadingChat || sendBlocked" :has-queue-above="queueRows.length > 0" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressMode" :remote-mode="true" @submit="submit" @interrupt="interrupt" @update:selected-model="chooseSetting('model',$event)" @update:selected-reasoning-effort="chooseSetting('effort',$event)" @update:selected-collaboration-mode="chooseSetting('mode',$event)" />
+          <ThreadComposer v-show="!selectedApprovals.length" :key="`${deviceId}:${threadId}`" ref="composer" :active-thread-id="threadId" :cwd="currentCwd" :models="models" :valid-reasoning-efforts="effortOptions" :skills="skills" :supports-plan-mode="planSupported" :selected-model="selectedModel" :selected-reasoning-effort="selectedEffort" :selected-collaboration-mode="selectedMode" selected-speed-mode="standard" :is-turn-in-progress="Boolean(activeTurn)" :is-interrupting-turn="interrupting" :disabled="!canControl || busy || loadingChat || sendBlocked || changingPermissions" :permission-mode="selectedPermission" :permissions-supported="permissionsSupported" :changing-permissions="changingPermissions" @change-permissions="changePermissions" :has-queue-above="queueRows.length > 0" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressMode" :remote-mode="true" @submit="submit" @interrupt="interrupt" @update:selected-model="chooseSetting('model',$event)" @update:selected-reasoning-effort="chooseSetting('effort',$event)" @update:selected-collaboration-mode="chooseSetting('mode',$event)" />
           <p class="lp-compose-hint">{{ canControl ? '输入与操作同步到电脑上的同一会话' : ready ? '请在电脑的 LanPower 连接原 Codex 窗口后继续此会话' : stateHint }}</p>
         </div>
       </template>
@@ -51,6 +51,7 @@ import { NativeUsage } from './lanpower/nativeStatus'
 import RemoteFilesPanel from './components/content/RemoteFilesPanel.vue'
 import { mergeHistory, readPage, readThread, newBeginning, findBeginning, HistoryContentReader, refreshHistoryTurn, type BeginningJob } from './lanpower/history'
 import { newSettings, observeSettings, effectiveSettings, modelId, validEfforts, type ModelCapability, type ThreadSettings, type SendSettings } from './lanpower/settings'
+import { permissionMode, permissionLabels, type PermissionPreset } from './lanpower/permissions'
 import { StateClock } from './lanpower/state'
 import { reasoningSummary, timestampMs } from './lanpower/turnPresentation'
 import { defaultLibraryPreferences, type LibraryPreferences } from './lanpower/library'
@@ -72,6 +73,9 @@ const nativeState = shallowRef<any>({snapshots:[],loading:false,reason:'连接�
 const nativeUsage = new NativeUsage(connection, () => ready.value, () => { nativeState.value = {...nativeUsage.state} })
 const threadUsage = computed(() => { void nativeState.value; return nativeUsage.context(threadId.value) })
 const capabilityPaging = ref(false)
+const permissionsSupported = ref(false), permissionUpdates = ref<string[]>([])
+const changingPermissions = computed(() => permissionUpdates.value.includes(sessionKey()))
+const selectedPermission = computed(() => { settingsVersion.value; return ready.value ? permissionMode(threadSettings().permissions,currentCwd.value) : 'unknown' })
 let quotaTimer: ReturnType<typeof setTimeout> | undefined
 const threads = shallowRef<any[]>([]), current = shallowRef<any>(null), projects = ref<Array<{ name: string; path: string; kind?:string }>>([])
 const libraryCatalog = ref(false), libraryQuery = ref(''), searchRows = shallowRef<any[]>([])
@@ -103,6 +107,25 @@ function chooseSetting(key: keyof SendSettings, value: any): void {
   displaySettings()
 }
 function inheritSettings(): void { threadSettings().overrides = {}; displaySettings() }
+async function changePermissions(mode:PermissionPreset): Promise<void> {
+  if (!canControl.value || !permissionsSupported.value || busy.value || loadingChat.value || sendBlocked.value || changingPermissions.value) return
+  const e = epoch, s = selection, id = threadId.value, key = sessionKey()
+  permissionUpdates.value = [...permissionUpdates.value,key]
+  try {
+    const result = await connection.request('lanpower/permissions/set',{threadId:id,permissionMode:mode})
+    if (e !== epoch || s !== selection) return
+    applyThreadSettings(result.thread)
+    feedback.value = selectedPermission.value === mode
+      ? `已切换为${permissionLabels[mode]}${activeTurn.value ? '，用于后续任务；当前任务和已发起的审批保留原设置。' : '。'}`
+      : '已读取原窗口的实际权限；当前配置与所选模式不同，请核对电脑端的权限限制。'
+    scheduleReconcile()
+  } catch (error) {
+    if (e === epoch && s === selection) {
+      feedback.value = `权限更改未确认：${error instanceof Error ? error.message : '请重新连接后读取实际状态'}。`
+      scheduleReconcile()
+    }
+  } finally { permissionUpdates.value = permissionUpdates.value.filter(item => item !== key) }
+}
 const effortOptions = computed(() => validEfforts(nativeModels.value.find(m => modelId(m) === selectedModel.value)))
 const settingsHint = computed(() => { settingsVersion.value; const settings = threadSettings(); return Object.keys(settings.overrides).length ? `下次新任务使用已选参数；原窗口：${settings.native.model || '默认模型'} / ${settings.native.effort || '默认强度'} / ${settings.native.mode === 'plan' ? '计划模式' : '默认模式'}。排队和引导沿用当前任务参数。` : '' })
 const sendReceipt = computed(() => { receiptVersion.value; return receipts.get(sessionKey()) })
@@ -210,6 +233,7 @@ async function restore(): Promise<void> {
 }
 function applyStatus(status: any, stamp = clock.capture()): void {
   capabilityPaging.value = status.capabilityPaging === true
+  permissionsSupported.value = status.permissionsControl === true
   desktopControl.value = Boolean(status.desktopControl); sharedControl.value = Boolean(status.sharedControl); queueSupported.value = Boolean(status.queueSupported)
   receiptsSupported.value = Boolean(status.submissionReceipts); unsupportedMethods.value = status.unsupportedMethods || []
   targetedHistoryActions.value = Boolean(status.targetedHistoryActions)
@@ -342,7 +366,7 @@ async function newThread(cwd?: string): Promise<void> {
   catch (error) { showError(error) } finally { busy.value = false }
 }
 async function submit(payload: SubmitPayload): Promise<void> {
-  if (!canControl.value || busy.value || sendBlocked.value) return
+  if (!canControl.value || busy.value || sendBlocked.value || changingPermissions.value) return
   const e = epoch, s = selection, id = threadId.value, key = sessionKey(), options = {...effectiveSettings(threadSettings())}
   const receipt: Receipt = {submissionId:crypto.randomUUID(),method:'',payload:JSON.parse(JSON.stringify(payload)),settings:options,state:'sending'}
   receipts.set(key,receipt); receiptVersion.value++
@@ -561,7 +585,7 @@ function onEvent(event: RpcEvent): void {
   if (event.method === 'thread/status/changed') threads.value = threads.value.map(t => t.id === id ? {...t,status:p.status} : t)
   if (id && event.method === 'thread/settings/updated') {
     const key = sessionKey(id), settings = settingsByThread.get(key) || newSettings(); settingsByThread.set(key,settings)
-    observeSettings(settings,p.settings || p,models.value[0] || '')
+    observeSettings(settings,p.threadSettings || p.settings || p,models.value[0] || '')
     if (id === threadId.value) displaySettings()
   }
   if (id && ['lanpower/historyChanged','lanpower/conversation/changed','lanpower/stream/changed','thread/status/changed'].includes(event.method) && id !== threadId.value) scheduleReconcile()
@@ -643,6 +667,7 @@ async function wake(): Promise<void> {
 }
 function changeDevice(id: string): void {
   saveDraft(); resetHistory(); clock.clear()
+  permissionsSupported.value = false
   epoch++; selection++; nativeUsage.reset(); capabilityPaging.value = false; deviceId.value = id; threadId.value = ''; current.value = null; threads.value = []; projects.value = []; models.value = []; queue.value = []; resetApprovals(); activeTurns.value = {}; editingQueue.value = ''; listCursor.value = ''; historyCursor.value = ''; powerText.value = ''; wakeAvailable.value = false; feedback.value = ''; chatOpen.value = false
   loadingChat.value = false; loadingLibrary.value = false; loadingEarlier.value = false; loadingAllHistory.value = false; busy.value = false; skills.value = []; filesCwd.value = ''; chatSupported.value = false; view.value = 'chat'; archivedView.value = false; newThreadDialog.value = false; renameDialog.value = false
   libraryDraft = null; libraryQuery.value = ''; searchRows.value = []; libraryCatalog.value = false; libraryState.value = {revision:0,preferences:defaultLibraryPreferences()}; filePath.value = ''; clearTimeout(libraryTimer); clearTimeout(reconcileTimer); resetRemoteImages()

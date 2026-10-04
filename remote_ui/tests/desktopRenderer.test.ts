@@ -48,6 +48,20 @@ describe('original desktop renderer integration', () => {
     expect(await a.rpc('thread/read',{threadId:'unloaded',includeTurns:false})).toEqual({thread:{id:'chat',updatedAt}});
     a.dispose();
   });
+  it('reads effective desktop permissions without resuming or exposing unrelated native settings',async () => {
+    const f = fixture(), updatedAt = 1700000100;
+    const ask = {approvalPolicy:'on-request',approvalsReviewer:'user',sandboxPolicy:{type:'workspaceWrite',networkAccess:false,writableRoots:[]},activePermissionProfile:null};
+    const full = {approvalPolicy:'never',approvalsReviewer:'user',sandboxPolicy:{type:'dangerFullAccess'},activePermissionProfile:{id:':danger-full-access'}};
+    Object.assign(f.conversation,{updatedAt,latestThreadSettings:{...ask,developer_instructions:'private',disabledPluginIds:['private']},currentPermissions:full});
+    ;(f.manager as any).sendRequest = async (method:string,params:any) => {f.replies.push({method,params});return {thread:{id:'chat',updatedAt}}};
+    const a = await f.attach('adapterA','eventA');
+    expect(await a.rpc('thread/read',{threadId:'chat',includeTurns:false})).toEqual({thread:{id:'chat',updatedAt},...full});
+    ;(f.conversation as any).currentPermissions = null;
+    expect(await a.rpc('thread/read',{threadId:'chat',includeTurns:false})).toEqual({thread:{id:'chat',updatedAt},...ask});
+    expect((f.conversation as any).updatedAt).toBe(updatedAt);
+    expect(f.replies.every(r=>r.method === 'thread/read')).toBe(true);
+    a.dispose();
+  });
   it('keeps two 17 MiB item references readable despite background cache pressure',async () => {
     const f = fixture(), text = 'x'.repeat(17 * 1024 * 1024)
     const turns = [{id:'huge',items:[{id:'one',type:'agentMessage',text},{id:'two',type:'agentMessage',text:text+'结尾'}]}]

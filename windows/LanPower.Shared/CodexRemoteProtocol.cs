@@ -14,6 +14,7 @@ public static class CodexRemoteProtocol
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
         ["lanpower/status"] = [], ["lanpower/session/release"] = ["threadId"], ["model/list"] = ["cursor", "limit"],
+        ["lanpower/permissions/set"] = ["threadId", "permissionMode"],
         ["lanpower/chat/start"] = ["model"], ["skills/list"] = ["cwd", "cursor", "limit", "refresh"], ["lanpower/automations/list"] = [],
         ["lanpower/files/list"] = ["cwd", "path", "cursor"], ["lanpower/files/read"] = ["cwd", "path"],
         ["lanpower/files/search"] = ["cwd", "query"],
@@ -94,6 +95,13 @@ public static class CodexRemoteProtocol
                 method == "turn/steer" && name == "expectedTurnId");
         ValidateString(args, "clientUserMessageId", 100, method == "thread/queue/add");
         if (method == "app/list") ValidateString(args, "threadId", 100);
+        if (method == "lanpower/permissions/set")
+        {
+            ValidateString(args, "threadId", 100, true);
+            ValidateString(args, "permissionMode", 32, true);
+            if (args["permissionMode"]!.GetValue<string>() is not ("ask" or "auto-review" or "full-access"))
+                throw new InvalidDataException("invalid_params");
+        }
         if (method == "lanpower/library/update")
         {
             if (args["revision"] is not JsonValue version || !version.TryGetValue<long>(out var revision) || revision < 0 || revision >= 9007199254740991)

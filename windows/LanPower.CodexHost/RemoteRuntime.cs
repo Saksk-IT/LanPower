@@ -136,7 +136,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             { _threads[id!] = cwd; _sharedThreads[id!] = 0; p!["thread"] = Summary(p["thread"]!.AsObject()); }
             if (message["method"]?.GetValue<string>() == "turn/started" && id is not null) _newThreads.TryRemove(id, out _);
             if (message["method"]?.GetValue<string>() == "thread/settings/updated" && id is not null && p is JsonObject changed)
-                ObserveSettings(id, changed["settings"] as JsonObject ?? changed);
+                ObserveSettings(id, changed["threadSettings"] as JsonObject ?? changed["settings"] as JsonObject ?? changed);
             if (p?["turn"] is JsonObject turn) p["turn"] = RemoteHistory.VisibleTurns(new JsonArray(turn.DeepClone())).FirstOrDefault()?.DeepClone();
             if (message["method"]?.GetValue<string>() == "account/rateLimits/updated") Notify(message);
             else if (id is not null && _threads.ContainsKey(id)) { _images.Observe(id, p); Notify(message); }
@@ -241,8 +241,10 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     private void ObserveSettings(string id, JsonObject response)
     {
         var options = _threadSettings.TryGetValue(id,out var existing) ? (JsonObject)existing.DeepClone() : new JsonObject();
-        foreach (var key in new[] { "model", "reasoningEffort", "collaborationMode" })
+        foreach (var key in new[] { "model", "reasoningEffort", "collaborationMode", "approvalPolicy", "approvalsReviewer", "sandbox", "activePermissionProfile" })
             if (response.ContainsKey(key)) options[key] = response[key]?.DeepClone();
+        if (response.ContainsKey("sandboxPolicy")) options["sandbox"] = response["sandboxPolicy"]?.DeepClone();
+        if (response.ContainsKey("effort")) options["reasoningEffort"] = response["effort"]?.DeepClone();
         if (options.Count > 0) _threadSettings[id] = options;
     }
 
@@ -484,6 +486,33 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         }
         if (method == "thread/resume" && _sharedThreads.ContainsKey(id!))
             return new JsonObject { ["id"] = requestId.DeepClone(), ["result"] = new JsonObject { ["thread"] = await ReadThreadAsync(id!, true, token) } };
+        if (method == "lanpower/permissions/set")
+        {
+            // Only these three explicit presets cross the relay. Native managed requirements still apply.
+            var native = RemotePermissions.Parameters(id!, _threads[id!], parameters["permissionMode"]!.GetValue<string>());
+            var confirmed = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Changed(JsonObject message)
+            {
+                if (message["method"]?.GetValue<string>() == "thread/settings/updated" && message["params"]?["threadId"]?.GetValue<string>() == id &&
+                    (message["params"]?["threadSettings"] ?? message["params"]?["settings"]) is JsonObject actual)
+                    confirmed.TrySetResult((JsonObject)actual.DeepClone());
+            }
+            _runtime!.Message += Changed;
+            try
+            {
+                var updated = await _runtime.CallAsync("thread/settings/update", native, token);
+                updated["id"] = requestId.DeepClone();
+                if (updated["error"] is not null) return updated;
+                // Empty native chats have no rollout to resume. Confirm using the native effective-settings event.
+                var actual = await confirmed.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+                var thread = await ReadThreadAsync(id!, false, token);
+                ObserveSettings(id!, actual);
+                return new() { ["id"] = requestId.DeepClone(), ["result"] = new JsonObject {
+                    ["thread"] = Summary(thread), ["appliesTo"] = "subsequentTurns" } };
+            }
+            catch (TimeoutException) { throw new IOException("permissions_unavailable"); }
+            finally { _runtime.Message -= Changed; }
+        }
         if (method == "thread/start") { parameters["approvalPolicy"] = "on-request"; parameters["sandbox"] = "workspace-write"; parameters["excludeTurns"] = true; }
         if (method == "thread/resume") parameters["excludeTurns"] = true;
         if (method == "thread/fork") parameters["excludeTurns"] = true;
@@ -512,9 +541,8 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         if (method == "turn/start" && !_runtime!.Desktop)
         {
             if (_runtime!.ActiveTurns.ContainsKey(id!)) throw new InvalidDataException("task_running");
-            parameters["approvalPolicy"] = "on-request"; parameters["cwd"] = _threads[id!];
-            parameters["sandboxPolicy"] = new JsonObject { ["type"] = "workspaceWrite", ["networkAccess"] = false,
-                ["excludeTmpdirEnvVar"] = true, ["excludeSlashTmp"] = true, ["writableRoots"] = new JsonArray(_threads[id!]) };
+            // Permissions are owned by the native thread, including changes from either client.
+            parameters["cwd"] = _threads[id!];
         }
         if (_unsupported.Contains(method)) return new() { ["id"] = requestId.DeepClone(), ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "unsupported_method" } };
         var response = await _runtime!.CallAsync(method, parameters, token); response["id"] = requestId.DeepClone();
@@ -661,6 +689,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                 ["sharedControl"] = _runtime.Shared, ["queueSupported"] = _runtime.Shared && !_unsupported.Contains("thread/queue/list"), ["desktopControl"] = _runtime.Desktop,
                 ["lanpowerRevision"] = revision, ["submissionReceipts"] = true, ["largeHistory"] = true,
                 ["targetedHistoryActions"] = _runtime.Shared, ["historyReferenceLeases"] = true, ["libraryCatalog"] = true, ["capabilityPaging"] = true,
+                ["permissionsControl"] = _runtime.Shared,
                 ["unsupportedMethods"] = new JsonArray(_unsupported.Select(m => (JsonNode)JsonValue.Create(m)!).ToArray()),
                 ["chatSupported"] = config.AutoDiscover && _runtime.Shared,
                 ["library"] = await _library.ReadAsync(token),
@@ -693,6 +722,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                     (source, ct) => LoadHistoryItemAsync(threadId, source, ct), token));
             }
             if (method == "lanpower/history/action") return await HistoryActionAsync(parameters, request["id"]!, token);
+            if (method == "lanpower/permissions/set" && !_runtime!.Shared) throw new InvalidDataException("shared_runtime_required");
             if (method == "lanpower/image/read") return Reply(_images.Read(_scope, cwd!, threadId, parameters["path"]!.GetValue<string>()));
             if (method == "thread/read")
                 return Reply(new JsonObject { ["thread"] = await ReadThreadAsync(threadId, parameters["includeTurns"]?.GetValue<bool>() == true, token, parameters["historyLimit"]?.GetValue<int>() ?? 8) });

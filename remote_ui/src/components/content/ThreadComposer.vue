@@ -259,6 +259,8 @@
           </div>
         </div>
 
+        <PermissionPicker v-if="remoteMode" :mode="permissionMode || 'unknown'" :supported="Boolean(permissionsSupported)" :disabled="isInteractionDisabled" :changing="changingPermissions" :running="isTurnInProgress" @change="emit('change-permissions',$event)" />
+
         <template v-if="!isDictationRecording">
           <ComposerDropdown
             class="thread-composer-control"
@@ -428,6 +430,8 @@ import IconTablerMicrophone from '../icons/IconTablerMicrophone.vue'
 import IconTablerMinimize from '../icons/IconTablerMinimize.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
+import PermissionPicker from './PermissionPicker.vue'
+import type { PermissionMode, PermissionPreset } from '../../lanpower/permissions'
 import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
 
 type SkillSourceBadge = {
@@ -441,6 +445,9 @@ type SkillItem = { name: string; displayName?: string; description: string; path
 const props = defineProps<{
   activeThreadId: string
   remoteMode?: boolean
+  permissionMode?: PermissionMode
+  permissionsSupported?: boolean
+  changingPermissions?: boolean
   supportsPlanMode?: boolean
   cwd?: string
   collaborationModes?: CollaborationModeOption[]
@@ -495,6 +502,7 @@ export type ThreadComposerExposed = {
 const emit = defineEmits<{
   submit: [payload: SubmitPayload]
   interrupt: []
+  'change-permissions': [mode: PermissionPreset]
   'update:selected-collaboration-mode': [mode: CollaborationModeKind]
   'update:selected-model': [modelId: string]
   'update:selected-reasoning-effort': [effort: ReasoningEffort | '']
@@ -2134,6 +2142,13 @@ watch(
 
 .thread-composer-controls--recording {
   @apply gap-1 sm:gap-2;
+}
+
+@media (max-width: 640px) {
+  .thread-composer-controls:has(.lp-permission-picker) { flex-wrap: wrap; row-gap: .15rem; }
+  .thread-composer-controls:has(.lp-permission-picker)::before { content: ''; order: 2; flex-basis: 100%; height: 0; }
+  .thread-composer-controls:has(.lp-permission-picker) > .thread-composer-actions { order: 1; }
+  .thread-composer-controls:has(.lp-permission-picker) > .thread-composer-control { order: 3; flex: 1 1 0; min-width: 0; }
 }
 
 .thread-composer-attach {

@@ -155,6 +155,28 @@ def test_fragment_order_and_request_identity_are_checked(remote):
         assert up.receive_json()["code"] == "invalid_chunk"
 
 
+@pytest.mark.parametrize("mode", ["ask", "auto-review", "full-access"])
+def test_explicit_permission_presets_cross_authenticated_relay(remote, mode):
+    client, _, creds, _, _ = remote
+    with connected(client, creds) as (up, down, session):
+        request = {"id": "permissions", "method": "lanpower/permissions/set", "params": {"threadId": "native", "permissionMode": mode}}
+        down.send_json({"type": "rpc", "payload": request})
+        wire = forwarded_request(up, request)
+        up.send_json({"type": "rpc", "session": session, "payload": {"id": wire, "result": {"appliesTo": "subsequentTurns"}}})
+        assert down.receive_json()["payload"]["result"]["appliesTo"] == "subsequentTurns"
+
+
+@pytest.mark.parametrize("params", [
+    {}, {"threadId": "native"}, {"threadId": "native", "permissionMode": []},
+    {"threadId": "native", "permissionMode": "never"},
+    {"threadId": "native", "permissionMode": "full-access", "sandboxPolicy": {"type": "dangerFullAccess"}},
+    {"threadId": "native", "permissionMode": "full-access", "cwd": "D:/Other"},
+])
+def test_permission_presets_reject_extra_overrides_and_invalid_values(params):
+    with pytest.raises(ProtocolError):
+        validate_request({"id": "permissions", "method": "lanpower/permissions/set", "params": params})
+
+
 def test_host_library_and_native_directory_requests_keep_strict_fields():
     draft = {"collapsed": ["d:/demo"], "aliases": {"d:/demo": "项目"}, "sections": {"chats": True}, "sort": "updated"}
     assert validate_request({"id": "save", "method": "lanpower/library/update", "params": {"revision": 1, "preferences": draft}})

@@ -30,6 +30,7 @@ FIELDS = {
     "plugin/list": {"cwd", "cursor", "limit", "refresh"}, "app/list": {"cursor", "limit", "threadId"}, "mcpServerStatus/list": {"cursor", "limit"},
     "config/mcpServer/reload": set(), "account/rateLimits/read": set(), "collaborationMode/list": set(),
     "lanpower/session/release": {"threadId"},
+    "lanpower/permissions/set": {"threadId", "permissionMode"},
     "model/list": {"cursor", "limit"},
     "thread/list": {"cursor", "limit", "cwd", "archived"},
     "thread/start": {"cwd", "model"},
@@ -149,6 +150,9 @@ def validate_request(payload: dict) -> str:
         if not isinstance(sections, dict) or set(sections) - {"projects", "chats", "pinned"} or any(type(v) is not bool for v in sections.values()): raise ProtocolError()
         if prefs.get("sort", "updated") not in ("updated", "created") or type(prefs.get("chatsFirst", False)) is not bool: raise ProtocolError()
     if "mode" in params and params["mode"] not in ("default", "plan"): raise ProtocolError()
+    if method == "lanpower/permissions/set":
+        if not isinstance(params.get("threadId"), str) or not 1 <= len(params["threadId"]) <= 100: raise ProtocolError()
+        if not isinstance(params.get("permissionMode"), str) or params["permissionMode"] not in {"ask", "auto-review", "full-access"}: raise ProtocolError()
     for key in ("includeTurns", "archived", "refresh"):
         if key in params and type(params[key]) is not bool: raise ProtocolError()
     if method == "turn/interrupt" and "turnId" not in params: raise ProtocolError()
@@ -462,9 +466,9 @@ class CodexRelay:
             if method == "approval": shared.deciding.pop(key, None)
             else: peer.requests.pop(key, None); shared.requests.pop(wire_key, None)
             raise
-        if method in {"turn/start", "turn/interrupt", "approval"}:
+        if method in {"turn/start", "turn/interrupt", "approval", "lanpower/permissions/set"}:
             self.audit(peer, {"turn/start": "remote_task_started", "turn/interrupt": "remote_interrupted",
-                              "approval": "remote_approval_decided"}[method])
+                              "approval": "remote_approval_decided", "lanpower/permissions/set": "remote_permissions_change_requested"}[method])
 
     def from_agent(self, peer: Peer, frame: dict):
         if self.agents.get(peer.device) is not peer: raise ProtocolError("agent_replaced")
