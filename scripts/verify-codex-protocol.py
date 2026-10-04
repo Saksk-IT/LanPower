@@ -56,7 +56,7 @@ def verify(executable: str):
                     if "error" in value: raise RuntimeError("runtime_rpc_failed")
                     return value["result"]
         try:
-            call("initialize", {"clientInfo": {"name": "lanpower_verify", "version": "1.16.2"}, "capabilities": {"experimentalApi": True}}, "init")
+            call("initialize", {"clientInfo": {"name": "lanpower_verify", "version": "1.17.0"}, "capabilities": {"experimentalApi": True}}, "init")
             process.stdin.write('{"method":"initialized","params":{}}\n'); process.stdin.flush()
             call("thread/list", {"limit": 5}, "list")
             created = call("thread/start", {"cwd": str(root), "approvalPolicy": "on-request", "sandbox": "workspace-write"}, "start")

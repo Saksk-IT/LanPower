@@ -5,7 +5,7 @@ const {CLIENT_KEY} = require('../mini_program/utils/cloud');
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 async function until(predicate) {
-  for (let i = 0; i < 100; i++) { if (predicate()) return; await tick(); }
+  for (let i = 0; i < 600; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
   assert.fail('页面未到达预期状态');
 }
 class Socket {
@@ -62,92 +62,72 @@ async function main() {
   }}; validate(unsafe);
   assert.deepEqual(diffSummary('--- a/a.js\n+++ b/a.js\n-old\n+new\n+next'), {files: [{path: 'a.js', added: 2, removed: 1}], added: 2, removed: 1});
 
+
   global.Page = definition => {global.definition = definition;};
   require('../mini_program/pages/codex/codex');
+  const {clone} = require('../mini_program/utils/codex/model');
   const session = {url: 'https://power.example.com', client_id: '12345678-1234-1234-1234-123456789012',
     access_token: 'a'.repeat(43), refresh_token: 'b'.repeat(43), access_expires_at: Math.floor(Date.now() / 1000) + 3600};
   const storage = {[CLIENT_KEY]: session}, calls = [], pageSockets = [], root = 'C:\\Fixture\\LanPower';
-  let active = null, latestSocket, readDelay;
-  const threads = [{id: 'a', name: '优化小程序布局', projectName: 'LanPower', cwd: root, projectPath: root, control: 'available', updatedAt: Date.now() / 1000},
-    {id: 'b', name: '桌面进度', projectName: 'LanPower', cwd: root, control: 'desktop', live: {state: 'running', startedAt: Date.now() / 1000 - 45}, updatedAt: Date.now() / 1000 - 600}];
-  global.wx = {getStorageSync: key => storage[key], setStorageSync: (key, value) => {storage[key] = value;}, removeStorageSync: key => delete storage[key],
-    getAppBaseInfo: () => ({theme: 'light'}), setNavigationBarColor: () => {},
-    request: options => options.success({statusCode: 200, data: options.url.endsWith('/devices') ?
-      [{device_id: 'pc-a', device_type: 'windows', name: '开发电脑'}, {device_id: 'pc-b', device_type: 'windows', name: '另一台电脑'}] : {}}),
-    connectSocket: () => {
-      const socket = new Socket((s, frame) => {
-        if (frame.type !== 'rpc' || !frame.payload.method) return;
-        const {id, method, params} = frame.payload; calls.push({method, params}); let result = {};
-        if (method === 'lanpower/status') result = {loggedIn: true, sessionHandoff: true, projects: [{name: 'LanPower', path: root}], activeTurns: active ? [{threadId: 'a', turnId: active}] : []};
-        if (method === 'thread/list') result = {data: threads, nextCursor: null};
-        if (method === 'model/list') result = {data: [{id: 'model-a', displayName: '测试模型'}]};
-        if (method === 'thread/read') {
-          result = {thread: {...threads.find(t => t.id === params.threadId), turns: [{id: 'old', status: 'completed', items: [
-            {id: 'user-old', type: 'userMessage', content: [{type: 'text', text: '检查布局'}]}, {id: 'assistant-old', type: 'agentMessage', text: '**已检查** 页面布局。'}]}]}};
-          if (readDelay) {readDelay(s, {type: 'rpc', payload: {id, result}}); return;}
+  let active = null, latestSocket, readDelay, approvals = [];
+  const queued = [], threads = [{id:'a',name:'优化小程序布局',cwd:root,control:'remote',model:'m-a',reasoningEffort:'medium',updatedAt:Date.now()/1000,
+    turns:[{id:'old',status:'completed',items:[{id:'user',type:'userMessage',content:[{type:'text',text:'检查布局'}]},{id:'answer',type:'agentMessage',phase:'final_answer',text:'**布局检查通过**'}]}]},
+    {id:'b',name:'另一段聊天',cwd:root,control:'remote',model:'m-a',turns:[]}];
+  global.wx = {getStorageSync:key=>storage[key],setStorageSync:(key,value)=>{storage[key]=value;},removeStorageSync:key=>delete storage[key],
+    getAppBaseInfo:()=>({theme:'light'}),setNavigationBarColor:()=>{},getFileSystemManager:()=>({unlink:()=>{}}),
+    request:options=>options.success({statusCode:200,data:options.url.endsWith('/devices')?
+      [{device_id:'pc-a',device_type:'windows',name:'开发电脑'},{device_id:'pc-b',device_type:'windows',name:'另一台电脑'}]:{}}),
+    connectSocket:()=>{
+      const socket = new Socket((s,frame)=>{
+        if(frame.type!=='rpc')return;
+        const {id,method,params}=frame.payload;
+        if(!method){approvals=approvals.filter(request=>request.id!==id);setImmediate(()=>s.frame({type:'rpc',payload:{method:'serverRequest/resolved',params:{requestId:id}}}));return;}
+        calls.push({method,params});let result={};
+        if(method==='lanpower/status')result={sharedControl:true,desktopControl:true,submissionReceipts:true,queueSupported:true,chatSupported:true,loggedIn:true,projects:[{name:'LanPower',path:root}],pendingApprovals:approvals,activeTurns:active?[{threadId:'a',turnId:active}]:[]};
+        if(method==='thread/list')result={data:threads.map(thread=>({...thread,turns:undefined})),nextCursor:null};
+        if(method==='model/list')result={data:[{id:'m-a',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}]}]};
+        if(method==='collaborationMode/list')result={data:[{mode:'plan'}]};
+        if(method==='thread/read'){
+          result={thread:clone(threads.find(thread=>thread.id===params.threadId))};
+          if(readDelay){readDelay(s,{type:'rpc',payload:{id,result}});return;}
         }
-        if (method === 'thread/resume') threads.find(t => t.id === params.threadId).control = 'remote';
-        if (method === 'turn/start') {active = 'active'; result = {turn: {id: active, status: 'inProgress'}};}
-        if (method === 'turn/steer') result = {turnId: active};
-        if (method === 'turn/interrupt') {active = null;}
-        setImmediate(() => {
-          if (method === 'turn/steer') s.frame({type: 'rpc', payload: {method: 'item/completed', params: {
-            threadId: params.threadId, turnId: active, item: {id: 'echo-' + id, type: 'userMessage', content: params.input}}}});
-          s.frame({type: 'rpc', payload: {id, result}});
-          if (method === 'turn/start') s.frame({type: 'rpc', payload: {method: 'turn/started', params: {threadId: 'a', turn: {id: 'active'}}}});
-          if (method === 'turn/interrupt') s.frame({type: 'rpc', payload: {method: 'turn/completed', params: {threadId: 'a', turn: {id: 'active', status: 'interrupted'}}}});
-        });
-      }); pageSockets.push(socket); latestSocket = socket;
-      setImmediate(() => {socket.openHandler(); socket.frame({type: 'state', state: 'runtime_ready'});}); return socket;
+        if(method==='thread/queue/list')result={data:queued,nextCursor:null};
+        if(method==='turn/start'){active='active';const next={id:active,status:'inProgress',startedAt:Date.now(),items:[{id:'sent-'+id,type:'userMessage',content:params.input}]};threads[0].turns.push(next);result={turn:next};}
+        if(method==='thread/queue/add')queued.push({id:params.clientUserMessageId,input:params.input});
+        if(method==='turn/steer'){result={turnId:active};threads[0].turns.at(-1).items.push({id:'steer-'+id,type:'userMessage',content:params.input});}
+        if(method==='turn/interrupt'){threads[0].turns.at(-1).status='interrupted';active=null;}
+        setImmediate(()=>s.frame({type:'rpc',payload:{id,result}}));
+      });pageSockets.push(socket);latestSocket=socket;
+      setImmediate(()=>{socket.openHandler();socket.frame({type:'state',state:'runtime_ready'});});return socket;
     }};
-  const page = {...global.definition, data: JSON.parse(JSON.stringify(global.definition.data))};
-  page.setData = changes => { assert.ok(Buffer.byteLength(JSON.stringify(changes)) <= 1048576, 'native setData payload exceeds 1 MiB'); for (const [key, value] of Object.entries(changes)) {
-    const parts = key.replace(/\[(\d+)\]/g, '.$1').split('.'); let object = page.data;
-    for (const part of parts.slice(0, -1)) object = object[part]; object[parts.at(-1)] = value;
-  }};
-  try {
-    page.onLoad(); page.onShow(); await until(() => page.data.sessions.length === 2 && page.data.models.length === 2);
-    assert.equal(page.data.deviceName, '开发电脑'); assert.equal(page.data.ready, true);
-    await page.readThread('b'); assert.equal(page.data.desktop, true); assert.equal(page.data.canInterrupt, false);
-    page.input({detail: {value: '不能接管'}}); assert.equal(page.data.canSend, false);
-    await page.readThread('a'); page.input({detail: {value: '请优化布局'}}); await page.send(); await tick();
-    assert.equal(calls.filter(c => c.method === 'thread/resume').length, 1);
-    assert.equal(calls.filter(c => c.method === 'turn/start').length, 1); assert.equal(page.data.canInterrupt, true);
-    page.onEvent({method: 'item/completed', params: {threadId: 'a', turnId: 'active', item: {
-      id: 'actual-user', type: 'userMessage', content: [{type: 'text', text: '请优化布局'}]}}});
-    assert.equal(page.items.filter(i => i.kind === 'user' && i.text === '请优化布局').length, 1, 'late native echo replaces the temporary bubble');
-    page.input({detail: {value: '只改输入栏'}}); await page.send();
-    assert.equal(calls.find(c => c.method === 'turn/steer').params.expectedTurnId, 'active');
-    assert.equal(calls.filter(c => c.method === 'turn/start').length, 1);
-    assert.equal(page.items.filter(i => i.kind === 'user' && i.text === '只改输入栏').length, 1, 'early native echo must not create a duplicate bubble');
-    page.input({detail: {value: '只改输入栏'}}); await page.send();
-    assert.equal(page.items.filter(i => i.kind === 'user' && i.text === '只改输入栏').length, 2, 'sending identical text twice still creates two distinct messages');
-    page.onEvent({method: 'item/agentMessage/delta', params: {threadId: 'b', itemId: 'foreign', delta: '其他会话'}});
-    assert.ok(!page.items.some(i => i.id === 'foreign'));
-    page.onEvent({method: 'item/agentMessage/delta', params: {threadId: 'a', itemId: 'reply', delta: '已开始'}});
-    await new Promise(resolve => setTimeout(resolve, 140)); assert.ok(page.data.messages.some(i => i.text === '已开始'));
-    page.onEvent({id: 'approve', method: 'item/fileChange/requestApproval', params: {threadId: 'a'}});
-    page.openApproval({currentTarget: {dataset: {key: JSON.stringify('approve')}}});
-    await page.decide({currentTarget: {dataset: {allow: 'yes'}}}); await page.decide({currentTarget: {dataset: {allow: 'yes'}}});
-    assert.equal(latestSocket.frames.filter(f => f.payload?.id === 'approve' && f.payload?.result).length, 1);
-    page.onEvent({method: 'serverRequest/resolved', params: {requestId: 'approve'}}); assert.equal(page.data.sheet, '');
-    await page.interrupt(); await tick(); assert.equal(page.data.running, false);
-    page.changeTheme({currentTarget: {dataset: {value: 'dark'}}}); assert.equal(page.data.theme, 'dark');
-    assert.equal(storage.lanpower_codex_theme_v1, 'dark');
-    page.items = Array.from({length: 80}, (_, i) => ({id: 'large-' + i, kind: 'assistant', text: '中文🙂'.repeat(3000)}));
-    page.aggregateDiff = '+中文🙂\n'.repeat(10000); page.paint();
-    assert.equal(page.data.historyNotice, true);
-    assert.ok(Buffer.byteLength(JSON.stringify(page.data)) < 1048576, 'Chinese and emoji history must stay within the native data limit');
-    const starts = calls.filter(c => c.method === 'turn/start').length;
-    page.onHide(); page.onShow(); await until(() => pageSockets.length === 2 && page.data.ready && !page.listing);
-    assert.equal(calls.filter(c => c.method === 'turn/start').length, starts, 'returning to page must not resend');
-    await page.readThread('a');
-    let stale; readDelay = (s, frame) => {stale = () => s.frame(frame);};
-    const staleRead = page.readThread('a', false), staleRejected = assert.rejects(staleRead, {code: 'CONNECTION'}); await tick();
-    page.chooseDevice(page.data.devices[1]); stale(); await staleRejected; readDelay = null;
-    assert.equal(page.thread, null); assert.equal(page.data.messages.length, 0, 'old computer response must not leak into new selection');
-    assert.equal(Object.keys(storage).filter(k => k.includes('thread') || k.includes('prompt')).length, 0);
-  } finally {page.onUnload();}
-  console.log('小程序 Codex Remote：授权、重连不重发、会话隔离、引导暂停、单次审批、主题与内容安全检查通过');
+  const page={...global.definition,data:clone(global.definition.data)};let maxPayload=0;
+  page.setData=changes=>{const size=Buffer.byteLength(JSON.stringify(changes));maxPayload=Math.max(size,maxPayload);assert.ok(size<1048576,'native setData exceeds 1 MiB');Object.assign(page.data,changes);};
+  try{
+    page.onLoad();page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering&&page.controller.threads.length===2);
+    page.paint();assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.data.ready,true);
+    await page.readThread('a');page.paint();assert.equal(page.data.selectedModel,'m-a');assert.equal(page.data.canControl,true);
+    const albumBytes=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXdwAAAAASUVORK5CYII=','base64')).buffer;
+    wx.getFileSystemManager=()=>({unlink:()=>{},readFile:options=>options.success({data:albumBytes})});
+    wx.arrayBufferToBase64=value=>Buffer.from(value).toString('base64');
+    wx.chooseMedia=options=>{page.onHide();options.success({tempFiles:[{tempFilePath:'/tmp/album.png'}]});};
+    await page.addImages();assert.equal(page.controller.draft.images.length,1,'相册切后台返回应保留当前聊天附件');
+    page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);assert.equal(page.controller.draft.images[0].src,'/tmp/album.png');
+    page.removeAttachment({currentTarget:{dataset:{kind:'images',index:0}}});
+    page.input({detail:{value:'请优化布局'}});await page.send();assert.equal(calls.filter(call=>call.method==='turn/start').length,1);
+    await page.controller.refreshCurrent();page.paint();assert.equal(page.data.canInterrupt,true);assert.equal(page.controller.rows.filter(row=>row.kind==='user'&&row.text==='请优化布局').length,1);
+    page.chooseSendMode({currentTarget:{dataset:{mode:'queue'}}});page.input({detail:{value:'结束后检查'}});await page.send();assert.equal(calls.filter(call=>call.method==='thread/queue/add').length,1);assert.equal(page.data.queue.length,1);
+    page.chooseSendMode({currentTarget:{dataset:{mode:'steer'}}});page.input({detail:{value:'只改输入栏'}});await page.send();assert.equal(calls.find(call=>call.method==='turn/steer').params.expectedTurnId,'active');assert.equal(calls.filter(call=>call.method==='turn/start').length,1);
+    page.input({detail:{value:'A 未发的内容'}});await page.readThread('b');assert.equal(page.controller.draft.text,'');page.input({detail:{value:'B 未发的内容'}});await page.readThread('a');assert.equal(page.controller.draft.text,'A 未发的内容');
+    const request={id:'approve',method:'item/fileChange/requestApproval',params:{threadId:'a',turnId:active}};approvals=[request];latestSocket.frame({type:'rpc',payload:request});page.openApproval({currentTarget:{dataset:{key:JSON.stringify('approve')}}});
+    await Promise.all([page.decide({currentTarget:{dataset:{allow:'yes'}}}),page.decide({currentTarget:{dataset:{allow:'yes'}}})]);page.paint();assert.equal(latestSocket.frames.filter(frame=>frame.payload?.id==='approve'&&frame.payload?.result).length,1);assert.equal(page.data.sheet,'');
+    await page.interrupt();page.paint();assert.equal(page.data.running,false);
+    page.changeTheme({currentTarget:{dataset:{value:'dark'}}});assert.equal(page.data.theme,'dark');assert.equal(storage.lanpower_codex_theme_v1,'dark');
+    const full='长中文🎨'.repeat(60000);page.controller.current.turns.push({id:'huge',status:'completed',items:[{id:'huge-ai',type:'agentMessage',text:full,phase:'final_answer'}]});page.paint();assert.equal(page.controller.rows.at(-1).text,full);assert.ok(page.data.messages.some(row=>row.hasMoreText));page.openDetail({currentTarget:{dataset:{key:'huge:huge-ai'}}});assert.equal(page.detailText,full);assert.ok(page.data.detailPages>1);
+    const starts=calls.filter(call=>call.method==='turn/start').length;page.onHide();assert.equal(page.connection.opened,false);assert.equal(page.controller.draft.text,'A 未发的内容');page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
+    let stale;readDelay=(s,frame)=>{stale=()=>s.frame(frame);};const oldRead=page.controller.refreshCurrent();await until(()=>stale);
+    page.chooseDevice(page.data.devices[1]);stale();await oldRead;readDelay=null;assert.equal(page.controller.current,null);assert.equal(page.data.messages.length,0);
+    assert.equal(Object.keys(storage).filter(key=>/thread|prompt|approval|history/.test(key)).length,0);assert.ok(maxPayload<1048576);
+  }finally{page.onUnload();}
+  console.log('小程序原生页面与传输：授权、回执、草稿、队列/引导/停止、单次审批、长内容、后台恢复及电脑隔离检查通过');
 }
-main().catch(error => {console.error(error); process.exitCode = 1;});
+main().catch(error=>{console.error(error);process.exitCode=1;});

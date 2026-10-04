@@ -1,6 +1,6 @@
 # Codex Remote 实用能力改进清单
 
-初始复核日期：2026-10-04。问题基线：已部署的 Windows / Cloud / Web `1.15.0`，小程序 `2.1.3`，对应提交 `0e44d9c`。下文“现状”保留该基线的复核结果。P0 五项已在 `1.16.0` 实现并完成本机自动化及隔离原窗口验收，详细结果见 [P0 验收记录](codex-remote-p0.md)。真实弱网、电脑物理休眠、微信真机和 5G 仍待人工验收；P1、P2 未在本轮扩展。
+初始复核日期：2026-10-04。问题基线：已部署的 Windows / Cloud / Web `1.15.0`，小程序 `2.1.3`，对应提交 `0e44d9c`。下文“现状”保留该基线的复核结果。P0 五项已在 `1.16.0` 实现并完成本机自动化及隔离原窗口验收，详细结果见 [P0 验收记录](codex-remote-p0.md)。真实弱网、电脑物理休眠、微信真机和 5G 仍待人工验收；P1 中的小程序核心能力已在小程序 `3.0.0`、配套 `1.17.0` 完成实现和本机自动回归，详见 [小程序重构说明](codex-remote-mini-program.md)。其他 P1、P2 项目继续按下文跟踪。
 
 以日常工作的完整流程作为目标：找到原会话，完整读懂进展，继续发送，处理审批与队列，检查文件改动，取回成果；切换设备和断线后仍能准确恢复。参考 `codex-remote-bridge` 的实现与交互，但每项操作的数据来源和执行位置都必须是选中的目标电脑。
 
@@ -78,6 +78,8 @@
 | 小程序核心能力 | 源码确认：传输支持大响应，但页面不继续读取历史游标；单项保留末尾 12000 字、最多 80 条，并有展示总量限制。图片和目录能力未接入页面 | 使用分页窗口、长内容详情和按需读取，保持微信 `setData` 的大小边界；接入原会话图片、项目文件、正确参数与状态。验收从头到尾读取、审批/引导/停止/队列，以及微信真机后台恢复、键盘和弱网；单独标明真机与 5G 结果 |
 | 阅读与操作体验 | 已有响应式页面和折叠详情；超长消息、频繁状态更新、手机键盘与触摸操作仍需持续检查 | 对齐阅读宽度、字号、侧栏收纳和输入区；保留滚动位置，支持取消加载和失败重试；菜单不依赖鼠标悬停。验收桌面及窄屏真实操作，不以截图相似度代替可用性 |
 
+**小程序核心能力进度（3.0.0）：** 已重构原生状态/发送/审批/队列与页面，接入完整历史分页、自动大内容补齐、取消/续读、模型参数隔离、内存草稿/回执、项目整理、图片、文件与能力目录。27 项状态与功能场景、原生页面集成和 320/390/430px 编译布局通过；微信真机、实际键盘/相册、后台与 5G 仍待人工验收。上表“现状”描述 1.15 基线，不代表 3.0 当前实现。
+
 标题/项目搜索优先覆盖全量会话。正文全文搜索需要另行评估目标电脑索引和性能，避免为搜索在 Cloud 建立聊天正文副本。
 
 ## P2：按使用需求扩展
@@ -118,5 +120,5 @@
 | [RemoteWorkspace.cs](../windows/LanPower.CodexHost/RemoteWorkspace.cs) | 目录、文件预览、搜索和分支 |
 | [RemoteMessageImage.vue](../remote_ui/src/components/content/RemoteMessageImage.vue) / [images.ts](../remote_ui/src/lanpower/images.ts) | 图片加载、重连及缓存淘汰 |
 | [ThreadComposer.vue](../remote_ui/src/components/content/ThreadComposer.vue) / [RemoteFeaturePage.vue](../remote_ui/src/components/content/RemoteFeaturePage.vue) | 远程附件输入、参数选项与能力目录 |
-| [codex.js](../mini_program/pages/codex/codex.js) | 小程序分页、展示裁剪与消息类型 |
+| [codex.js](../mini_program/pages/codex/codex.js) / [controller.js](../mini_program/utils/codex/controller.js) | 原生交互、状态与发送、审批/队列、历史可视窗口、文件与能力目录 |
 | [1.15 系统对齐记录](codex-system-parity.md) / [原窗口整合说明](codex-original-window.md) | 已有实现、历史验证与本轮复核的区别 |

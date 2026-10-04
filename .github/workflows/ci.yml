@@ -97,6 +97,10 @@ jobs:
         run: node tests/test_mini_program_environments.js
       - name: Mini program Codex Remote tests
         run: node tests/test_mini_program_codex.js
+      - name: Mini program Codex state and native features
+        run: node --test tests/test_mini_program_codex_state.js
+      - name: Mini program Codex multi-page transport
+        run: node tests/test_mini_program_codex_multi_page.js
       - name: Cloud live status UI tests
         run: node tests/test_cloud_status.js
       - name: Cloud wake feedback tests

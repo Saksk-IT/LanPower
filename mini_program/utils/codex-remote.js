@@ -1,4 +1,5 @@
 const {RpcFragments} = require('./codex-fragments');
+const {utf8Length} = require('./codex-format');
 const STATES = {
   idle: ['选择开发电脑', '选择电脑后读取项目和最近会话'],
   connecting: ['正在连接', '正在连接你的开发电脑'],
@@ -12,6 +13,7 @@ const STATES = {
   disconnected: ['连接已断开', '恢复连接后同步进度，已有任务不会重复发送'],
   forbidden: ['需要开发权限', '在 Cloud → 手机授权 → 修改手机权限中开启 Codex Remote'],
   reauthorize: ['手机授权需要更新', '在连接页重新扫描 Cloud 授权码'],
+  revoked: ['开发授权已变化', '重新确认手机与电脑的开发权限后再连接'],
   update_required: ['需要更新 Cloud', '请将 Cloud 更新至 1.16.2，以支持多个页面同时连接']
 };
 const ERRORS = {
@@ -26,7 +28,19 @@ const ERRORS = {
   agent_offline: '电脑连接已断开，请等待恢复。',
   remote_revoked: '开发授权已关闭，请检查手机与电脑授权。'
 };
-function failure(message, code) { const error = new Error(message); error.code = code; return error; }
+Object.assign(ERRORS, {
+  shared_runtime_required: '请在电脑的 LanPower 连接原 Codex 窗口。',
+  result_too_large: '这一页内容较大，正在缩小读取范围。',
+  history_reference_expired: '内容引用已更新，请重新读取这一轮。',
+  history_item_too_large: '此内容超过电脑端读取上限，请在原窗口查看。',
+  submission_mismatch: '提交标识不一致，请查询发送回执。',
+  submission_store_unavailable: '电脑端发送回执暂不可用。',
+  submission_store_full: '请先确认已有提交的发送结果。',
+  unsupported_method: '当前电脑版本暂不支持此功能。',
+  image_not_referenced: '此图片不属于当前聊天。', image_too_large: '图片超过 8 MB。',
+  unsupported_image: '当前图片格式无法预览。'
+});
+function failure(message, code, uncertain = false) { const error = new Error(message); error.code = code; error.uncertain = uncertain; return error; }
 
 // A native SocketTask connection. No prompts, responses or approvals are persisted.
 class CodexConnection {
@@ -34,6 +48,7 @@ class CodexConnection {
     Object.assign(this, {wx: wxApi, cloud, event, state, timer, clearTimer});
     this.pending = new Map(); this.generation = 0; this.sequence = 0; this.delay = 1000;
     this.fragments = new RpcFragments();
+    this.decisions = new Map(); this.nextHistoryRead = 0;
     this.socket = null; this.device = ''; this.opened = false;
   }
   connect(device) { this.stop(); this.device = device; this.open(); }
@@ -82,7 +97,8 @@ class CodexConnection {
       this.state(frame.state); return;
     }
     if (frame.type === 'error') {
-      this.event({method: 'lanpower/error', params: {code: frame.code}}); return;
+      if (frame.code === 'approval_unavailable') for (const id of this.decisions.keys()) this.finishDecision(id, failure(ERRORS[frame.code], frame.code));
+      this.event({method: 'lanpower/error', params: {code: frame.code, message: ERRORS[frame.code]}}); return;
     }
     let payload = frame.payload;
     if (frame.type === 'rpc_chunk') {
@@ -91,14 +107,24 @@ class CodexConnection {
       if (!payload) return;
     } else if (frame.type !== 'rpc') return;
     if (!payload || typeof payload !== 'object') return;
-    if (payload.method) { this.event(payload); return; }
+    if (payload.method) {
+      if (payload.method === 'serverRequest/resolved') this.finishDecision(payload.params && payload.params.requestId);
+      this.event(payload); return;
+    }
     const call = this.pending.get(payload.id);
     if (!call) {
-      if (payload.error) this.event({method: 'lanpower/approvalError', params: {id: payload.id}});
+      if (payload.error) {
+        this.finishDecision(payload.id, failure(ERRORS[payload.error.message] || '审批未完成，请刷新确认。', payload.error.message));
+        this.event({method: 'lanpower/approvalError', params: {id: payload.id}});
+      }
       return;
     }
-    this.pending.delete(payload.id); this.fragments.drop(payload.id); this.clearTimer(call.timeout);
-    if (payload.error) call.reject(failure(ERRORS[payload.error.message] || '本机未能完成请求，请检查会话与授权。', 'REJECTED'));
+    this.pending.delete(payload.id); this.fragments.drop(payload.id); this.clearTimer(call.timeout); call.cleanup();
+    if (payload.error) {
+      const code = payload.error.code === -32601 ? 'unsupported_method' : payload.error.message;
+      call.reject(failure(ERRORS[code] || '本机未能完成请求，请检查会话与授权。', code,
+        ![-32601, -32602].includes(payload.error.code) && !['turn_changed', 'task_running', 'workspace_not_allowed', 'submission_store_full', 'submission_store_unavailable'].includes(code)));
+    }
     else call.resolve(payload.result || {});
   }
   lost(socket, generation, code) {
@@ -108,6 +134,7 @@ class CodexConnection {
     try { socket.close({}); } catch (_) {}
     if (code === 4409) { this.state('update_required'); return; }
     if (code === 4400) { this.state('update_required'); return; }
+    if (code === 4403) { this.state('revoked'); return; }
     this.state('disconnected'); this.retryLater(generation);
   }
   retryLater(generation) {
@@ -117,38 +144,69 @@ class CodexConnection {
   }
   async sendFrame(frame) {
     const socket = this.socket;
-    if (!socket || !this.opened) throw failure('连接未就绪，请等待恢复。', 'CONNECTION');
-    return new Promise((resolve, reject) => socket.send({data: JSON.stringify(frame), success: resolve,
-      fail: () => reject(failure('连接断开；请刷新会话确认结果，任务不会自动重发。', 'CONNECTION'))}));
+    if (!socket || !this.opened) throw failure('连接未就绪，请等待恢复。', 'not_sent');
+    const data = JSON.stringify(frame);
+    if (utf8Length(data) > 1048576) throw failure('消息或图片过大，请缩小后再发送。', 'not_sent');
+    return new Promise((resolve, reject) => {
+      try { socket.send({data, success: resolve,
+        fail: () => reject(failure('发送结果待确认，请查询回执。', 'CONNECTION', true))}); }
+      catch (_) { reject(failure('连接已断开，请等待恢复。', 'not_sent')); }
+    });
   }
-  request(method, params = {}) {
-    if (this.pending.size >= 64) return Promise.reject(failure('正在处理较多请求，请稍候。', 'BUSY'));
+  request(method, params = {}, scope) {
+    if (scope && scope.cancelled) return Promise.reject(failure('已取消读取。', 'CANCELLED'));
+    if (!this.socket || !this.opened) return Promise.reject(failure('连接未就绪，请等待恢复。', 'not_sent'));
+    if (this.pending.size >= 64) return Promise.reject(failure('正在处理较多请求，请稍候。', 'not_sent'));
     const id = 'm-' + this.generation + '-' + (++this.sequence);
     return new Promise((resolve, reject) => {
-      const timeout = this.timer(() => {
-        this.pending.delete(id); this.fragments.drop(id); reject(failure('请求超时；请刷新会话确认结果，任务不会自动重发。', 'TIMEOUT'));
-      }, 35000);
-      this.pending.set(id, {resolve, reject, timeout});
+      let cleanup = () => {};
+      const remove = () => { this.pending.delete(id); this.fragments.drop(id); this.clearTimer(timeout); cleanup(); };
+      const timeout = this.timer(() => { remove(); reject(failure('请求超时，请查询回执；任务不会自动重发。', 'TIMEOUT', true)); }, 35000);
+      if (scope) cleanup = scope.subscribe(() => { remove(); reject(failure('已取消读取。', 'CANCELLED')); });
+      this.pending.set(id, {resolve, reject, timeout, cleanup});
       this.sendFrame({type: 'rpc', payload: {id, method, params}}).catch(error => {
         const call = this.pending.get(id); if (!call) return;
-        this.pending.delete(id); this.clearTimer(timeout); reject(error);
+        remove(); reject(error);
       });
     });
   }
-  decide(id, result) { return this.sendFrame({type: 'rpc', payload: {id, result}}); }
+  async paceHistory(scope) {
+    if (scope) scope.check();
+    const delay = Math.max(0, this.nextHistoryRead - Date.now()); this.nextHistoryRead = Date.now() + delay + 125;
+    if (!delay) return;
+    await new Promise((resolve, reject) => {
+      let cleanup = () => {};
+      const timer = this.timer(() => { cleanup(); resolve(); }, delay);
+      if (scope) cleanup = scope.subscribe(() => { this.clearTimer(timer); cleanup(); reject(failure('已取消读取。', 'CANCELLED')); });
+    });
+  }
+  decide(id, result) {
+    if (this.decisions.has(id)) return Promise.reject(failure('审批正在确认，请勿重复点击。', 'approval_pending'));
+    return new Promise((resolve, reject) => {
+      const timeout = this.timer(() => this.finishDecision(id, failure('审批结果待确认，请刷新会话。', 'TIMEOUT', true)), 35000);
+      this.decisions.set(id, {resolve, reject, timeout});
+      this.sendFrame({type: 'rpc', payload: {id, result}}).catch(error => this.finishDecision(id, error));
+    });
+  }
+  finishDecision(id, error) {
+    const call = this.decisions.get(id); if (!call) return;
+    this.decisions.delete(id); this.clearTimer(call.timeout); if (error) call.reject(error); else call.resolve();
+  }
+  reconcileApprovals(ids) { for (const id of this.decisions.keys()) if (!ids.includes(id)) this.finishDecision(id); }
   rejectPending() {
     for (const call of this.pending.values()) {
-      this.clearTimer(call.timeout); call.reject(failure('连接断开；恢复后请确认会话进度。', 'CONNECTION'));
+      this.clearTimer(call.timeout); call.cleanup(); call.reject(failure('连接断开；恢复后请确认会话进度。', 'CONNECTION', true));
     }
     this.pending.clear();
     this.fragments.clear();
+    for (const id of this.decisions.keys()) this.finishDecision(id, failure('审批结果待确认，请恢复后查询。', 'CONNECTION', true));
   }
   reconnect() { const device = this.device; this.connect(device); }
   stop() {
     this.generation++; this.clearTimer(this.retry); this.clearTimer(this.renewal); this.clearTimer(this.openTimeout);
     const socket = this.socket; this.socket = null; this.opened = false; this.device = '';
     if (socket) { try { socket.close({}); } catch (_) {} }
-    this.rejectPending();
+    this.rejectPending(); this.nextHistoryRead = 0;
   }
 }
 module.exports = {CodexConnection, STATES, ERRORS};
