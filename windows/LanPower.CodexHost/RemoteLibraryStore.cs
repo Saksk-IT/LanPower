@@ -13,7 +13,6 @@ public sealed class RemoteLibraryStore(string? file = null)
     private JsonObject ReadFile()
     {
         if (!File.Exists(_file)) return new() { ["revision"] = 0L, ["preferences"] = CodexLibraryPreferences.Defaults() };
-        if (new FileInfo(_file).Length > 132 * 1024) throw new InvalidDataException("invalid_library");
         var saved = JsonNode.Parse(File.ReadAllText(_file))?.AsObject() ?? throw new InvalidDataException("invalid_library");
         return new() { ["revision"] = saved["revision"]!.GetValue<long>(), ["preferences"] = CodexLibraryPreferences.Validate(saved["preferences"]) };
     }

@@ -24,7 +24,7 @@ public sealed class RuntimeClient : IAsyncDisposable
     private readonly Task _reader;
     private readonly Task _stderr;
     // History is paginated and large results are fragmented before crossing the relay.
-    private const int LocalFrameLimit = RemoteHistoryStore.MaxLocalBytes;
+    private const int LocalFrameLimit = int.MaxValue;
     private long _stateRevision;
     public long StateRevision => Interlocked.Read(ref _stateRevision);
     public event Action<JsonObject>? Message;
@@ -143,7 +143,7 @@ public sealed class RuntimeClient : IAsyncDisposable
                 if (method is null) continue;
                 if (message.ContainsKey("id"))
                 {
-                    if (!CodexRemoteProtocol.ApprovalMethods.Contains(method) || _approvals.Count >= 64)
+                    if (!CodexRemoteProtocol.ApprovalMethods.Contains(method))
                     {
                         if (Shared) continue; // Another subscribed client may handle this native request.
                         await SendAsync(new JsonObject { ["id"] = message["id"]!.DeepClone(),
@@ -193,7 +193,7 @@ public sealed class RuntimeClient : IAsyncDisposable
                 if (method == "turn/diff/updated" && diffThread is not null)
                 {
                     var diff = parameters?["diff"]?.GetValue<string>() ?? "";
-                    ThreadDiffs[diffThread] = diff.Length > 262144 ? diff[..262144] : diff;
+                    ThreadDiffs[diffThread] = diff;
                     _aggregatedDiffs.Add(diffThread); if (diffThread == ActiveThread) Diff = ThreadDiffs[diffThread];
                 }
                 if (method == "item/completed" && parameters?["item"] is JsonObject item &&
@@ -201,13 +201,12 @@ public sealed class RuntimeClient : IAsyncDisposable
                     item["id"]?.GetValue<string>() is { } itemId && item["changes"] is JsonArray changes && diffThread is not null)
                 {
                     if (!_fileDiffs.TryGetValue(diffThread, out var files)) _fileDiffs[diffThread] = files = new();
-                    if (files.Count >= 32) files.Remove(files.Keys.First());
                     var fileDiff = string.Join("\n", changes.OfType<JsonObject>().Select(change =>
                         $"文件：{change["path"]?.GetValue<string>()}\n{change["diff"]?.GetValue<string>()}"));
-                    files[itemId] = fileDiff.Length > 262144 ? fileDiff[..262144] : fileDiff;
+                    files[itemId] = fileDiff;
                     // Some Runtime/workspace combinations emit item diffs without an aggregate notification.
                     var combined = string.Join("\n", files.Values);
-                    if (!_aggregatedDiffs.Contains(diffThread)) ThreadDiffs[diffThread] = combined.Length > 262144 ? combined[..262144] : combined;
+                    if (!_aggregatedDiffs.Contains(diffThread)) ThreadDiffs[diffThread] = combined;
                     if (diffThread == ActiveThread) Diff = ThreadDiffs.GetValueOrDefault(diffThread, "");
                 }
                 if (method == "serverRequest/resolved" && parameters?["requestId"] is { } resolved)
@@ -290,11 +289,11 @@ public sealed class RuntimeClient : IAsyncDisposable
         }
         else if (method == "item/tool/requestUserInput")
         {
-            if (result.Count != 1 || result["answers"] is not JsonObject answers || answers.Count > 20)
+            if (result.Count != 1 || result["answers"] is not JsonObject answers)
                 throw new InvalidDataException("invalid_answers");
             foreach (var answer in answers)
-                if (answer.Value is not JsonObject { Count: 1 } entry || entry["answers"] is not JsonArray { Count: <= 20 } texts ||
-                    texts.Any(text => text is not JsonValue v || !v.TryGetValue<string>(out var s) || s.Length > 4000))
+                if (answer.Value is not JsonObject { Count: 1 } entry || entry["answers"] is not JsonArray texts ||
+                    texts.Any(text => text is not JsonValue v || !v.TryGetValue<string>(out _)))
                     throw new InvalidDataException("invalid_answers");
         }
         else if (result["action"]?.GetValue<string>() is not ("decline" or "cancel") ||
@@ -355,7 +354,6 @@ public sealed class RuntimeClient : IAsyncDisposable
     {
         if (_desktop is not null) { await _desktop.SendAsync(message, token); return; }
         var raw = message.ToJsonString(CodexRemoteProtocol.JsonOptions);
-        if (System.Text.Encoding.UTF8.GetByteCount(raw) > CodexRemoteProtocol.MaxFrame) throw new InvalidDataException("frame_too_large");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         await _write.WaitAsync(deadline.Token);

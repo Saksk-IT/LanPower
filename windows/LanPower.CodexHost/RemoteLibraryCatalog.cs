@@ -8,7 +8,6 @@ namespace LanPower.CodexHost;
 // without confusing a missing first-page entry with a deleted conversation.
 public sealed class RemoteLibraryCatalog
 {
-    public const int MaxThreads = 100000;
     private Dictionary<string, (JsonObject Thread, bool Archived)> _threads = new();
     private string _digest = "";
     private readonly object _gate = new();
@@ -19,7 +18,6 @@ public sealed class RemoteLibraryCatalog
         foreach (var entry in entries)
         {
             next[entry.Thread["id"]!.GetValue<string>()] = ((JsonObject)entry.Thread.DeepClone(), entry.Archived);
-            if (next.Count > MaxThreads) throw new InvalidDataException("library_catalog_too_large");
         }
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', next.OrderBy(p => p.Key).Select(p => p.Value.Item2 + p.Value.Item1.ToJsonString())))));
         lock (_gate) if (_digest != digest) { _threads = next; _digest = digest; Revision++; }

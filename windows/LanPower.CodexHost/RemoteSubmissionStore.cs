@@ -10,13 +10,11 @@ public sealed class RemoteSubmissionStore(string? path = null)
 {
     private readonly string _path = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanPower", "codex-submissions.json");
     private JsonObject? _entries;
-    private const int Capacity = 512;
 
     private JsonObject Entries()
     {
         if (_entries is not null) return _entries;
         if (!File.Exists(_path)) return _entries = new();
-        if (new FileInfo(_path).Length > 1024 * 1024) throw new IOException("submission_store_unavailable");
         _entries = JsonNode.Parse(File.ReadAllText(_path, Encoding.UTF8)) as JsonObject ?? throw new IOException("submission_store_unavailable");
         // A process restart cannot prove whether the original window accepted an in-flight call.
         foreach (var entry in _entries.Select(p => p.Value).OfType<JsonObject>())
@@ -42,13 +40,6 @@ public sealed class RemoteSubmissionStore(string? path = null)
             if (existing["threadId"]?.GetValue<string>() != threadId || existing["hash"]?.GetValue<string>() != hash)
                 throw new InvalidDataException("submission_mismatch");
             return false;
-        }
-        // Never evict a receipt whose outcome is still uncertain.
-        while (entries.Count >= Capacity)
-        {
-            var oldest = entries.FirstOrDefault(p => p.Value?["state"]?.GetValue<string>() is "accepted" or "failed");
-            if (oldest.Key is null) throw new InvalidDataException("submission_store_full");
-            entries.Remove(oldest.Key);
         }
         entries[submissionId] = new JsonObject { ["threadId"] = threadId, ["submissionId"] = submissionId,
             ["method"] = method, ["hash"] = hash, ["state"] = "sending", ["updatedAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };

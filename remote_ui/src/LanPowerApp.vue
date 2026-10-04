@@ -445,7 +445,6 @@ async function deleteQueue(id: string): Promise<void> { await queueAction('threa
 async function startQueue(id: string): Promise<void> { await queueAction('thread/queue/start', { queuedSubmissionId: id }) }
 async function reorderQueue({ draggedId, targetId }: { draggedId: string; targetId: string }): Promise<void> {
   const ids = queue.value.map(q => q.id), from = ids.indexOf(draggedId), to = ids.indexOf(targetId)
-  if (ids.length > 32) { feedback.value = '队列超过 32 条，请在原窗口整理；未发送排序请求。'; return }
   if (from < 0 || to < 0) return
   ids.splice(from, 1); ids.splice(to, 0, draggedId)
   await queueAction('thread/queue/reorder', { queuedSubmissionIds: ids })

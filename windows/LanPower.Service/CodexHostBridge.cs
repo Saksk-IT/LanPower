@@ -12,6 +12,7 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
     private readonly SemaphoreSlim _write = new(1, 1);
     private StreamWriter? _writer;
     private string? _session;
+    private readonly CodexRemoteRequests _uploads = new();
     public string State { get; private set; } = "host_offline";
     public event Func<string, Task>? Message;
 
@@ -67,7 +68,7 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
             finally
             {
                 await _write.WaitAsync(CancellationToken.None);
-                try { _writer = null; State = "host_offline"; }
+                try { _writer = null; State = "host_offline"; _uploads.Clear(); }
                 finally { _write.Release(); }
                 if (_session is { } session && Message is { } offline) await offline(System.Text.Json.JsonSerializer.Serialize(
                     new { type = "state", session, state = "host_offline" }));
@@ -81,8 +82,15 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
         var kind = frame["type"]?.GetValue<string>();
         var session = frame["session"]?.GetValue<string>();
         if (!Guid.TryParseExact(session, "D", out _)) throw new InvalidDataException("invalid_session");
-        if (kind == "open" && frame.Count == 2) _session = session;
+        if (kind == "open" && frame.Count == 2) { _uploads.Clear(); _session = session; }
         else if (session != _session) return;
+        else if (kind == "rpc_upload")
+        {
+            var complete = _uploads.Accept(frame);
+            if (complete is null) return;
+            await ForwardAsync(complete, token);
+            return;
+        }
         else if (kind == "rpc" && frame.Count == 3 && frame["payload"] is JsonObject rpc)
         {
             if (rpc.ContainsKey("method")) CodexRemoteProtocol.ValidateRequest(rpc);
@@ -91,7 +99,7 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
         else if (kind != "close" || frame.Count != 2) throw new InvalidDataException("invalid_frame");
         if (!await SendAsync(frame, token) && Message is { } offline) await offline(System.Text.Json.JsonSerializer.Serialize(
             new { type = "state", session, state = "host_offline" }));
-        if (kind == "close") _session = null;
+        if (kind == "close") { _session = null; _uploads.Clear(); }
     }
 
     private async Task<bool> SendAsync(object frame, CancellationToken token)
@@ -102,7 +110,12 @@ public sealed class CodexHostBridge(bool dryRun = false) : BackgroundService
             if (_writer is null) return false;
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             deadline.CancelAfter(TimeSpan.FromSeconds(10));
-            await _writer.WriteLineAsync(System.Text.Json.JsonSerializer.Serialize(frame, CodexRemoteProtocol.JsonOptions).AsMemory(), deadline.Token);
+            var raw = System.Text.Json.JsonSerializer.Serialize(frame, CodexRemoteProtocol.JsonOptions);
+            foreach (var part in CodexRemoteRequests.Encode(raw))
+            {
+                deadline.CancelAfter(TimeSpan.FromSeconds(30));
+                await _writer.WriteLineAsync(part.AsMemory(), deadline.Token);
+            }
             return true;
         }
         finally { _write.Release(); }

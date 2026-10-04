@@ -69,12 +69,11 @@
     const fingerprint = async body => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))), b => b.toString(16).padStart(2, '0')).join('');
     const storeHistory = async (threadId, turnId, item, itemIndex, cursor, wholeTurn = false) => {
       const body = JSON.stringify(item);
-      if (body.length * 2 > 64 * 1024 * 1024) throw new Error('history_item_too_large');
       for (const [key, entry] of historyItems) {
         if (Date.now() - entry.time > 600000) { historyCharacters -= entry.body?.length || 0; historyItems.delete(key); }
       }
       const imagePaths = new Set();
-      const addPath = value => { if (typeof value === 'string' && imagePaths.size < 1024 && /^(?:[A-Za-z]:[\\/]|\/|file:)/i.test(value)) imagePaths.add(value); };
+      const addPath = value => { if (typeof value === 'string' && /^(?:[A-Za-z]:[\\/]|\/|file:)/i.test(value)) imagePaths.add(value); };
       const observeImages = (value, key) => {
         if (Array.isArray(value)) { for (const part of value) observeImages(part,key); }
         else if (value && typeof value === 'object') { for (const [name,part] of Object.entries(value)) observeImages(part,name); }
@@ -95,7 +94,6 @@
           entry.time = Date.now(); return descriptor(reference);
         }
       }
-      if (historyItems.size >= 4096) throw new Error('history_cache_busy');
       const reference = 'native-' + (++sequence) + '-' + Math.random().toString(36).slice(2);
       historyItems.set(reference, { threadId, turnId, itemId:item.id, itemIndex, cursor, wholeTurn, hash, body, time: Date.now() });
       historyCharacters += body.length; trimHistoryBodies(reference);
@@ -307,7 +305,7 @@
           const cached = manager.getConversation(params?.threadId);
           // Reuse native send settings without resumeConversation or thread/resume.
           const settings = {};
-          if (typeof cached?.latestModel === 'string' && cached.latestModel.length <= 256) settings.model = cached.latestModel;
+          if (typeof cached?.latestModel === 'string') settings.model = cached.latestModel;
           if (cached?.latestReasoningEffort === null || ['none','minimal','low','medium','high','xhigh','max','ultra'].includes(cached?.latestReasoningEffort)) settings.reasoningEffort = cached.latestReasoningEffort;
           if (['default','plan'].includes(cached?.latestCollaborationMode?.mode)) settings.collaborationMode = { mode: cached.latestCollaborationMode.mode };
           for (const native of [cached?.latestThreadSettings, cached?.currentPermissions]) {

@@ -4,7 +4,7 @@ function approvalView(request, answers = {}, changes = []) {
     'item/permissions/requestApproval': '访问网络', 'item/tool/requestUserInput': '需要你的回复', 'mcpServer/elicitation/request': '工具需要确认'
   };
   return {key: JSON.stringify(request.id), title: labels[method] || '需要确认', method,
-    detail: String(params.command || params.reason || params.message || '').slice(0, 12000),
+    detail: String(params.command || params.reason || params.message || ''),
     cwd: params.cwd || '', network: method === 'item/permissions/requestApproval', files: changes.map(file => ({path: file.path, kind: typeof file.kind === 'string' ? file.kind : file.kind && file.kind.type || ''})),
     questions: (params.questions || []).map(question => ({id: question.id, header: question.header || '', question: question.question || '', isSecret: !!question.isSecret,
       options: (question.options || []).map((option, index) => ({...option, selected: (answers[question.id] && answers[question.id].selected || []).includes(index)})),

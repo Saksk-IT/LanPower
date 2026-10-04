@@ -1,5 +1,5 @@
 const {RpcFragments} = require('./codex-fragments');
-const {utf8Length} = require('./codex-format');
+const {requestFrames} = require('./codex-request-frames');
 const STATES = {
   idle: ['选择开发电脑', '选择电脑后读取项目和最近会话'],
   connecting: ['正在连接', '正在连接你的开发电脑'],
@@ -154,22 +154,24 @@ class CodexConnection {
     const socket = this.socket;
     if (!socket || !this.opened) throw failure('连接未就绪，请等待恢复。', 'not_sent');
     const data = JSON.stringify(frame);
-    if (utf8Length(data) > 1048576) throw failure('消息或图片过大，请缩小后再发送。', 'not_sent');
-    return new Promise((resolve, reject) => {
-      try { socket.send({data, success: resolve,
-        fail: () => reject(failure('发送结果待确认，请查询回执。', 'CONNECTION', true))}); }
-      catch (_) { reject(failure('连接已断开，请等待恢复。', 'not_sent')); }
-    });
+    const id = frame.payload && frame.payload.id;
+    for (const part of requestFrames(data, id)) {
+      if (this.socket !== socket || !this.opened || frame.payload && frame.payload.method && !this.pending.has(id)) throw failure('连接已变化，草稿保留。', 'not_sent');
+      await new Promise((resolve, reject) => {
+        try { socket.send({data: part, success: resolve,
+          fail: () => reject(failure('发送结果待确认，请查询回执。', 'CONNECTION', true))}); }
+        catch (_) { reject(failure('连接已断开，请等待恢复。', 'not_sent')); }
+      });
+    }
   }
   request(method, params = {}, scope) {
     if (scope && scope.cancelled) return Promise.reject(failure('已取消读取。', 'CANCELLED'));
     if (!this.socket || !this.opened) return Promise.reject(failure('连接未就绪，请等待恢复。', 'not_sent'));
-    if (this.pending.size >= 64) return Promise.reject(failure('正在处理较多请求，请稍候。', 'not_sent'));
     const id = 'm-' + this.generation + '-' + (++this.sequence);
     return new Promise((resolve, reject) => {
       let cleanup = () => {};
       const remove = () => { this.pending.delete(id); this.fragments.drop(id); this.clearTimer(timeout); cleanup(); };
-      const timeout = this.timer(() => { remove(); reject(failure('请求超时，请查询回执；任务不会自动重发。', 'TIMEOUT', true)); }, 35000);
+      const timeout = this.timer(() => { remove(); reject(failure('请求超时，请查询回执；任务不会自动重发。', 'TIMEOUT', true)); }, 300000);
       if (scope) cleanup = scope.subscribe(() => { remove(); reject(failure('已取消读取。', 'CANCELLED')); });
       this.pending.set(id, {method, resolve, reject, timeout, cleanup});
       this.sendFrame({type: 'rpc', payload: {id, method, params}}).catch(error => {
@@ -191,7 +193,7 @@ class CodexConnection {
   decide(id, result) {
     if (this.decisions.has(id)) return Promise.reject(failure('审批正在确认，请勿重复点击。', 'approval_pending'));
     return new Promise((resolve, reject) => {
-      const timeout = this.timer(() => this.finishDecision(id, failure('审批结果待确认，请刷新会话。', 'TIMEOUT', true)), 35000);
+      const timeout = this.timer(() => this.finishDecision(id, failure('审批结果待确认，请刷新会话。', 'TIMEOUT', true)), 300000);
       this.decisions.set(id, {resolve, reject, timeout});
       this.sendFrame({type: 'rpc', payload: {id, result}}).catch(error => this.finishDecision(id, error));
     });

@@ -19,11 +19,10 @@ public sealed record CodexHostSettings(bool Enabled, string[] Workspaces, string
     {
         path ??= DefaultPath;
         if (!File.Exists(path)) return new(false, []);
-        if (new FileInfo(path).Length > 65536) throw new InvalidDataException("invalid_settings");
         var settings = JsonSerializer.Deserialize<CodexHostSettings>(File.ReadAllText(path));
         if (settings is null) return new(false, []);
-        if (settings.Workspaces is null || settings.Workspaces.Length > 32 ||
-            settings.Workspaces.Any(root => string.IsNullOrWhiteSpace(root) || root.Length > 1000))
+        if (settings.Workspaces is null ||
+            settings.Workspaces.Any(root => string.IsNullOrWhiteSpace(root)))
             throw new InvalidDataException("invalid_settings");
         return settings;
     }

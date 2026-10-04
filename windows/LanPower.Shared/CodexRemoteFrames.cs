@@ -4,11 +4,9 @@ using System.Text.Json.Nodes;
 
 namespace LanPower.Shared;
 
-// The relay keeps its 1 MiB frame limit. Large RPC results are streamed in order,
-// without making the Cloud hold or assemble conversation bodies.
+// RPC results stream in bounded pieces without a logical message-size ceiling.
 public static class CodexRemoteFrames
 {
-    public const int MaxResultBytes = 16 * 1024 * 1024;
     public const int ChunkCharacters = 64 * 1024;
 
     public static IEnumerable<string> Encode(string raw)
@@ -17,7 +15,7 @@ public static class CodexRemoteFrames
         if (size <= CodexRemoteProtocol.MaxFrame) { yield return raw; yield break; }
         var frame = JsonNode.Parse(raw)!.AsObject();
         var payload = frame["payload"] as JsonObject;
-        if (frame["type"]?.GetValue<string>() != "rpc" || payload is null || size > MaxResultBytes)
+        if (frame["type"]?.GetValue<string>() != "rpc" || payload is null)
             throw new InvalidDataException("result_too_large");
         if (payload.ContainsKey("method"))
         {

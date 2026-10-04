@@ -49,7 +49,7 @@ class ImageCache {
       if (generation !== this.generation) throw new Error('连接已变化。');
       if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'].includes(result.contentType) || typeof result.base64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(result.base64)) throw new Error('图片格式无效。');
       const bytes = this.wx.base64ToArrayBuffer(result.base64);
-      if (bytes.byteLength > 8 * 1048576 || result.size !== undefined && bytes.byteLength !== result.size) throw new Error('图片超限或读取不完整。');
+      if (result.size !== undefined && bytes.byteLength !== result.size) throw new Error('图片读取不完整。');
       const fs = this.wx.getFileSystemManager(), path = `${this.wx.env.USER_DATA_PATH}/codex-preview-${generation}-${++this.sequence}.${result.contentType.split('/')[1]}`;
       await new Promise((resolve, reject) => fs.writeFile({filePath: path, data: bytes, success: resolve, fail: reject}));
       if (generation !== this.generation) { fs.unlink({filePath: path, fail: () => {}}); throw new Error('连接已变化。'); }

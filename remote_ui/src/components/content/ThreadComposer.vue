@@ -1,7 +1,7 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit(isTurnInProgress ? activeInProgressMode : 'steer')">
     <p v-if="validationError" role="alert" class="thread-composer-dictation-error">{{ validationError }}</p>
-    <p v-if="isPreparingSubmission" role="status" class="thread-composer-dictation-error">正在处理图片…</p>
+    <p v-if="isPreparingSubmission" role="status" class="thread-composer-dictation-error">正在准备发送…</p>
     <p v-if="dictationErrorText" class="thread-composer-dictation-error">
       {{ dictationErrorText }}
     </p>
@@ -158,7 +158,7 @@
           <button
             class="thread-composer-attach-trigger"
             type="button"
-            :aria-label="remoteMode ? '添加图片或设置发送方式' : t('Add photos & files')"
+            :aria-label="t('Add photos & files')"
             :disabled="isInteractionDisabled"
             @click="toggleAttachMenu"
           >
@@ -172,10 +172,9 @@
               :disabled="isInteractionDisabled"
               @click="triggerPhotoLibrary"
             >
-              {{ remoteMode ? '添加图片' : t('Add photos & files') }}
+              {{ t('Add photos & files') }}
             </button>
             <button
-              v-if="!remoteMode"
               class="thread-composer-attach-item"
               type="button"
               :disabled="isInteractionDisabled"
@@ -371,7 +370,6 @@
       ref="photoLibraryInputRef"
       class="thread-composer-hidden-input"
       type="file"
-      :accept="remoteMode ? 'image/*' : undefined"
       multiple
       :disabled="isInteractionDisabled"
       @change="onPhotoLibraryChange"
@@ -400,7 +398,7 @@
 
 <script setup lang="ts">
 import { prepareSubmissionInput } from '../../lanpower/input'
-import { prepareSubmissionImages, MAX_SUBMISSION_IMAGES } from '../../lanpower/submissionImages'
+import { prepareSubmissionImages } from '../../lanpower/submissionImages'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   CollaborationModeKind,
@@ -1279,6 +1277,7 @@ function addFileAttachment(filePath: string, customLabel?: string): void {
 }
 
 function isImageFile(file: File): boolean {
+  if (props.remoteMode && file.type.startsWith('image/') && !['image/png','image/jpeg','image/gif','image/webp'].includes(file.type)) return false
   if (file.type.startsWith('image/')) return true
   return /\.(png|jpe?g|gif|webp)$/i.test(file.name)
 }
@@ -1369,16 +1368,10 @@ function ensureFileName(file: File): File {
 }
 
 async function attachImageFile(file: File, sessionToken: number): Promise<void> {
-  if (props.remoteMode && selectedImages.value.length + pendingAttachmentCount.value >= MAX_SUBMISSION_IMAGES) {
-    if (sessionToken !== attachmentSessionToken) return
-    recordAttachmentBatchResult('failure')
-    validationError.value = `一次最多添加 ${MAX_SUBMISSION_IMAGES} 张图片，请移除多余图片。`
-    return
-  }
   if (!beginAttachmentWork(sessionToken)) return
   try {
     const normalizedFile = ensureFileName(file)
-    const serverPath = await uploadFile(normalizedFile)
+    const serverPath = await uploadFile(normalizedFile, props.cwd)
     if (sessionToken !== attachmentSessionToken) return
     if (!serverPath) {
       recordAttachmentBatchResult('failure')
@@ -1406,17 +1399,18 @@ async function attachImageFile(file: File, sessionToken: number): Promise<void> 
 async function attachUploadedFile(file: File, sessionToken: number): Promise<void> {
   if (!beginAttachmentWork(sessionToken)) return
   try {
-    const serverPath = await uploadFile(file)
+    const serverPath = await uploadFile(file, props.cwd)
     if (sessionToken !== attachmentSessionToken) return
     if (!serverPath) {
       recordAttachmentBatchResult('failure')
       return
     }
-    addFileAttachment(serverPath)
+    addFileAttachment(serverPath, file.name)
     recordAttachmentBatchResult('success')
-  } catch {
+  } catch (error) {
     if (sessionToken === attachmentSessionToken) {
       recordAttachmentBatchResult('failure')
+      if (props.remoteMode) validationError.value = error instanceof Error ? error.message : '文件添加失败，请重试。'
     }
   } finally {
     finishAttachmentWork(sessionToken)
@@ -1477,7 +1471,7 @@ async function addFolderFiles(files: FileList | null): Promise<void> {
 
   for (const file of rows) {
     try {
-      const serverPath = await uploadFile(file)
+      const serverPath = await uploadFile(file, props.cwd)
       if (generation !== draftGeneration.value) return
       if (serverPath) {
         const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
@@ -1563,7 +1557,7 @@ function onWindowDragCleanup(): void {
 function onInputPaste(event: ClipboardEvent): void {
   if (isInteractionDisabled.value) return
   const plainText = event.clipboardData?.getData('text/plain') ?? ''
-  if (plainText.length >= PASTED_TEXT_FILE_THRESHOLD) {
+  if (!props.remoteMode && plainText.length >= PASTED_TEXT_FILE_THRESHOLD) {
     event.preventDefault()
     const textFile = new File([plainText], createPastedTextFileName(), {
       type: 'text/plain',

@@ -92,7 +92,8 @@ public sealed class CodexReliabilityTests
         JsonObject Request(string method,JsonObject p) => new() { ["id"] = "rpc", ["method"] = method, ["params"] = p };
         Assert.AreEqual("lanpower/submission/read",CodexRemoteProtocol.ValidateRequest(Request("lanpower/submission/read",new() { ["threadId"] = "thread", ["submissionId"] = "submission" })));
         Assert.AreEqual("lanpower/history/item/read",CodexRemoteProtocol.ValidateRequest(Request("lanpower/history/item/read",new() { ["threadId"] = "thread", ["reference"] = "ref", ["offset"] = 65536 })));
-        foreach (var offset in new[] {-1,64 * 1024 * 1024 + 1}) Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("lanpower/history/item/read",new() { ["threadId"] = "thread", ["reference"] = "ref", ["offset"] = offset })));
+        Assert.AreEqual("lanpower/history/item/read", CodexRemoteProtocol.ValidateRequest(Request("lanpower/history/item/read",new() { ["threadId"] = "thread", ["reference"] = "ref", ["offset"] = 64 * 1024 * 1024 + 1 })));
+        foreach (var offset in new[] {-1}) Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("lanpower/history/item/read",new() { ["threadId"] = "thread", ["reference"] = "ref", ["offset"] = offset })));
         Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("thread/read",new() { ["threadId"] = "thread", ["historyLimit"] = 9 })));
     }
 }

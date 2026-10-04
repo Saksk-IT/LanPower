@@ -49,7 +49,7 @@ export function resolveRemoteImage(source: string, threadId: string, cwd: string
   const entry: ImageEntry = { size:0, pins:0, promise:Promise.resolve('') }
   entry.promise = connection.request('lanpower/image/read',{threadId,path}).then(result => {
     if (current !== generation) throw new Error('连接已变化，请重新打开图片。')
-    if (!['image/png','image/jpeg','image/gif','image/webp','image/bmp'].includes(result.contentType) || typeof result.base64 !== 'string' || result.size > 8 * 1024 * 1024) throw new Error('图片格式无效。')
+    if (!['image/png','image/jpeg','image/gif','image/webp','image/bmp'].includes(result.contentType) || typeof result.base64 !== 'string') throw new Error('图片格式无效。')
     const data = atob(result.base64), bytes = Uint8Array.from(data,c => c.charCodeAt(0))
     if (bytes.length !== result.size) throw new Error('图片读取不完整。')
     entry.url = URL.createObjectURL(new Blob([bytes],{type:result.contentType})); entry.size = bytes.length; totalBytes += bytes.length

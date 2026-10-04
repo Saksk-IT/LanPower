@@ -1,6 +1,6 @@
 # LanPower 微信小程序
 
-小程序随产品更新至 `3.1.4`，本轮修复网页整组图片发送；小程序图片输入行为沿用现有实现，说明见 [图片发送](../docs/codex-image-submission.md)。
+小程序 `3.2.0` 支持累计添加任意数量原图、长文字和多技能，并可上传普通文件到电脑；大请求分块发送，图片不压缩。详见 [完整输入](../docs/codex-image-submission.md)。
 
 当前小程序 `3.1.3`，配套 Windows / Cloud / Web `1.20.1`，同步记录网页 Codex 侧边栏的中性浅灰白更新。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。
 

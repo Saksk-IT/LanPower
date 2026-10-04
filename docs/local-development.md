@@ -1,10 +1,20 @@
 # 本机 Docker 开发环境
 
-当前功能与更新记录见 [网页图片发送](codex-image-submission.md)、下方侧边栏配色、[网页权限切换](codex-permissions.md)和 [会话更新时间](codex-session-recency.md)。Windows / Cloud / Web `1.20.2`、小程序 `3.1.4`，镜像 `lanpower-cloud:1.20.2-dev.1`；升级保留原数据库、配对、授权、CA 和局域网 HTTPS 配置。
+当前功能与更新记录见 [网页图片发送](codex-image-submission.md)、下方侧边栏配色、[网页权限切换](codex-permissions.md)和 [会话更新时间](codex-session-recency.md)。Windows / Cloud / Web `1.21.0`、小程序 `3.2.0`，镜像 `lanpower-cloud:1.21.0-dev.1`；升级保留原数据库、配对、授权、CA 和局域网 HTTPS 配置。
 
 默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
 
-应用源码版本为 `1.20.2`，小程序 `3.1.4`，本地部署配置版本为 `1.20.2-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.21.0`，小程序 `3.2.0`，本地部署配置版本为 `1.21.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+
+## 本机 1.21.0 Codex Remote 完整输入（2026-10-05）
+
+以 Codex Remote 为主要开发与验收目标，电源管理作为配套能力。删除图片、文字、技能、队列排序、项目数量、文件浏览及大内容传输的额外上限；原图分块无损发送，并支持网页普通文件/文件夹和小程序普通文件上传。详见 [完整输入与功能对齐](codex-image-submission.md)。
+
+验证通过：网页 93 项、Cloud 73 项、Windows 50 项相关测试；小程序交互/传输、33 项状态和 2 项原生状态测试通过。浏览器用隔离接口实测 10 张原图、长 Unicode 文字、队列编辑、普通文件、仅图片发送和失败恢复，1440/390/320px 无横向溢出，错误为 0；10 图编码合计 `4986120` 字符，原图字节不变。另覆盖超过 20 MB 的原始请求/文件与超过 16 MB、512 段的大回复，以及大体积审批回答，验证部分上传不会派发。
+
+Docker 已更新为 `lanpower-cloud:1.21.0-dev.1`，HTTPS 健康版本与安装包元数据均为 `1.21.0`；Windows 四组件已就地升级为 `1.21.0.0`，构建/安装哈希匹配，Service 正常。升级前使用 SQLite backup API 备份，升级后九张身份、配对、授权与配置表的既有编号保留，完整性 `ok`、外键错误 0；现有数据卷、CA 与局域网 HTTPS 配置沿用。Windows 的设备身份、Cloud 地址、授权、聊天组织、桌面设置及原 Codex/既有共享服务进程均保留。实际 HTTPS → Cloud → Service → 用户 Host 只读连接检查通过，真实写请求和页面错误均为 0。
+
+源码快照、构建、备份及报告放在忽略目录 `private/codex-original-inputs-1.21.0`。本轮未向用户原会话发送新的推理任务，微信真机与公网 5G 仍待人工验收；不推送仓库，不部署远程 Cloud，不上传微信平台。
 
 ## 本机 1.20.2 网页图片发送（2026-10-05）
 

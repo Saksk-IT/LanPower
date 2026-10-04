@@ -80,10 +80,10 @@ function diffSummary(diff, changes = []) {
   for (const line of String(diff || '').split('\n')) {
     if (line.startsWith('+++ ')) {
       const path = line.slice(4).replace(/^b\//, '');
-      if (path !== '/dev/null') { current = files.get(path) || {path, added: 0, removed: 0}; if (files.size < 32 || files.has(path)) files.set(path, current); }
+      if (path !== '/dev/null') { current = files.get(path) || {path, added: 0, removed: 0}; files.set(path, current); }
     } else if (line.startsWith('--- ')) {
       const path = line.slice(4).replace(/^a\//, '');
-      if (path !== '/dev/null') { current = files.get(path) || {path, added: 0, removed: 0}; if (files.size < 32 || files.has(path)) files.set(path, current); }
+      if (path !== '/dev/null') { current = files.get(path) || {path, added: 0, removed: 0}; files.set(path, current); }
     } else if (line.startsWith('+')) { added++; if (current) current.added++; }
     else if (line.startsWith('-')) { removed++; if (current) current.removed++; }
   }

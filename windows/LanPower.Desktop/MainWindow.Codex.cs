@@ -35,8 +35,6 @@ public partial class MainWindow
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择允许远程开发的项目", Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
-        if (_codexSettings.Workspaces.Length >= 32)
-        { CodexRemoteState.Text = "最多允许 32 个项目，请先清理不再使用的目录。"; return; }
         var candidate = _codexSettings with { Enabled = true, Workspaces = [dialog.FolderName] };
         if (!candidate.Allows(dialog.FolderName))
         { CodexRemoteState.Text = "请选择本机普通目录，不能使用网络路径、符号链接或目录联接。"; return; }

@@ -25,10 +25,10 @@ test('旧历史窗口按稳定轮次分支，新增桌面轮次时拒绝回退�
   assert.equal(c.beginningIndex,0);assert.equal(c.current.turns.length,4);assert.equal(runtime.threads.find(row=>row.id==='a').turns.length,181);assert.match(c.feedback,/历史已变化/);
   c.current.historyTailTurnId='t181';await c.threadAction('rollback','t1');assert.equal(runtime.threads.find(row=>row.id==='a').turns.length,0);
 });
-test('提交前按 Unicode 字符计量并保留超限草稿及附件',async t=>{
+test('长文字和文件引用完整发送，仍拒绝无效 Unicode',async t=>{
   const {c}=await setup(t);const draft={text:'🎨'.repeat(16000),images:[],skills:[],files:[]};assert.equal(c.makeInput(draft)[0].text,draft.text);
-  assert.throws(()=>c.makeInput({...draft,files:[{label:'资料',path:'D:/data.txt'}]}),/16000/);
-  c.input('中'.repeat(16001));await c.submit();assert.equal(c.draft.text.length,16001);assert.equal(c.receipt,undefined);
+  assert.ok(c.makeInput({...draft,files:[{label:'资料',path:'D:/data.txt'}]})[0].text.length>16000);assert.throws(()=>c.makeInput({...draft,text:'\ud800'}),/Unicode/);
+  c.input('中'.repeat(100000));await c.submit();assert.equal(c.draft.text,'');assert.equal(c.receipt.state,'accepted');
 });
 test('失效内容引用最多自动恢复三次，随后保留明确的手动重试入口',async t=>{
   const {c,runtime}=await setup(t);let revision=0;

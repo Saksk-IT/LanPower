@@ -165,13 +165,12 @@ class CodexController {
   }
   inheritSettings() { this.threadSettings.overrides = {}; this.emit(); }
   input(text) { this.draft.text = text; this.emit(); }
-  addSkill(skill) { if (!this.canControl) throw error('请先打开可以控制的聊天。'); if (this.draft.skills.length >= 8) throw error('一次最多添加 8 个技能。'); if (!this.draft.skills.some(row => row.path === skill.path)) this.draft.skills.push({name: skill.name, path: skill.path}); this.emit(); }
+  addSkill(skill) { if (!this.canControl) throw error('请先打开可以控制的聊天。'); if (!this.draft.skills.some(row => row.path === skill.path)) this.draft.skills.push({name: skill.name, path: skill.path}); this.emit(); }
   addFile(path) { if (!this.canControl) throw error('请先打开可以控制的聊天。'); if (!this.draft.files.some(file => file.path === path)) this.draft.files.push({label: path.replace(/\\/g, '/').split('/').pop(), path}); this.emit(); }
   removeAttachment(kind, index) { if (['images', 'skills', 'files'].includes(kind)) this.draft[kind].splice(index, 1); this.emit(); }
   makeInput(draft) {
     const text = draft.files.length ? `# Files mentioned by the user:\n${draft.files.map(file => `## ${file.label}: ${file.path}`).join('\n')}\n\n## My request for Codex:\n${draft.text.trim()}` : draft.text.trim();
-    if (Array.from(text).length > 16000 || Array.from(text).some(point => point.length === 1 && /[\uD800-\uDFFF]/u.test(point))) throw error('文字与文件引用合计不能超过 16000 字符，且需为有效 Unicode。');
-    if (draft.skills.length > 8 || draft.images.length > 4 || draft.images.reduce((sum, image) => sum + image.url.length, 0) > 850000 || draft.images.some(image => image.url.length > 700000)) throw error('附件过大，请减少图片或技能。');
+    if (Array.from(text).some(point => point.length === 1 && /[\uD800-\uDFFF]/u.test(point))) throw error('输入包含无效 Unicode 字符。');
     const input = [...(text ? [{type: 'text', text}] : []), ...draft.images.map(image => ({type: 'image', url: image.url})), ...draft.skills.map(skill => ({type: 'skill', name: skill.name, path: skill.path}))];
     if (!input.length) throw error('请先输入内容或添加附件。'); return input;
   }
@@ -250,7 +249,7 @@ class CodexController {
     const e = this.epoch, s = this.selection; this.busy = true; this.emit();
     try {
       const params = {threadId: this.threadId};
-      if (action === 'reorder') { const ids = this.queue.map(row => row.id), from = ids.indexOf(id), target = from + direction; if (from < 0 || target < 0 || target >= ids.length) return; if (ids.length > 32) throw error('队列超过 32 条，请在原窗口整理。'); ids.splice(from, 1); ids.splice(target, 0, id); params.queuedSubmissionIds = ids; }
+      if (action === 'reorder') { const ids = this.queue.map(row => row.id), from = ids.indexOf(id), target = from + direction; if (from < 0 || target < 0 || target >= ids.length) return; ids.splice(from, 1); ids.splice(target, 0, id); params.queuedSubmissionIds = ids; }
       else params.queuedSubmissionId = id;
       await this.connection.request('thread/queue/' + action, params); if (this.valid(e, s)) { await this.refreshQueue(); if (action === 'delete' && this.draft.editingQueue === id && !this.queue.some(row => row.id === id)) this.cancelQueueEdit(); }
     } catch (failure) { if (this.valid(e, s)) this.notify(failure.message); }

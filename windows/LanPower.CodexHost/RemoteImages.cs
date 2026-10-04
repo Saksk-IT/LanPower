@@ -17,7 +17,7 @@ public sealed class RemoteImages
         lock (paths) Visit(content);
         void Add(string value)
         {
-            try { var path = Normalize(value); if (Path.IsPathFullyQualified(path) && paths.Count < 1024) paths.Add(path); } catch (ArgumentException) { }
+            try { var path = Normalize(value); if (Path.IsPathFullyQualified(path)) paths.Add(path); } catch (ArgumentException) { }
         }
         void Visit(JsonNode? value, string? key = null)
         {
@@ -54,7 +54,6 @@ public sealed class RemoteImages
                     throw new InvalidDataException("workspace_not_allowed");
         }
         using var stream = new FileStream(resolved, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (stream.Length > 8 * 1024 * 1024) throw new InvalidDataException("image_too_large");
         var bytes = new byte[checked((int)stream.Length)]; stream.ReadExactly(bytes);
         var mime = bytes.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) ? "image/png" :
             bytes.AsSpan().StartsWith(new byte[] { 255, 216, 255 }) ? "image/jpeg" :

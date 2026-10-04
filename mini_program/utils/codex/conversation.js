@@ -75,8 +75,8 @@ function conversationWindow(rows, offset = null, imageView = () => '') {
       command: previewText(row.command, 800),
       domId: 'row-' + encodeURIComponent(row.key).replace(/%/g, '-'),
       images: (row.images || []).map((source, index) => ({key: row.key + ':img:' + index, src: imageView(row.key, index), label: '查看图片'})),
-      files: (row.files || []).slice(0, 16).map(file => ({path: file.path, label: file.label || file.path, kind: file.kind || ''})),
-      links: Array.from(String(row.text || '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).slice(0, 12).map(match => ({label: match[1], target: match[2]}))};
+      files: (row.files || []).map(file => ({path: file.path, label: file.label || file.path, kind: file.kind || ''})),
+      links: Array.from(String(row.text || '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]}))};
     if (row.kind === 'assistant') value.nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
     const size = utf8Length(JSON.stringify(value)); if (bytes + size > 380000) break;
     bytes += size; selected.push(value);

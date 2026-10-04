@@ -81,7 +81,7 @@ public sealed class CodexDeepReviewTests
     }
 
     [TestMethod]
-    public void InputLimitsCountUnicodeScalarsAndIncludeAttachments()
+    public void LongInputsKeepUnicodeValidationWithoutTextCeiling()
     {
         JsonObject Request(string text) => new() { ["id"] = "rpc", ["method"] = "turn/start", ["params"] = new JsonObject {
             ["threadId"] = "thread", ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }) } };
@@ -89,7 +89,7 @@ public sealed class CodexDeepReviewTests
         {
             var boundary = string.Concat(Enumerable.Repeat(character, 16000));
             Assert.AreEqual("turn/start", CodexRemoteProtocol.ValidateRequest(Request(boundary)));
-            Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request(boundary + character)));
+            Assert.AreEqual("turn/start", CodexRemoteProtocol.ValidateRequest(Request(string.Concat(Enumerable.Repeat(character, 100000)))));
         }
         Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("\ud800")));
         Assert.AreEqual(1, CodexRemoteProtocol.UnicodeLength("🎨"));

@@ -183,14 +183,13 @@ public static class SharedCodexServer
         using var relay = CancellationTokenSource.CreateLinkedTokenSource(token);
         async Task Copy(WebSocket from, WebSocket to)
         {
-            var buffer = new byte[16384]; var size = 0;
+            var buffer = new byte[16384];
             while (!relay.IsCancellationRequested)
             {
                 var frame = await from.ReceiveAsync(buffer.AsMemory(), relay.Token);
                 if (frame.MessageType == WebSocketMessageType.Close) return;
-                size += frame.Count; if (frame.MessageType != WebSocketMessageType.Text || size > 8 * 1024 * 1024) throw new InvalidDataException("frame_too_large");
+                if (frame.MessageType != WebSocketMessageType.Text) throw new InvalidDataException("invalid_frame");
                 await to.SendAsync(buffer.AsMemory(0, frame.Count), frame.MessageType, frame.EndOfMessage, relay.Token);
-                if (frame.EndOfMessage) size = 0;
             }
         }
         var copies = new[] { Copy(upstream, downstream), Copy(downstream, upstream) };

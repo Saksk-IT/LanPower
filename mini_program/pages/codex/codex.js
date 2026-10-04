@@ -8,6 +8,8 @@ const {previewText} = require('../../utils/codex/conversation');
 const {ImageCache} = require('../../utils/codex/resources');
 const {capabilityStatus} = require('../../utils/codex/native-status');
 const {projectName} = require('../../utils/codex-format');
+const {homePreferences, homeLibrary, quotaSummary} = require('../../utils/codex/home');
+const HOME_KEY = 'lanpower_codex_home';
 const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2', CACHE_KEY = 'lanpower_device_cache_v2';
 const dataOf = event => event.currentTarget.dataset;
 const modal = options => new Promise(resolve => wx.showModal({...options, success: result => resolve(!!result.confirm), fail: () => resolve(false)}));
@@ -15,7 +17,7 @@ const modal = options => new Promise(resolve => wx.showModal({...options, succes
 Page({
   data: {version: VERSION, theme: 'light', themeMode: 'system', authorized: false, view: 'library', sheet: '', devices: [], deviceId: '', deviceName: '选择开发电脑', deviceIndex: 0,
     state: 'idle', stateTitle: '选择开发电脑', stateHint: '选择电脑后读取原窗口的项目和聊天', ready: false, recovering: false, loading: false, busy: false, feedback: '',
-    search: '', groups: [], chats: [], pinned: [], hiddenProjects: [], hasMore: false, archived: false, chatSupported: false, projects: [], libraryHasPrevious: false, libraryHasNext: false, chatsFirst: false, sections: {}, sort: 'updated',
+    search: '', searchOpen: false, homeMenu: false, homeOrder: 'project', recentFirst: true, libraryFilter: 'all', recent: [], recentTotal: 0, recentCollapsed: false, recentTimeline: false, recentHasPrevious: false, recentHasNext: false, quotaSummary: [], groups: [], chats: [], pinned: [], hiddenProjects: [], hasMore: false, archived: false, chatSupported: false, projects: [], libraryHasPrevious: false, libraryHasNext: false, chatsFirst: false, sections: {}, sort: 'updated',
     title: '新聊天', project: '', cwd: '', messages: [], totalMessages: 0, windowStart: 0, windowEnd: 0, hasWindowBefore: false, hasWindowAfter: false, historyCursor: '', readingHistory: false, historyProgress: '', historyResume: false, beginningIndex: -1,
     prompt: '', draftImages: [], draftSkills: [], draftFiles: [], canSend: false, canControl: false, canInterrupt: false, canRelease: false, activeTurnId: '', running: false, interrupting: false, sendLabel: '发送', sendMode: 'queue', queueSupported: false,
     selectedModel: '', selectedEffort: '', selectedMode: 'default', models: [], efforts: [], planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
@@ -26,7 +28,7 @@ Page({
     fileState: {files: [], cwd: '', directory: '.', cursor: '', selected: null, breadcrumbs: []}, fileHasPrevious: false, fileHasNext: false,
     detailTitle: '', detailText: '', detailPage: 1, detailPages: 1, detailKind: '', sendWithEnter: false, wakeAvailable: false, powerText: '', waking: false},
   onLoad(options = {}) {
-    this.visible = false; this.unloaded = false; this.follow = true; this.imagePaths = new Map(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; this.catalogLimit = 30; this.fileOffset = 0;
+    this.visible = false; this.unloaded = false; this.follow = true; this.imagePaths = new Map(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; this.recentOffset = 0; this.catalogLimit = 30; this.fileOffset = 0;
     this.preferredDevice = options.computer || ''; this.systemTheme = (wx.getAppBaseInfo && wx.getAppBaseInfo().theme) || 'light';
     this.installClient(CloudClient.load(wx));
     this.themeChanged = ({theme}) => { this.systemTheme = theme; if (this.data.themeMode === 'system') this.applyTheme(); };
@@ -38,8 +40,9 @@ Page({
     if (this.controller) this.controller.dispose(); if (this.images) this.images.clear(); if (this.client) this.client.close();
     this.client = client; this.imagePaths.clear(); this.deviceLoading = false; this.themeKey = storageKey(wx, THEME_KEY); this.inputKey = storageKey(wx, INPUT_KEY);
     const input = wx.getStorageSync(this.inputKey) || {}; this.themeMode = wx.getStorageSync(this.themeKey) || 'system';
-    this.setData({authorized: !!client, devices: [], view: 'library', sheet: '', prompt: '', messages: [], draftImages: [], draftSkills: [], draftFiles: [],
+    this.setData({authorized: !!client, devices: [], deviceId: '', deviceName: '选择开发电脑', view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', prompt: '', messages: [], draftImages: [], draftSkills: [], draftFiles: [],
       themeMode: ['light', 'dark', 'system'].includes(this.themeMode) ? this.themeMode : 'system', sendMode: input.mode === 'steer' ? 'steer' : 'queue', sendWithEnter: !!input.enter});
+    this.loadHomePreferences();
     this.connection = new CodexConnection({wxApi: wx, cloud: client, state: state => { this.controller.onState(state); if (state !== 'runtime_ready') { this.images.clear(); this.imagePaths.clear(); } }, event: event => this.controller.onEvent(event)});
     this.controller = new CodexController(this.connection, () => this.schedulePaint()); this.images = new ImageCache(wx, this.connection);
   },
@@ -54,14 +57,17 @@ Page({
     this.paint();
   },
   clearTimers() { clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer); clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer); },
-  onHide() { this.visible = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: ''}); this.paint(); },
+  onHide() { this.visible = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false}); this.paint(); },
   onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },
   schedulePaint() { if (this.unloaded || this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
   paint() {
     const c = this.controller; if (!c) return;
     const labels = STATES[c.state] || STATES.disconnected, library = c.libraryView(this.data.search), prefs = c.library.preferences;
     const rows = threads => threads.map(thread => ({id: thread.id, name: previewText(thread.name, 100), time: thread.time, running: !!thread.running, pending: Array.from(c.approvals.values()).some(request => request.params.threadId === thread.id), selected: thread.id === c.threadId}));
-    const groups = library.projects.slice(this.libraryOffset, this.libraryOffset + 12).map(group => { const offset = this.groupOffsets[group.id] || 0; return {...group, threads: rows(group.threads.slice(offset, offset + 10)), count: group.threads.length, hasPrevious: offset > 0, hasNext: offset + 10 < group.threads.length}; });
+    const home = homeLibrary(library, {order: this.data.homeOrder}, this.data.libraryFilter, Array.from(c.approvals.values()).map(request => request.params.threadId), prefs.pinned);
+    const groups = home.groups.slice(this.libraryOffset, this.libraryOffset + 12).map(group => { const offset = this.groupOffsets[group.id] || 0; return {...group, threads: rows(group.threads.slice(offset, offset + 10)), count: group.threads.length, hasPrevious: offset > 0, hasNext: offset + 10 < group.threads.length}; });
+    const recentSize = home.timeline ? 15 : 6;
+    this.recentOffset = home.timeline ? Math.min(this.recentOffset, Math.max(0, Math.ceil(home.recent.length / recentSize) - 1) * recentSize) : 0;
     const options = effectiveSettings(c.threadSettings), model = c.models.find(row => modelId(row) === options.model), draft = c.draft, receipt = c.receipt;
     const messages = c.messages((key, index) => this.imagePaths.get(key + ':img:' + index) || '');
     const queue = c.queue.map((entry, index) => { const value = require('../../utils/codex/conversation').userContent(entry.input); return {id: entry.id, text: previewText(value.text, 800), images: value.images.length, skills: value.skills.map(skill => skill.name).join(' · '), position: index + 1}; });
@@ -70,12 +76,14 @@ Page({
     if (sheet === 'approval' && !approval) sheet = '';
     const canSend = c.canControl && !c.busy && !c.sendBlocked && !approvals.length && !!(draft.text.trim() || draft.images.length || draft.skills.length || draft.files.length);
     const value = {ready: c.ready, state: c.state, stateTitle: labels[0], stateHint: labels[1], recovering: c.recovering, loading: c.loadingLibrary || c.loadingThread, busy: c.busy, feedback: c.feedback,
+      recent: rows(home.recent.slice(this.recentOffset, this.recentOffset + recentSize)), recentTotal: home.recent.length, recentTimeline: home.timeline, recentHasPrevious: this.recentOffset > 0, recentHasNext: this.recentOffset + recentSize < home.recent.length,
+      quotaSummary: quotaSummary(c.nativeUsage.state.snapshots),
       quotaLoading: c.nativeUsage.state.loading, quotaReason: c.nativeUsage.state.reason,
       quotaRows: c.nativeUsage.state.snapshots.map(row => ({id:row.limitId || row.limitName || 'default',name:row.limitName || row.limitId || '额度',metrics:[row.primary,row.secondary].filter(Boolean).map(window => `${window.windowDurationMins ? window.windowDurationMins % 60 === 0 ? window.windowDurationMins / 60 + ' 小时' : window.windowDurationMins + ' 分钟' : '原生窗口'} · ${Math.max(0,Math.min(100,Math.round(100 - window.usedPercent)))}% 剩余${window.resetsAt ? ' · 重置 ' + new Date(window.resetsAt * 1000).toLocaleString('zh-CN') : ''}`).join('\n'),credits:row.credits ? row.credits.unlimited ? '无限积分' : row.credits.balance ? '积分 ' + row.credits.balance : row.credits.hasCredits ? '有积分' : '原生状态：无积分' : ''})),
       contextText: (() => { const usage = c.nativeUsage.context(c.threadId).usage; return usage ? `当前 ${usage.currentContextTokens}${usage.modelContextWindow ? ' / ' + usage.modelContextWindow : ''} tokens${usage.remainingContextPercent !== null ? ' · ' + usage.remainingContextPercent + '% 剩余' : ''} · 累计 ${usage.total.totalTokens} tokens` : ''; })(),
       contextReason: c.nativeUsage.context(c.threadId).reason,
       groups, chats: rows(library.chats.slice(this.chatOffset, this.chatOffset + 15)), chatsHasPrevious: this.chatOffset > 0, chatsHasNext: this.chatOffset + 15 < library.chats.length, pinned: rows(library.pinned.slice(0, 30)), hiddenProjects: library.hidden.map(group => ({id: group.id, name: group.name})),
-      libraryHasPrevious: this.libraryOffset > 0, libraryHasNext: this.libraryOffset + 12 < library.projects.length, archived: c.archived, threadArchived: c.threadArchived, hasMore: !!c.listCursor, chatSupported: c.chatSupported, chatsFirst: !!prefs.chatsFirst, sections: prefs.sections, sort: prefs.sort,
+      libraryHasPrevious: this.libraryOffset > 0, libraryHasNext: this.libraryOffset + 12 < home.groups.length, archived: c.archived, threadArchived: c.threadArchived, hasMore: !!c.listCursor, chatSupported: c.chatSupported, chatsFirst: !!prefs.chatsFirst, sections: prefs.sections, sort: prefs.sort,
       projects: c.projects.filter(project => project.kind !== 'chat').map(project => ({name: project.name, path: project.path})), title: previewText(c.current && (c.current.name || c.current.preview) || '新聊天', 100), project: projectName(c.current && c.current.cwd), cwd: c.current && c.current.cwd || '',
       ...messages, historyCursor: c.historyCursor, readingHistory: c.readingHistory, historyProgress: c.historyProgress, historyResume: c.historyResume, beginningIndex: c.beginningIndex,
       prompt: draft.text, draftImages: draft.images.map((image, index) => ({src: image.src || '', index})), draftSkills: draft.skills.map((skill, index) => ({name: skill.name, index})), draftFiles: draft.files.map((file, index) => ({label: file.label, index})), editingQueue: draft.editingQueue,
@@ -121,7 +129,7 @@ Page({
     finally { if (client === this.client) this.deviceLoading = false; }
   },
   showDevice(device) { this.setData({deviceId: device.device_id, deviceName: device.name, deviceIndex: Math.max(0, this.data.devices.findIndex(row => row.device_id === device.device_id)), wakeAvailable: device.wake_available, powerText: ({online: 'Windows 在线', offline: 'Windows 离线', transitioning: '正在执行电源操作'})[device.state] || '电脑状态未知'}); },
-  chooseDevice(device) { this.detailText = ''; this.detailIndex = 0; this.images.clear(); this.imagePaths.clear(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; this.controller.chooseDevice(device ? device.device_id : ''); this.setData({view: 'library', sheet: '', detailText: '', approval: null, keyboardHeight: 0, deviceId: device ? device.device_id : '', deviceName: device ? device.name : '选择开发电脑', wakeAvailable: false}); if (device) this.showDevice(device); this.paint(); },
+  chooseDevice(device) { this.detailText = ''; this.detailIndex = 0; this.images.clear(); this.imagePaths.clear(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.controller.chooseDevice(device ? device.device_id : ''); this.setData({view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', detailText: '', approval: null, keyboardHeight: 0, deviceId: device ? device.device_id : '', deviceName: device ? device.name : '选择开发电脑', wakeAvailable: false}); this.loadHomePreferences(); if (device) this.showDevice(device); this.paint(); },
   selectDevice(event) { this.chooseDevice(this.data.devices[Number(event.detail.value)]); },
   reconnect() { if (this.controller.deviceId) this.connection.connect(this.controller.deviceId); },
   async wake() { if (!this.client || this.data.waking) return; const client = this.client, id = this.controller.deviceId; this.setData({waking: true}); try { await client.call(`/api/v2/devices/${encodeURIComponent(id)}/commands`, 'POST', {action: 'wake'}); if (client === this.client && id === this.controller.deviceId) this.controller.notify('唤醒请求已发送，电脑登录后会自动连接。'); } catch (error) { this.controller.notify(error.message); } finally { this.setData({waking: false}); } },
@@ -130,15 +138,27 @@ Page({
   backLibrary() { this.setData({view: 'library', sheet: '', keyboardHeight: 0}); this.paint(); },
   async selectThread(event) { this.follow = true; this.setData({view: 'chat', sheet: ''}); await this.controller.selectThread(dataOf(event).id); this.paint(); },
   readThread(id, navigate = true) { if (navigate) this.setData({view: 'chat'}); return this.controller.selectThread(id); },
-  search(event) { this.setData({search: event.detail.value}); this.libraryOffset = 0; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.librarySearchTimer = setTimeout(() => this.controller.searchLibrary(this.data.search),250); this.paint(); },
+  search(event) { this.setData({search: event.detail.value}); this.libraryOffset = 0; this.chatOffset = 0; this.recentOffset = 0; clearTimeout(this.librarySearchTimer); this.librarySearchTimer = setTimeout(() => this.controller.searchLibrary(this.data.search),250); this.paint(); },
+  toggleSearch() { const open = !this.data.searchOpen; this.setData({searchOpen: open, homeMenu: false, keyboardHeight: 0}); if (!open) this.search({detail: {value: ''}}); },
+  toggleHomeMenu() { const open = !this.data.homeMenu; this.setData({homeMenu: open, sheet: '', keyboardHeight: 0}); if (open && this.controller.ready && !this.data.quotaSummary.length) void this.refreshQuota(); },
+  closeHomeMenu() { this.setData({homeMenu: false}); },
+  loadHomePreferences() { this.homeKey = storageKey(wx, HOME_KEY) + ':computer:' + encodeURIComponent(this.data.deviceId || ''); const prefs = homePreferences(wx.getStorageSync(this.homeKey)); this.recentOffset = 0; this.setData({homeOrder: prefs.order, recentFirst: prefs.recentFirst, recentCollapsed: false}); },
+  saveHomePreferences() { wx.setStorageSync(this.homeKey, {order: this.data.homeOrder, recentFirst: this.data.recentFirst}); },
+  chooseHomeOrder(event) { const order = dataOf(event).order; if (!['project', 'updated', 'priority'].includes(order)) return; this.recentOffset = 0; this.libraryOffset = 0; this.setData({homeOrder: order, homeMenu: false, recentCollapsed: false}); this.saveHomePreferences(); this.paint(); },
+  setRecentFirst(event) { this.setData({recentFirst: !!event.detail.value}); this.saveHomePreferences(); this.paint(); },
+  toggleRecentFirst() { this.setRecentFirst({detail: {value: !this.data.recentFirst}}); this.closeHomeMenu(); },
+  toggleRecent() { this.setData({recentCollapsed: !this.data.recentCollapsed}); },
+  filterLibrary(event) { const filter = dataOf(event).filter === 'chats' ? 'chats' : 'all'; this.recentOffset = 0; this.libraryOffset = 0; this.setData({libraryFilter: filter, recentCollapsed: false, homeMenu: false}); this.paint(); },
+  showAllRecent() { this.chooseHomeOrder({currentTarget: {dataset: {order: 'updated'}}}); },
+  recentPage(event) { this.recentOffset = Math.max(0, this.recentOffset + Number(dataOf(event).direction) * 15); this.paint(); },
   more() { return this.controller.loadThreads(true); },
-  async toggleArchived() { await this.controller.toggleArchived(); this.libraryOffset = 0; this.chatOffset = 0; this.paint(); },
+  async toggleArchived() { this.closeHomeMenu(); await this.controller.toggleArchived(); this.libraryOffset = 0; this.chatOffset = 0; this.recentOffset = 0; this.paint(); },
   libraryPage(event) { this.libraryOffset = Math.max(0, this.libraryOffset + Number(dataOf(event).direction) * 12); this.paint(); },
   groupPage(event) { const {id, direction} = dataOf(event); this.groupOffsets[id] = Math.max(0, (this.groupOffsets[id] || 0) + Number(direction) * 10); this.paint(); },
   chatsPage(event) { this.chatOffset = Math.max(0, this.chatOffset + Number(dataOf(event).direction) * 15); this.paint(); },
   toggleProject(event) { this.controller.changeLibrary('collapsed', dataOf(event).id); },
   toggleSection(event) { this.controller.changeLibrary('section', dataOf(event).id); },
-  openNew() { this.setData({sheet: 'new', newProjectQuery: '', newProjects: this.data.projects}); },
+  openNew() { if (!this.controller.ready || this.controller.busy) return; this.setData({sheet: 'new', homeMenu: false, newProjectQuery: '', newProjects: this.data.projects}); },
   newProjectSearch(event) { const query = event.detail.value.toLowerCase(); this.setData({newProjectQuery: event.detail.value, newProjects: this.data.projects.filter(project => [project.name, project.path].join(' ').toLowerCase().includes(query))}); },
   async createThread(event) { const id = await this.controller.createThread(dataOf(event).path, false, this.data.selectedModel); if (id) { this.follow = true; this.setData({view: 'chat', sheet: ''}); this.paint(); } },
   async newChat() { const id = await this.controller.createThread('', true, this.data.selectedModel); if (id) { this.follow = true; this.setData({view: 'chat', sheet: ''}); this.paint(); } },
@@ -215,11 +235,11 @@ Page({
     if (path && wx.previewImage) wx.previewImage({current: path, urls: [path]});
   },
   async addImages() {
-    const c = this.controller, key = c.key; if (!c.canControl || c.busy || c.sendBlocked) return; const count = 4 - c.draft.images.length; if (count <= 0) return c.notify('一次最多添加 4 张图片。');
+    const c = this.controller, key = c.key; if (!c.canControl || c.busy || c.sendBlocked) return; const count = 9; // WeChat picker batch size; repeated selections accumulate without a draft limit.
     try {
       const files = await new Promise((resolve, reject) => {
-        if (wx.chooseMedia) wx.chooseMedia({count, mediaType: ['image'], sizeType: ['compressed'], success: result => resolve(result.tempFiles.map(file => file.tempFilePath)), fail: reject});
-        else wx.chooseImage({count, sizeType: ['compressed'], success: result => resolve(result.tempFilePaths), fail: reject});
+        if (wx.chooseMedia) wx.chooseMedia({count, mediaType: ['image'], sizeType: ['original'], success: result => resolve(result.tempFiles.map(file => file.tempFilePath)), fail: reject});
+        else wx.chooseImage({count, sizeType: ['original'], success: result => resolve(result.tempFilePaths), fail: reject});
       });
       const fs = wx.getFileSystemManager();
       for (const filePath of files) {
@@ -227,13 +247,29 @@ Page({
         const bytes = new Uint8Array(result.data), type = bytes[0] === 137 && bytes[1] === 80 ? 'png' : bytes[0] === 255 && bytes[1] === 216 ? 'jpeg' : bytes[0] === 71 && bytes[1] === 73 ? 'gif' : bytes[0] === 82 && bytes[8] === 87 ? 'webp' : '';
         if (!type) throw new Error('请选择 PNG、JPEG、GIF 或 WebP 图片。');
         const url = `data:image/${type};base64,${wx.arrayBufferToBase64(result.data)}`;
-        if (url.length > 700000 || c.draft.images.reduce((sum, image) => sum + image.url.length, 0) + url.length > 850000) throw new Error('图片过大，请先在相册缩小，或减少图片数量。');
         c.draft.images.push({url, src: filePath});
       }
       c.emit(); this.closeSheet(); this.paint();
     } catch (error) { if (!String(error.errMsg || '').includes('cancel') && key === c.key) c.notify(error.message || '图片读取未完成。'); }
   },
   removeAttachment(event) { this.controller.removeAttachment(dataOf(event).kind, Number(dataOf(event).index)); this.paint(); },
+  async addFiles() {
+    const c = this.controller, key = c.key, cwd = c.current && c.current.cwd;
+    if (!c.canControl || c.busy || c.sendBlocked || !cwd) return;
+    if (!wx.chooseMessageFile) return c.notify('当前微信版本不支持文件选择，请更新微信。');
+    try {
+      const result = await new Promise((resolve,reject) => wx.chooseMessageFile({count:100,type:'all',success:resolve,fail:reject}));
+      const fs = wx.getFileSystemManager();
+      for (const file of result.tempFiles) {
+        const data = await new Promise((resolve,reject) => fs.readFile({filePath:file.path,success:resolve,fail:reject}));
+        if (c !== this.controller || key !== c.key || !c.canControl) return;
+        const uploaded = await this.connection.request('lanpower/files/upload',{cwd,name:file.name,base64:wx.arrayBufferToBase64(data.data)});
+        if (c !== this.controller || key !== c.key || !c.canControl) return;
+        c.addFile(uploaded.path);
+      }
+      this.closeSheet(); this.paint();
+    } catch (failure) { if (key === c.key && !String(failure.errMsg || '').includes('cancel')) c.notify(failure.message || '文件上传未完成，请重试。'); }
+  },
   openAttachments() { this.setData({sheet: 'attachments'}); },
   openFiles(event) { const dataset = event ? dataOf(event) : {}, cwd = dataset.cwd || this.controller.current && this.controller.current.cwd || this.data.projects[0] && this.data.projects[0].path; if (!cwd || !this.controller.ready) return this.controller.notify('请先连接电脑并选择项目。'); this.auxReturn = this.data.view === 'chat' ? 'chat' : 'library'; this.fileOffset = 0; this.setData({view: 'files', sheet: ''}); void this.controller.resources.open(cwd, dataset.path || ''); },
   openFile(event) { const {path, directory} = dataOf(event); this.fileOffset = 0; return directory ? this.controller.resources.directory(path) : this.controller.resources.files('lanpower/files/read', {path}); },

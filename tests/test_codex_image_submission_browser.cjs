@@ -1,6 +1,7 @@
-// Real browser image encoding and composer behavior with isolated RPC fixtures.
+// Real browser original images and chunked submission with isolated RPC fixtures.
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+async function until(check) { for (let i=0;i<1000;i++) { if (check()) return; await new Promise(resolve=>setTimeout(resolve,10)); } throw new Error('chunked submission did not finish'); }
 
 (async () => {
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
@@ -15,14 +16,18 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
       case 'lanpower/status': return {result: {projects: [{name: 'ImageSubmission', path: root}], sharedControl: true, desktopControl: true, queueSupported: true, submissionReceipts: true, activeTurns: [], pendingApprovals: []}};
       case 'model/list': return {result: {data: [{id: 'gpt-6', isDefault: true}]}};
       case 'collaborationMode/list': return {result: {data: [{mode: 'default'}]}};
+      case 'lanpower/files/upload': {
+        assert.equal(p.cwd, root); assert.equal(p.name,'original.txt');
+        assert.equal(Buffer.from(p.base64,'base64').length,2 * 1024 * 1024);
+        assert.ok(Buffer.from(p.base64,'base64').every(byte => byte === 120));
+        return {result:{path:root+'/attachments/original.txt'}};
+      }
       case 'thread/list': case 'lanpower/library/list': return {result: {data: ['image-chat', 'other-chat'].map(metadata)}};
       case 'thread/read': return {result: {thread: {...metadata(p.threadId), turns: []}}};
       case 'thread/queue/list': return {result: {data: queueVisible && p.threadId === 'image-chat' ? [{id: 'queued-images', input: [{type: 'text', text: '编辑前的两张截图'}, ...images.map(url => ({type: 'image', url}))]}] : []}};
       case 'turn/start': case 'turn/steer': case 'thread/queue/update': {
         const urls = p.input.filter(item => item.type === 'image').map(item => item.url);
-        assert.ok(urls.every(url => url.length <= 700000));
-        assert.ok(urls.reduce((sum, url) => sum + url.length, 0) <= 850000);
-        assert.ok(Buffer.byteLength(JSON.stringify({type: 'rpc', payload: request})) < 1048576);
+        assert.ok(urls.every(url => images.includes(url)), 'original image bytes must survive every hop');
         if (rejectFirst) { rejectFirst = false; return {error: {code: -32602, message: 'invalid_params', data: {notSent: true}}}; }
         if (request.method === 'thread/queue/update') queueVisible = false;
         return {result: {receipt: {state: 'accepted'}}};
@@ -34,8 +39,8 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
   const context = await browser.newContext({viewport: {width: 1440, height: 980}, serviceWorkers: 'block'});
   try {
     if (process.env.LANPOWER_IMAGE_UI_DIR) {
-      await context.route('**/static/codex-ui/codex.*', route => {
-        const name = path.basename(new URL(route.request().url()).pathname);
+      await context.route('**/static/codex-ui/**', route => {
+        const name = new URL(route.request().url()).pathname.split('/static/codex-ui/')[1];
         return route.fulfill({path: path.join(process.env.LANPOWER_IMAGE_UI_DIR, name), contentType: name.endsWith('.css') ? 'text/css' : 'application/javascript'});
       });
     }
@@ -45,12 +50,24 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
         static OPEN = 1; readyState = 1;
         constructor() { setTimeout(() => {this.onopen?.({}); this.frame({type: 'state', state: 'runtime_ready'});}, 20); }
         frame(value) { this.onmessage?.({data: JSON.stringify(value)}); }
-        async send(raw) { const frame = JSON.parse(raw); if (frame.type !== 'rpc') return; const reply = await window.__imageRpc(frame.payload); this.frame({type: 'rpc', payload: {id: frame.payload.id, ...reply}}); }
+        uploads = new Map(); bufferedAmount = 0;
+        async send(raw) {
+          let frame = JSON.parse(raw);
+          if (frame.type === 'rpc_upload') {
+            const parts = this.uploads.get(frame.id) || []; if (parts.length !== frame.index) throw new Error('unordered upload');
+            parts.push(frame.data); this.uploads.set(frame.id,parts);
+            if (parts.length !== frame.count) return;
+            this.uploads.delete(frame.id); frame = JSON.parse(parts.join(''));
+          }
+          if (frame.type !== 'rpc') return;
+          const reply = await window.__imageRpc(frame.payload); this.frame({type: 'rpc', payload: {id: frame.payload.id, ...reply}});
+        }
         close() { this.readyState = 3; }
       };
     });
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
+    page.on('requestfailed', request => errors.push('resource:' + new URL(request.url()).pathname));
     page.on('dialog', dialog => dialog.accept());
     images.push(...await page.evaluate(() => {
       const result = [];
@@ -82,6 +99,11 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.locator('[name=username]').fill('admin'); await page.locator('[name=password]').fill(password);
     await Promise.all([page.waitForURL('**/dashboard'), page.locator('form[action="/login"] button').click()]);
     await page.goto(base + '/remote');
+    await page.waitForFunction(() => document.querySelector('[data-thread-id="image-chat"]'),undefined,{timeout:10000}).catch(async error => {
+      if (process.env.LANPOWER_IMAGE_REPORT_DIR) await page.screenshot({path:path.join(process.env.LANPOWER_IMAGE_REPORT_DIR,'browser-debug.png')});
+      console.log(JSON.stringify({fixtureMethods:calls.map(call=>call.method),errors}));
+      throw error;
+    });
     await page.locator('[data-thread-id="image-chat"] .lp-thread-title').click();
     const input = page.locator('.thread-composer-input');
     const picker = () => page.locator('input[type=file][multiple]').first();
@@ -99,40 +121,30 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.waitForFunction(() => !document.querySelector('.lp-edit-queue') && document.querySelector('.thread-composer-input')?.value === '');
     const update = sent().find(call => call.method === 'thread/queue/update');
     assert.ok(update); assert.equal(update.params.queuedSubmissionId, 'queued-images');
-    await picker().setInputFiles([...files, ...files]);
-    await page.waitForFunction(() => document.querySelectorAll('.thread-composer-attachment').length === 4 && !document.querySelector('.thread-composer-input').disabled);
-    await input.fill('四张截图'); await input.press('Enter');
+    await picker().setInputFiles(Array.from({length:10},(_,i)=>({...files[i%2],name:`original-${i}.png` })));
+    await page.waitForFunction(() => document.querySelectorAll('.thread-composer-attachment').length === 10 && !document.querySelector('.thread-composer-input').disabled);
+    await input.fill('十张原图 '+ '中🎨'.repeat(20000)); await input.press('Enter');
     await page.waitForFunction(() => document.querySelector('.thread-composer-input')?.value === '' && document.querySelectorAll('.thread-composer-attachment').length === 0);
-    assert.equal(sent().at(-1).params.input.filter(item => item.type === 'image').length, 4);
+    await until(() => sent().at(-1).params.input.filter(item=>item.type==='image').length===10);
+    assert.equal(sent().at(-1).params.input.filter(item => item.type === 'image').length, 10); assert.ok(sent().at(-1).params.input[0].text.length>16000);
     await picker().setInputFiles(files);
     await page.waitForFunction(() => document.querySelectorAll('.thread-composer-attachment').length === 2 && !document.querySelector('.thread-composer-input').disabled);
     await page.locator('form.thread-composer').evaluate(form => form.requestSubmit());
     await page.waitForFunction(() => document.querySelectorAll('.thread-composer-attachment').length === 0);
+    await until(() => sent().at(-1).params.input.filter(item=>item.type==='image').length===2 && sent().at(-1).params.input.every(item=>item.type!=='text'));
     assert.equal(sent().at(-1).params.input.filter(item => item.type === 'text').length, 0);
-    // The first decode waits while the user switches chats. The old draft must not submit.
-    await picker().setInputFiles(files);
-    await page.waitForFunction(() => document.querySelectorAll('.thread-composer-attachment').length === 2 && !document.querySelector('.thread-composer-input').disabled);
-    await input.fill('切换前未发送的草稿');
-    await page.evaluate(() => {
-      const original = window.createImageBitmap.bind(window); let once = true;
-      window.createImageBitmap = async (...args) => {if (once) {once = false; window.__compressionStarted = true; await new Promise(resolve => {window.__releaseCompression = resolve;});} return original(...args);};
-    });
-    const count = sent().length;
-    await page.locator('form.thread-composer').evaluate(form => {form.requestSubmit(); form.requestSubmit();});
-    await page.waitForFunction(() => window.__compressionStarted);
-    await page.locator('[data-thread-id="other-chat"] .lp-thread-title').click();
-    await page.evaluate(() => window.__releaseCompression());
-    await page.waitForTimeout(500);
-    assert.equal(sent().length, count);
-    await page.locator('[data-thread-id="image-chat"] .lp-thread-title').click();
-    await page.waitForFunction(() => document.querySelector('.thread-composer-input')?.value === '切换前未发送的草稿');
-    assert.equal(await page.locator('.thread-composer-attachment').count(), 2);
+    await picker().setInputFiles([{name:'original.txt',mimeType:'text/plain',buffer:Buffer.alloc(2 * 1024 * 1024,120)}]);
+    await page.waitForFunction(() => document.querySelectorAll('.thread-composer-file-chip').length === 1 && !document.querySelector('.thread-composer-input').disabled);
+    await input.fill('读取我上传的完整文件'); await input.press('Enter');
+    await page.waitForFunction(() => document.querySelectorAll('.thread-composer-file-chip').length === 0);
+    await until(() => sent().at(-1).params.input[0]?.text?.includes(root+'/attachments/original.txt'));
+    assert.ok(sent().at(-1).params.input[0].text.includes(root+'/attachments/original.txt'));
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({width, height: 900});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     }
     assert.deepEqual(errors, []);
-    const report = {originalTotal, submittedImageTotals: sent().map(call => call.params.input.filter(item => item.type === 'image').reduce((sum, item) => sum + item.url.length, 0)), newImages: true, queuedEdit: true, fourImages: true, imagesOnly: true, rejectedDraftPreserved: true, staleCompressionCancelled: true, widths: [1440, 390, 320], browserErrors: errors.length};
+    const report = {originalTotal, submittedImageTotals: sent().map(call => call.params.input.filter(item => item.type === 'image').reduce((sum, item) => sum + item.url.length, 0)), newImages: true, queuedEdit: true, tenOriginalImages: true, originalBytesPreserved:true, ordinaryFileUpload:true, imagesOnly: true, rejectedDraftPreserved: true, widths: [1440, 390, 320], browserErrors: errors.length};
     if (process.env.LANPOWER_IMAGE_REPORT_DIR) {
       fs.mkdirSync(process.env.LANPOWER_IMAGE_REPORT_DIR, {recursive: true});
       fs.writeFileSync(path.join(process.env.LANPOWER_IMAGE_REPORT_DIR, 'browser-result.json'), JSON.stringify(report, null, 2));

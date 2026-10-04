@@ -1,4 +1,5 @@
 import { RpcFragments } from './fragments'
+import { requestFrames } from './requestFrames'
 export type RpcEvent = { id?: string | number; method: string; params?: any }
 type Pending = { method?: string; resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; cleanup?: () => void }
 
@@ -9,8 +10,8 @@ export class RemoteError extends Error {
 const errors: Record<string, string> = {
   permissions_unavailable: '电脑端没有确认生效的权限，请刷新会话读取实际设置。',
   capability_cursor_expired: '能力目录快照已过期或变化，请刷新后继续翻页。',
-  invalid_params: '内容或参数不符合限制，未发送，请修改后重试。',
-  invalid_input: '文字或附件不符合限制，未发送，请修改后重试。',
+  invalid_params: '内容或参数格式无效，未发送，请修改后重试。',
+  invalid_input: '文字或附件格式无效，未发送，请修改后重试。',
   params_not_allowed: '当前版本不支持这些参数，未发送，请更新组件。',
   method_not_allowed: '当前版本不支持此操作，未发送，请更新组件。',
   history_changed: '原窗口历史已变化，操作未执行，请刷新后重新选择轮次。',
@@ -110,14 +111,27 @@ export class RemoteConnection {
     if (this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new RemoteError('not_sent', '连接尚未就绪。'))
     const id = crypto.randomUUID()
     const data = JSON.stringify({ type: 'rpc', payload: { id, method, params } })
-    if (new TextEncoder().encode(data).byteLength > 1048576) return Promise.reject(new RemoteError('not_sent', '消息或图片过大，请缩小后重试。'))
+    const socket = this.socket
     return new Promise((resolve, reject) => {
       const remove = () => { this.pending.delete(id); this.fragments.drop(id); clearTimeout(timer); signal?.removeEventListener('abort', abort) }
       const abort = () => { remove(); reject(new DOMException('已取消读取。', 'AbortError')) }
-      const timer = setTimeout(() => { remove(); reject(new RemoteError('timeout', '请求超时，请查询发送回执；任务不会自动重发。', true)) }, 35000)
+      const timer = setTimeout(() => { remove(); reject(new RemoteError('timeout', '请求超时，请查询发送回执；任务不会自动重发。', true)) }, 300000)
       this.pending.set(id, { method, resolve, reject, timer, cleanup: () => signal?.removeEventListener('abort', abort) })
       signal?.addEventListener('abort', abort, {once:true})
-      try { this.socket!.send(data) } catch { remove(); reject(new RemoteError('not_sent', '连接已断开，请重新连接。')) }
+      void (async () => {
+        try {
+          let index = 0
+          for (const part of requestFrames(data,id)) {
+            while (socket.bufferedAmount > 4 * 1024 * 1024) {
+              if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || !this.pending.has(id)) throw new Error('disconnected')
+              await new Promise(resolve => setTimeout(resolve,10))
+            }
+            if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || !this.pending.has(id)) return
+            socket.send(part)
+            if (++index % 16 === 0) await new Promise(resolve => setTimeout(resolve,0))
+          }
+        } catch { if (this.pending.has(id)) { remove(); reject(new RemoteError('not_sent', '连接已断开，草稿保留。')) } }
+      })()
     })
   }
   async paceHistory(signal?: AbortSignal): Promise<void> {
@@ -134,10 +148,23 @@ export class RemoteConnection {
     if (this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new RemoteError('not_sent', '连接尚未就绪，请重连后处理审批。'))
     if (this.decisions.has(id)) return Promise.reject(new RemoteError('approval_pending', '此审批正在确认，请勿重复点击。'))
     return new Promise((resolve,reject) => {
-      const timer = setTimeout(() => this.finishDecision(id,new RemoteError('timeout','审批结果待确认，请刷新读取原窗口状态。',true)),35000)
+      const timer = setTimeout(() => this.finishDecision(id,new RemoteError('timeout','审批结果待确认，请刷新读取原窗口状态。',true)),300000)
       this.decisions.set(id,{resolve,reject,timer})
-      try { this.socket!.send(JSON.stringify({ type:'rpc',payload:{id,result} })) }
-      catch { this.finishDecision(id,new RemoteError('not_sent','连接已断开，请重新连接。')) }
+      const socket = this.socket!
+      void (async () => {
+        try {
+          let index = 0
+          for (const part of requestFrames(JSON.stringify({type:'rpc',payload:{id,result}}),id)) {
+            while (socket.bufferedAmount > 4 * 1024 * 1024) {
+              if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || !this.decisions.has(id)) throw new Error('disconnected')
+              await new Promise(resolve => setTimeout(resolve,10))
+            }
+            if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || !this.decisions.has(id)) return
+            socket.send(part)
+            if (++index % 16 === 0) await new Promise(resolve => setTimeout(resolve,0))
+          }
+        } catch { this.finishDecision(id,new RemoteError('not_sent','连接已断开，请重新连接。')) }
+      })()
     })
   }
   reconcileApprovals(ids: Array<string | number>): void {

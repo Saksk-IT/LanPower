@@ -174,7 +174,7 @@ public sealed class DesktopCdp : IAsyncDisposable
                 {
                     frame = await _socket.ReceiveAsync(buffer, _lifetime.Token);
                     if (frame.MessageType == WebSocketMessageType.Close) return;
-                    if (frame.MessageType != WebSocketMessageType.Text || data.Length + frame.Count > 16 * 1024 * 1024) throw new IOException("desktop_frame_too_large");
+                    if (frame.MessageType != WebSocketMessageType.Text) throw new IOException("desktop_frame_invalid");
                     data.Write(buffer, 0, frame.Count);
                 } while (!frame.EndOfMessage);
                 var message = JsonNode.Parse(data.GetBuffer().AsSpan(0, (int)data.Length)) as JsonObject ?? throw new IOException("desktop_invalid_frame");

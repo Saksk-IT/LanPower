@@ -43,7 +43,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     public JsonArray PendingApprovals => new((_runtime?.Shared == true ? _runtime.PendingApprovals
         .Where(item => item?["params"]?["threadId"]?.GetValue<string>() is { } id && _threads.ContainsKey(id)) :
         _writers.Values.SelectMany(worker => worker.Client.PendingApprovals))
-        .Take(64).Select(item => item?.DeepClone()).ToArray());
+        .Select(item => item?.DeepClone()).ToArray());
     private sealed class SessionWorker(RuntimeClient client)
     {
         public RuntimeClient Client { get; } = client;
@@ -52,7 +52,6 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
 
     private async Task<SessionWorker> CreateWorkerAsync(string cwd, CancellationToken token)
     {
-        if (_writers.Count >= 8) throw new InvalidDataException("too_many_sessions");
         var worker = new SessionWorker(new RuntimeClient(RuntimeClient.FindExecutable(settings()), cwd));
         worker.Client.Message += message =>
         {
@@ -175,9 +174,9 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                 CodexProjects.Add(projects, project.Path, project.Name, project.Id);
             var native = await _runtime!.CallAsync("project/list", new JsonObject(), token);
             if (native["result"]?["data"] is JsonArray data)
-                foreach (var item in data.OfType<JsonObject>().Take(128))
+                foreach (var item in data.OfType<JsonObject>())
                     if (item["roots"] is JsonArray roots)
-                        foreach (var root in roots.OfType<JsonObject>().Take(8))
+                        foreach (var root in roots.OfType<JsonObject>())
                             CodexProjects.Add(projects, root["path"]?.GetValue<string>(),
                                 item["name"]?.GetValue<string>(), item["id"]?.GetValue<string>());
             // Include recent projectless chats and worktrees, across the user's configured providers.
@@ -342,7 +341,6 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
                         if (!_scope.Allows(thread["cwd"]?.GetValue<string>())) continue;
                         var id = thread["id"]!.GetValue<string>(); _threads[id] = thread["cwd"]!.GetValue<string>();
                         entries[id] = (Summary(thread), archived);
-                        if (entries.Count > RemoteLibraryCatalog.MaxThreads) throw new InvalidDataException("library_catalog_too_large");
                     }
                     cursor = page["result"]?["nextCursor"]?.GetValue<string>();
                     if (cursor is not null && !seen.Add(cursor)) throw new InvalidDataException("library_cursor_changed");
@@ -442,13 +440,13 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
     {
         var loaded = await _runtime!.CallAsync("thread/loaded/list", new JsonObject(), token);
         if (loaded["result"]?["data"] is not JsonArray ids) throw new IOException("shared_runtime_unavailable");
-        _sharedThreads.Clear(); foreach (var id in ids.OfType<JsonValue>().Take(256)) _sharedThreads[id.GetValue<string>()] = 0;
+        _sharedThreads.Clear(); foreach (var id in ids.OfType<JsonValue>()) _sharedThreads[id.GetValue<string>()] = 0;
     }
 
     private async Task RefreshActiveThreadsAsync(CancellationToken token)
     {
         if (_runtime?.Shared != true) return;
-        foreach (var id in _sharedThreads.Keys.Where(_threads.ContainsKey).Take(256))
+        foreach (var id in _sharedThreads.Keys.Where(_threads.ContainsKey))
         {
             var revision = _runtime.StateRevision;
             var read = await _runtime.CallAsync("thread/read", new() { ["threadId"] = id, ["includeTurns"] = false }, token);
@@ -658,6 +656,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         if (method.StartsWith("lanpower/files/"))
         {
             var root = parameters["cwd"]!.GetValue<string>(); RequireWorkspace(root);
+            if (method == "lanpower/files/upload") return Reply(await RemoteWorkspace.UploadAsync(_scope, root, parameters["name"]!.GetValue<string>(), parameters["base64"]!.GetValue<string>(), token));
             return Reply(method switch {
                 "lanpower/files/list" => RemoteWorkspace.List(_scope, root, parameters["path"]?.GetValue<string>(), int.TryParse(parameters["cursor"]?.GetValue<string>() ?? "0", out var offset) ? offset : -1),
                 "lanpower/files/read" => RemoteWorkspace.Read(_scope,root,parameters["path"]!.GetValue<string>()),
@@ -665,7 +664,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         }
         if (method is "skills/list" or "plugin/list")
         {
-            var roots = parameters["cwd"] is { } root ? new[] { root.GetValue<string>() } : _projects.Where(p => !CodexProjects.IsChatPath(p.Path)).Take(8).Select(p => p.Path).ToArray();
+            var roots = parameters["cwd"] is { } root ? new[] { root.GetValue<string>() } : _projects.Where(p => !CodexProjects.IsChatPath(p.Path)).Select(p => p.Path).ToArray();
             foreach (var rootPath in roots) RequireWorkspace(rootPath);
             var response = await _capabilityCatalog.ReadAsync(method, roots, parameters, (nativeMethod, nativeParams, ct) => _runtime!.CallAsync(nativeMethod, nativeParams, ct), token);
             response["id"] = request["id"]!.DeepClone(); return response;
@@ -777,7 +776,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             {
                 // Loaded native chats can exist before their first turn is persisted in history.
                 if (_runtime.Shared)
-                    foreach (var id in _sharedThreads.Keys.Take(32))
+                    foreach (var id in _sharedThreads.Keys)
                     {
                         if (data.Count >= limit) break;
                         if (data.Any(item => item?["id"]?.GetValue<string>() == id)) continue;

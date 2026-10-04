@@ -7,6 +7,27 @@ namespace LanPower.CodexHost;
 
 public static class RemoteWorkspace
 {
+    public static async Task<JsonObject> UploadAsync(CodexHostSettings scope, string cwd, string name, string base64, CancellationToken token, string? stagingRoot = null)
+    {
+        if (!scope.Allows(cwd)) throw new InvalidDataException("workspace_not_allowed");
+        if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name != Path.GetFileName(name))
+            throw new InvalidDataException("invalid_file_name");
+        byte[] data;
+        try { data = Convert.FromBase64String(base64); } catch (FormatException) { throw new InvalidDataException("invalid_file_data"); }
+        var root = stagingRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanPower", "CodexAttachments");
+        Directory.CreateDirectory(root);
+        if (!CodexProjects.SafeDirectory(root)) throw new InvalidDataException("workspace_not_allowed");
+        var directory = Path.Combine(root, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, name);
+        try
+        {
+            await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.Asynchronous);
+            await file.WriteAsync(data, token);
+            return new() { ["path"] = path, ["size"] = data.Length };
+        }
+        catch { if (File.Exists(path)) File.Delete(path); throw; }
+    }
+
     public static string Resolve(CodexHostSettings scope, string cwd, string? path)
     {
         if (!scope.Allows(cwd)) throw new InvalidDataException("workspace_not_allowed");
@@ -23,20 +44,19 @@ public static class RemoteWorkspace
     public static JsonObject List(CodexHostSettings scope, string cwd, string? path, int offset)
     {
         var directory = Resolve(scope, cwd, path);
-        var rows = Directory.EnumerateFileSystemEntries(directory).Take(4001)
+        var rows = Directory.EnumerateFileSystemEntries(directory)
             .Select(entry => new FileInfo(entry)).Where(entry => (entry.Attributes & FileAttributes.ReparsePoint) == 0)
             .OrderBy(entry => (entry.Attributes & FileAttributes.Directory) == 0).ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         if (offset < 0 || offset > rows.Length) throw new InvalidDataException("invalid_cursor");
         return new() { ["path"] = Path.GetRelativePath(cwd, directory), ["branch"] = Branch(scope, cwd),
             ["data"] = new JsonArray(rows.Skip(offset).Take(100).Select(entry => (JsonNode)new JsonObject {
                 ["name"] = entry.Name, ["path"] = Path.GetRelativePath(cwd, entry.FullName), ["directory"] = (entry.Attributes & FileAttributes.Directory) != 0 }).ToArray()),
-            ["nextCursor"] = offset + 100 < rows.Length ? (offset + 100).ToString() : null, ["truncated"] = rows.Length > 4000 };
+            ["nextCursor"] = offset + 100 < rows.Length ? (offset + 100).ToString() : null, ["truncated"] = false };
     }
 
     public static JsonObject Read(CodexHostSettings scope, string cwd, string path)
     {
         var resolved = Resolve(scope, cwd, path); var info = new FileInfo(resolved);
-        if (info.Length > 1024 * 1024) return new() { ["path"] = path, ["size"] = info.Length, ["tooLarge"] = true };
         var data = File.ReadAllBytes(resolved);
         if (data.Contains((byte)0)) return new() { ["path"] = path, ["size"] = data.Length, ["binary"] = true };
         return new() { ["path"] = path, ["size"] = data.Length, ["content"] = Encoding.UTF8.GetString(data).TrimStart('\uFEFF') };
@@ -45,18 +65,17 @@ public static class RemoteWorkspace
     public static JsonObject Search(CodexHostSettings scope, string cwd, string query)
     {
         var root = Resolve(scope, cwd, ""); var pending = new Queue<(string Path, int Depth)>(); pending.Enqueue((root,0));
-        var result = new JsonArray(); var visited = 0;
-        while (pending.TryDequeue(out var directory) && visited < 5000 && result.Count < 50)
+        var result = new JsonArray();
+        while (pending.TryDequeue(out var directory))
             foreach (var path in Directory.EnumerateFileSystemEntries(directory.Path))
             {
-                if (++visited > 5000 || result.Count >= 50) break;
                 var info = new FileInfo(path); if ((info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
                 var relative = Path.GetRelativePath(root,path);
                 if ((info.Attributes & FileAttributes.Directory) != 0)
-                { if (directory.Depth < 6 && info.Name is not (".git" or "node_modules" or ".venv" or "bin" or "obj")) pending.Enqueue((path,directory.Depth+1)); }
+                { if (info.Name is not (".git" or "node_modules" or ".venv" or "bin" or "obj")) pending.Enqueue((path,directory.Depth+1)); }
                 else if (relative.Contains(query, StringComparison.OrdinalIgnoreCase)) result.Add(new JsonObject { ["path"] = relative.Replace('\\','/'), ["fsPath"] = path });
             }
-        return new() { ["data"] = result, ["truncated"] = visited >= 5000 || result.Count >= 50 || pending.Count > 0 };
+        return new() { ["data"] = result, ["truncated"] = false };
     }
 
     private static string? Branch(CodexHostSettings scope, string cwd)
@@ -72,11 +91,11 @@ public static class RemoteWorkspace
     {
         var root = Path.Combine(CodexProjects.Home,"automations"); var result = new JsonArray();
         if (!Directory.Exists(root) || (File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) return new() { ["data"] = result };
-        foreach (var folder in Directory.EnumerateDirectories(root).Take(256))
+        foreach (var folder in Directory.EnumerateDirectories(root))
         {
             if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0) continue;
             var file = Path.Combine(folder,"automation.toml");
-            if (!File.Exists(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0 || new FileInfo(file).Length > 65536) continue;
+            if (!File.Exists(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) continue;
             var text = File.ReadAllText(file);
             var match = Regex.Match(text, @"(?m)^cwds\s*=\s*(\[[^\r\n]*\])");
             JsonArray cwds; try { cwds = JsonNode.Parse(match.Groups[1].Value) as JsonArray ?? []; } catch { continue; }

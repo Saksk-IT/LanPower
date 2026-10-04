@@ -13,6 +13,18 @@ class FakeSocket {
   receive(value: unknown) { this.onmessage?.({ data: JSON.stringify(value) }) }
 }
 describe('LanPower browser relay lifecycle', () => {
+  it('streams a large approval answer losslessly and restores its numeric identifier',async () => {
+    client.connect('one'); const socket = FakeSocket.sockets[0]!
+    const text = '中文🎨'.repeat(300000), result = {answers:{question:{answers:[text]}}}
+    const decision = client.decide(123,result)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(socket.sent.length).toBeGreaterThan(16)
+    const frame = JSON.parse(socket.sent.map(part=>part.data).join(''))
+    expect(frame.payload.id).toBe(123); expect(frame.payload.result.answers.question.answers[0].length).toBe(text.length)
+    expect(socket.sent.every((part,i)=>part.type==='rpc_upload' && part.id===123 && part.index===i && part.count===socket.sent.length)).toBe(true)
+    socket.receive({type:'rpc',payload:{method:'serverRequest/resolved',params:{requestId:123}}})
+    await decision; expect(vi.getTimerCount()).toBe(0)
+  })
   it('immediately rejects a correlated validation error as definitely not sent',async () => {
     client.connect('one'); const socket = FakeSocket.sockets[0]!
     const request = client.request('turn/start',{threadId:'chat',input:[{type:'text',text:'invalid'}]})

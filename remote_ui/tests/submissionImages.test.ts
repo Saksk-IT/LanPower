@@ -1,75 +1,38 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { prepareSubmissionImages, compressImageUrl, MAX_IMAGE_URL_LENGTH, MAX_IMAGE_URLS_LENGTH } from '../src/lanpower/submissionImages'
+import { prepareSubmissionImages } from '../src/lanpower/submissionImages'
 import { prepareSubmissionInput } from '../src/lanpower/input'
+import { requestFrames } from '../src/lanpower/requestFrames'
+import { RpcFragments } from '../src/lanpower/fragments'
 
 const image = (size: number, type = 'png') => `data:image/${type};base64,${'A'.repeat(size)}`
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-function mockEncoding(encode: (type: string, quality?: number, width?: number) => string) {
-  const close = vi.fn()
-  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({width: 2000, height: 1400, close})))
-  const canvas = {width: 0, height: 0, getContext: () => ({drawImage: vi.fn()}), toDataURL: vi.fn((type, quality) => encode(type, quality, canvas.width))}
-  vi.stubGlobal('document', {createElement: () => canvas})
-  return {canvas, close}
-}
-
-describe('image submission preparation', () => {
-  it('keeps small screenshots and animations byte-identical without decoding', async () => {
-    const urls = [image(100, 'png'), image(100, 'gif'), image(100, 'webp')]
+describe('original inputs without project size/count ceilings', () => {
+  it('preserves 12 large screenshots and animated images without decoding or compression', async () => {
+    const urls = Array.from({length:12}, (_, i) => image(1500000, ['png','gif','webp'][i % 3]))
     const decode = vi.fn(); vi.stubGlobal('createImageBitmap', decode)
-    expect(await prepareSubmissionImages(urls)).toEqual(urls)
-    expect(decode).not.toHaveBeenCalled()
+    const result = await prepareSubmissionImages(urls)
+    expect(result.every((url,i) => url === urls[i])).toBe(true)
+    expect(result).not.toBe(urls); expect(decode).not.toHaveBeenCalled()
+    expect(prepareSubmissionInput({text:'中🎨'.repeat(20000),imageUrls:result,skills:Array(20).fill({name:'Skill',path:'D:/Skill'}),fileAttachments:[]})).toHaveLength(33)
   })
-
-  it('compresses the combined screenshots even when each is individually allowed', async () => {
-    const urls = [image(500000), image(500000)]
-    const {close} = mockEncoding(type => image(type === 'png' ? 500000 : 300000, type.split('/')[1]))
-    const prepared = await prepareSubmissionImages(urls)
-    expect(prepared.reduce((sum, url) => sum + url.length, 0)).toBeLessThanOrEqual(MAX_IMAGE_URLS_LENGTH)
-    expect(prepared.every(url => url.length <= MAX_IMAGE_URL_LENGTH)).toBe(true)
-    expect(prepareSubmissionInput({text: '', imageUrls: prepared, skills: [], fileAttachments: []})).toHaveLength(2)
-    expect(urls).toEqual([image(500000), image(500000)])
-    // The first compression leaves enough room to keep the second original.
-    expect(close).toHaveBeenCalledTimes(1)
-  })
-
-  it('reserves original animation bytes and leaves small pictures unchanged', async () => {
-    const urls = [image(500000, 'gif'), image(100), image(500000)]
-    const {close} = mockEncoding(type => image(type === 'png' ? 500000 : 300000, type.split('/')[1]))
-    const prepared = await prepareSubmissionImages(urls)
-    expect(prepared[0]).toBe(urls[0]); expect(prepared[1]).toBe(urls[1])
-    expect(prepared.reduce((sum, url) => sum + url.length, 0)).toBeLessThanOrEqual(MAX_IMAGE_URLS_LENGTH)
-    expect(close).toHaveBeenCalledTimes(1)
-  })
-
-  it('tries smaller dimensions when changing encoding is not sufficient', async () => {
-    const {canvas, close} = mockEncoding((type, _quality, width) => image(width! <= 1600 && type === 'image/webp' ? 200000 : 900000, type.split('/')[1]))
-    const prepared = await compressImageUrl(image(1000000), MAX_IMAGE_URL_LENGTH)
-    expect(prepared.length).toBeLessThanOrEqual(MAX_IMAGE_URL_LENGTH)
-    expect(canvas.toDataURL).toHaveBeenCalledTimes(6)
-    expect(close).toHaveBeenCalledTimes(1)
-  })
-
-  it('releases resources and preserves the source when compression cannot fit', async () => {
-    const {close, canvas} = mockEncoding(type => image(900000, type.split('/')[1]))
-    const urls = [image(500000), image(500000)]
-    await expect(prepareSubmissionImages(urls)).rejects.toThrow('请减少图片')
-    expect(urls[0]).toBe(image(500000)); expect(close).toHaveBeenCalledTimes(1)
-    expect(canvas.width).toBe(1); expect(canvas.height).toBe(1)
-  })
-
-  it('rejects excessive or malformed images before decoding', async () => {
-    const decode = vi.fn(); vi.stubGlobal('createImageBitmap', decode)
-    await expect(prepareSubmissionImages(Array(5).fill(image(1)))).rejects.toThrow('4 张图片')
+  it('continues to reject invalid image input', async () => {
     await expect(prepareSubmissionImages(['https://example.com/image.png'])).rejects.toThrow('图片格式无效')
-    expect(decode).not.toHaveBeenCalled()
   })
-
-  it('does not flatten an animated WebP to satisfy the combined budget', async () => {
-    const header = 'RIFF' + '\0'.repeat(4) + 'WEBPVP8X' + '\0'.repeat(4) + '\x02' + '\0'.repeat(27)
-    const animation = `data:image/webp;base64,${btoa(header)}${'A'.repeat(500000)}`
-    const decode = vi.fn(); vi.stubGlobal('createImageBitmap', decode)
-    await expect(prepareSubmissionImages([animation, animation])).rejects.toThrow('保留动画及原图')
-    expect(decode).not.toHaveBeenCalled()
+  it('restores a >20 MB original request and preserves Unicode across chunk boundaries', () => {
+    const raw = JSON.stringify({type:'rpc',payload:{id:'large',method:'turn/start',params:{threadId:'chat',input:[{type:'text',text:'🎨中'.repeat(30000)},{type:'image',url:image(28 * 1024 * 1024)}]}}})
+    const frames = [...requestFrames(raw,'large')].map(part => JSON.parse(part))
+    expect(frames.length).toBeGreaterThan(400)
+    expect(frames.every((frame,i) => frame.type === 'rpc_upload' && frame.index === i && frame.count === frames.length && frame.data.length <= 65536)).toBe(true)
+    expect(frames.map(frame => frame.data).join('') === raw).toBe(true)
+    expect(frames.every(frame => !/[\uD800-\uDBFF]$/u.test(frame.data) && !/^[\uDC00-\uDFFF]/u.test(frame.data))).toBe(true)
+  })
+  it('restores responses beyond the former 16 MB and 512-piece ceilings', () => {
+    const raw = JSON.stringify({id:'wire',result:{text:'中🎨'.repeat(3 * 1024 * 1024)}})
+    const size = 16000, count = Math.ceil(raw.length / size), fragments = new RpcFragments()
+    let payload: any
+    for (let i=0;i<count;i++) payload=fragments.accept({type:'rpc_chunk',id:'client',rpcId:'wire',index:i,count,data:raw.slice(i*size,(i+1)*size)})
+    expect(count).toBeGreaterThan(512)
+    expect(payload.id).toBe('client'); expect(payload.result.text.length).toBe(9 * 1024 * 1024)
   })
 })

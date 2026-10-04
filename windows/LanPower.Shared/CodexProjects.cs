@@ -22,7 +22,7 @@ public static class CodexProjects
 
     public static bool SafeDirectory(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || path.Length > 1000 || !System.IO.Path.IsPathFullyQualified(path)) return false;
+        if (string.IsNullOrWhiteSpace(path) || !System.IO.Path.IsPathFullyQualified(path)) return false;
         // Reuse the local-directory and reparse-point checks without expanding remote permissions.
         return new CodexHostSettings(true, [path], AutoDiscover: false).Allows(path);
     }
@@ -33,17 +33,17 @@ public static class CodexProjects
         try
         {
             var file = System.IO.Path.Combine(home ?? Home, ".codex-global-state.json");
-            if (!File.Exists(file) || new FileInfo(file).Length > 4 * 1024 * 1024) return projects;
+            if (!File.Exists(file)) return projects;
             var state = JsonNode.Parse(File.ReadAllText(file)) as JsonObject;
             // Only project paths/names are extracted. Authentication and unrelated desktop state are never read.
             if (state?["local-projects"] is JsonObject local)
-                foreach (var entry in local.Take(128))
+                foreach (var entry in local)
                     if (entry.Value is JsonObject item && item["rootPaths"] is JsonArray roots)
-                        foreach (var root in roots.Take(8))
+                        foreach (var root in roots)
                             Add(projects, root?.GetValue<string>(), item["name"]?.GetValue<string>(), entry.Key);
             foreach (var key in new[] { "electron-saved-workspace-roots", "saved-workspace-roots" })
                 if (state?[key] is JsonArray roots)
-                    foreach (var root in roots.Take(128)) Add(projects, root?.GetValue<string>());
+                    foreach (var root in roots) Add(projects, root?.GetValue<string>());
         }
         catch (Exception error) when (error is IOException or System.Text.Json.JsonException or
             InvalidOperationException or UnauthorizedAccessException or ArgumentException) { }
@@ -52,11 +52,11 @@ public static class CodexProjects
 
     public static void Add(List<CodexProject> projects, string? path, string? name = null, string? id = null)
     {
-        if (projects.Count >= 256 || !SafeDirectory(path)) return;
+        if (!SafeDirectory(path)) return;
         var canonical = CodexHostSettings.Canonical(path!).TrimEnd(System.IO.Path.DirectorySeparatorChar);
         var index = projects.FindIndex(project => project.Path.Equals(canonical, StringComparison.OrdinalIgnoreCase));
         var display = string.IsNullOrWhiteSpace(name) ? System.IO.Path.GetFileName(canonical) : name;
-        var project = new CodexProject(display.Length > 120 ? display[..120] : display, canonical, id);
+        var project = new CodexProject(display, canonical, id);
         if (index < 0) projects.Add(project);
         else if (id is not null) projects[index] = project;
     }

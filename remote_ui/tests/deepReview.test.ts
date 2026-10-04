@@ -17,12 +17,12 @@ describe('deep review input and public tool contracts',() => {
   it.each(['x','中','🎨'])('validates the final input at the Unicode boundary (%s)',character => {
     expect(unicodeLength(character.repeat(16000))).toBe(16000)
     expect(prepareSubmissionInput(payload(character.repeat(16000)))[0].text).toBe(character.repeat(16000))
-    expect(() => prepareSubmissionInput(payload(character.repeat(16001)))).toThrow('未发送')
+    expect(prepareSubmissionInput(payload(character.repeat(100000)))[0].text.length).toBe(character.length * 100000)
   })
-  it('includes file references and rejects combined images and too many skills before dispatch',() => {
-    expect(() => prepareSubmissionInput({...payload('x'.repeat(15990)),fileAttachments:[{label:'资料',fsPath:'D:/Work/data.txt'}]})).toThrow('未发送')
-    expect(() => prepareSubmissionInput({...payload(''),imageUrls:Array(4).fill('data:image/png;base64,'+'A'.repeat(220000))})).toThrow('可发送大小')
-    expect(() => prepareSubmissionInput({...payload(''),skills:Array(9).fill({name:'Skill',path:'D:/Skill'})})).toThrow('8 个技能')
+  it('preserves long text, file references, many images and skills while validating Unicode',() => {
+    expect(prepareSubmissionInput({...payload('x'.repeat(15990)),fileAttachments:[{label:'资料',fsPath:'D:/Work/data.txt'}]})[0].text.length).toBeGreaterThan(16000)
+    expect(prepareSubmissionInput({...payload(''),imageUrls:Array(10).fill('data:image/png;base64,'+'A'.repeat(220000))})).toHaveLength(10)
+    expect(prepareSubmissionInput({...payload(''),skills:Array(20).fill({name:'Skill',path:'D:/Skill'})})).toHaveLength(20)
     expect(() => prepareSubmissionInput(payload('\ud800'))).toThrow('无效字符')
   })
   it.each(['mcpToolCall','webSearch','dynamicToolCall','collabAgentToolCall','contextCompaction','enteredReviewMode','exitedReviewMode'])('presents public states for %s in live and restored history',type => {
@@ -64,10 +64,10 @@ describe('actual image component and bounded cache lifecycle',() => {
     expect(await uploadFile(new File(['animated'],'image',{type}))).toBe(expected)
     expect(rasterize).not.toHaveBeenCalled()
   })
-  it.each(['image/gif','image/webp'])('rejects oversize %s without silently flattening animation',async type => {
+  it.each(['image/gif','image/webp'])('preserves large %s without flattening animation',async type => {
     vi.stubGlobal('FileReader',class {result=`data:${type};base64,${'a'.repeat(700000)}`;onload?:()=>void;readAsDataURL() {this.onload?.()} })
     const rasterize = vi.fn(); vi.stubGlobal('createImageBitmap',rasterize)
-    await expect(uploadFile(new File(['animation'],'image',{type}))).rejects.toThrow('保留动画及原图')
+    expect((await uploadFile(new File(['animation'],'image',{type}))).length).toBe(`data:${type};base64,`.length + 700000)
     expect(rasterize).not.toHaveBeenCalled()
   })
   it('re-resolves an evicted thumbnail on click and pins the open original until release',async () => {

@@ -11,7 +11,6 @@ public sealed class RemoteHistoryStore
 {
     public const int MaxLocalBytes = 64 * 1024 * 1024;
     public const int InlineBytes = 512 * 1024;
-    public const int MaxReferences = 4096;
     public record Locator(string TurnId, string? ItemId, int ItemIndex, bool WholeTurn);
     private sealed class Entry(string thread, Locator locator, string fingerprint, string body, DateTimeOffset time)
     {
@@ -53,13 +52,11 @@ public sealed class RemoteHistoryStore
     private JsonObject Store(string threadId, JsonObject item, Locator source)
     {
         var body = item.ToJsonString(CodexRemoteProtocol.JsonOptions);
-        if (body.Length * 2L > MaxLocalBytes) throw new InvalidDataException("history_item_too_large");
         var fingerprint = Fingerprint(body);
         var reference = _items.FirstOrDefault(p => p.Value.Thread == threadId && p.Value.Source == source && p.Value.Fingerprint == fingerprint).Key;
         if (reference is null)
         {
             // Live reference leases are never evicted to make room for another page.
-            if (_items.Count >= MaxReferences) throw new InvalidDataException("history_cache_busy");
             reference = Guid.NewGuid().ToString("N");
             _items[reference] = new(threadId, source, fingerprint, body, _now());
             _bytes += body.Length * 2L; TrimBodies(reference);

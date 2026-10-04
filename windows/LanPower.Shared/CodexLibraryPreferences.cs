@@ -14,23 +14,22 @@ public static class CodexLibraryPreferences
 
     public static JsonObject Validate(JsonNode? value)
     {
-        if (value is not JsonObject input || Encoding.UTF8.GetByteCount(input.ToJsonString()) > 128 * 1024 ||
+        if (value is not JsonObject input ||
             input.Any(p => p.Key is not ("collapsed" or "pinned" or "hidden" or "order" or "aliases" or "sections" or "sort" or "chatsFirst")))
             throw new InvalidDataException("invalid_library");
         var result = Defaults();
         foreach (var name in new[] { "collapsed", "pinned", "hidden", "order" })
         {
             if (!input.ContainsKey(name)) continue;
-            var max = name == "pinned" ? 64 : 1024;
-            if (input[name] is not JsonArray list || list.Count > max || list.Any(v =>
-                v is not JsonValue s || !s.TryGetValue<string>(out var text) || text.Length is < 1 || text.Length > (name == "pinned" ? 100 : 1000)) ||
+            if (input[name] is not JsonArray list || list.Any(v =>
+                v is not JsonValue s || !s.TryGetValue<string>(out var text) || text.Length is < 1) ||
                 list.Select(v => v!.GetValue<string>()).Distinct().Count() != list.Count) throw new InvalidDataException("invalid_library");
             result[name] = list.DeepClone();
         }
         if (input.ContainsKey("aliases"))
         {
-            if (input["aliases"] is not JsonObject { Count: <= 1024 } aliases || aliases.Any(p => p.Key.Length is < 1 or > 1000 ||
-                p.Value is not JsonValue s || !s.TryGetValue<string>(out var name) || name.Length is < 1 or > 120)) throw new InvalidDataException("invalid_library");
+            if (input["aliases"] is not JsonObject aliases || aliases.Any(p => p.Key.Length < 1 ||
+                p.Value is not JsonValue s || !s.TryGetValue<string>(out var name) || name.Length < 1)) throw new InvalidDataException("invalid_library");
             result["aliases"] = aliases.DeepClone();
         }
         if (input.ContainsKey("sections"))

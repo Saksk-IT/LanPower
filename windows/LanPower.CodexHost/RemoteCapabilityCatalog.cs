@@ -55,8 +55,6 @@ public sealed class RemoteCapabilityCatalog
                 Row[] rows;
                 try { rows = Compact(method, result); }
                 catch (InvalidDataException failure) { return Unavailable(failure.Message); }
-                if (rows.Length > 10000 || rows.Sum(row => row.Item.ToJsonString().Length + row.Group.ToJsonString().Length) > 4 * 1024 * 1024)
-                    return Unavailable("原生能力目录超过电脑端摘要预算，请在原窗口整理后刷新。");
                 snapshot = new(Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow.AddMinutes(2), rows);
                 lock (_snapshots)
                 {
@@ -109,5 +107,5 @@ public sealed class RemoteCapabilityCatalog
         }
         return result;
     }
-    private static string Limit(string text) => text.Length <= 4000 ? text : text[..(char.IsHighSurrogate(text[3999]) ? 3999 : 4000)];
+    private static string Limit(string text) => text;
 }

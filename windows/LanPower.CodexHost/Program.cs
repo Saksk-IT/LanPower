@@ -84,7 +84,7 @@ var dirtyHistory = new System.Collections.Concurrent.ConcurrentDictionary<(strin
 void Emit(object frame)
 {
     var raw = JsonSerializer.Serialize(frame, CodexRemoteProtocol.JsonOptions);
-    if (Encoding.UTF8.GetByteCount(raw) <= CodexRemoteFrames.MaxResultBytes && output?.Writer.TryWrite(raw) != false) return;
+    if (output?.Writer.TryWrite(raw) != false) return;
     // A busy transport must not abandon a native task or lose its final content.
     var payload = JsonNode.Parse(raw)?["payload"];
     var thread = payload?["params"]?["threadId"]?.GetValue<string>();
@@ -95,8 +95,6 @@ void Emit(object frame)
 async Task EmitResultAsync(JsonObject result, string current, CancellationToken token)
 {
     var raw = JsonSerializer.Serialize(new { type = "rpc", session = current, payload = result }, CodexRemoteProtocol.JsonOptions);
-    if (Encoding.UTF8.GetByteCount(raw) > CodexRemoteFrames.MaxResultBytes)
-        raw = JsonSerializer.Serialize(new { type = "rpc", session = current, payload = new { id = result["id"], error = new { code = -32000, message = "result_too_large" } } }, CodexRemoteProtocol.JsonOptions);
     if (output is { } channel) await channel.Writer.WriteAsync(raw, token);
 }
 void State(string state)
@@ -183,17 +181,26 @@ while (!lifetime.IsCancellationRequested)
         }
         async Task Read()
         {
+            var uploads = new CodexRemoteRequests();
             while (await CodexRemoteProtocol.ReadLineAsync(reader, connected.Token) is { } raw)
             {
                 var frame = CodexRemoteProtocol.Parse(raw);
                 var kind = frame["type"]?.GetValue<string>();
                 var incoming = frame["session"]?.GetValue<string>();
                 if (!Guid.TryParseExact(incoming, "D", out _)) throw new IOException("invalid_session");
+                if (kind == "rpc_upload")
+                {
+                    if (session != incoming) continue;
+                    var complete = uploads.Accept(frame);
+                    if (complete is null) continue;
+                    frame = complete; kind = "rpc";
+                }
                 await runtimeLock.WaitAsync(connected.Token);
                 try
                 {
                     if (kind == "open" && frame.Count == 2)
                     {
+                        uploads.Clear();
                         session = incoming;
                         State("runtime_starting");
                         try
@@ -206,7 +213,7 @@ while (!lifetime.IsCancellationRequested)
                         { await runtime.DisposeAsync(); State(ReadSettings().Enabled ? "runtime_error" : "disabled"); }
                     }
                     else if (session != incoming) continue;
-                    else if (kind == "close" && frame.Count == 2) session = null;
+                    else if (kind == "close" && frame.Count == 2) { session = null; uploads.Clear(); }
                     else if (kind == "rpc" && frame.Count == 3 && frame["payload"] is JsonObject request)
                     {
                         try

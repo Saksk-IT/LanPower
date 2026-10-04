@@ -1,6 +1,6 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-Cloud / Web `1.20.2` 的网页输入框在发送和编辑时自动处理图片总量，失败保留草稿；沿用有界中继协议，说明见 [图片发送](../docs/codex-image-submission.md)。
+Cloud / Web `1.21.0` 为 Codex Remote 提供无内容总量上限的分块中继，原图不压缩；普通文件直接送达目标 Windows 用户的附件目录，Cloud 不落盘。详见 [完整输入](../docs/codex-image-submission.md)。
 
 当前 Cloud / Web `1.20.1`：Codex 网页侧边栏改为中性浅灰白，悬停、选中、文字和分隔线配套采用中性灰。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。
 

@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 LanPower Windows / Cloud / Web 1.19.0 与小程序 3.1.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
+适用于 LanPower Windows / Cloud / Web 1.21.0 与小程序 3.2.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
 
 ## 认证与连接
 
@@ -36,13 +36,17 @@
 {"type":"pong"}
 ```
 
-`hello` 来自 Agent。Cloud 给 Agent 的 `open/close/rpc` 带 session，Agent 给 Cloud 的 `state/rpc/rpc_chunk` 也带 session；Cloud 给浏览器的消息去掉 session。浏览器只发送 `rpc` 与 `ping/pong`。状态枚举为 `cloud_offline`、`host_offline`、`disabled`、`host_ready`、`runtime_starting`、`runtime_ready`、`runtime_error`。未知外层字段、重复 JSON 键、非有限数、非对象和深度超过 24 的 JSON 被拒绝。
+`hello` 来自 Agent。Cloud 给 Agent 的 `open/close/rpc/rpc_upload` 带 session，Agent 给 Cloud 的 `state/rpc/rpc_chunk` 也带 session；Cloud 给浏览器的消息去掉 session。浏览器发送 `rpc`、`rpc_upload` 与 `ping/pong`。状态枚举为 `cloud_offline`、`host_offline`、`disabled`、`host_ready`、`runtime_starting`、`runtime_ready`、`runtime_error`。未知外层字段、重复 JSON 键、非有限数、非对象和深度超过 24 的 JSON 被拒绝。
 
-### 大响应分段
+### 大请求与大响应分段
 
-单帧继续限制为 1 MiB，单个 RPC 响应上限 16 MiB。Host 将超过单帧的响应 payload JSON 按最多 65536 个 UTF-16 字符分段，保持代理对完整；`rpc_chunk` 的 `id` 对应未完成的请求，`index` 从 0 连续递增，`count` 在全部分段中一致且不超过 512。Agent 顺序转发。Cloud 仅记录下一个序号、分段总数及累计 UTF-8 字节数，不拼接正文；Cloud 下发分段时将外层 `id` 还原为页面请求 ID，附带 `rpcId` 对应正文中的唯一转发 ID；客户端验证各段 `rpcId` 一致并与正文匹配后还原页面 ID，兼容没有 `rpcId` 的旧分段。
+逻辑请求、响应和附件不设总大小或分段数量上限。传输分段最多 65536 个 UTF-16 字符，保留完整代理对；分段大小用于控制缓冲，与可上传图片/文件大小无关。
 
-Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装上限 32 MiB。乱序、重复、超限或数量变化拒绝为 `invalid_chunk`。请求超时、切换电脑、断开连接或授权失效时清理分段；不据此重发任务。超过 16 MiB 返回 `result_too_large`，不静默截断。过大的完成通知改发 `lanpower/historyChanged {threadId}`，客户端从本机历史补读。
+客户端的小请求使用 `rpc`；大请求把整个 `{type:"rpc",payload:{id,method,params}}` JSON 分成 `{type:"rpc_upload",id,index,count,data}`。Cloud 按认证页面隔离组装，检查连续序号、固定数量、重复键与正文 ID；全部到达并完成方法/参数校验后才建立请求路由。Cloud 到 Agent 的分段带认证会话 `session` 和唯一转发 ID，Service 与用户 Host 同样在完整到达后校验。部分上传绝不派发执行；丢弃断开的上传，未完成上传 5 分钟无进展自动清理。上传正文只存在 Cloud 内存，不写数据库、日志或磁盘。
+
+响应沿用 `rpc_chunk`，Cloud 仅记录进度并按顺序转发，客户端验证正文 ID 与 `rpcId` 再组装；移除旧 16 MiB 结果、512 段及 32 MiB 客户端组装上限。过大的完成通知仍通过 `lanpower/historyChanged` 补读完整历史。
+
+发送使用背压等待，客户端、Cloud、管道与 Agent 保留有限缓冲。认证、字段类型、会话绑定和协议顺序继续校验；切换电脑、断线或授权失效清理未完成数据，不自动重发任务。分页每页数量与可读取的总数量分别处理，客户端可继续读取全部分页。
 
 ## 客户端方法与参数
 
@@ -52,11 +56,12 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 | `lanpower/session/release` | `threadId`；只释放本地授权范围内的闲置远程会话 |
 | `lanpower/chat/start` | `model`；仅自动发现与共享控制启用时，在当前用户 Documents/Codex 下新建独立聊天 |
 | `lanpower/library/update` | `revision`, `preferences`；电脑端收纳状态的版本检查与原子更新 |
-| `lanpower/library/list` | `query`（最多 120 字符）, `cursor`, `limit`, `archived`, `refresh`；完整授权元数据查询，独立返回 `pinned` |
+| `lanpower/library/list` | `query`, `cursor`, `limit`, `archived`, `refresh`；完整授权元数据查询，独立返回 `pinned` |
 | `lanpower/library/check` | `threadIds`（至多 256 个编号）, `archived`；核验已缓存编号，返回仍属于该视图的 `data` |
 | `lanpower/history/action` | `threadId`, `turnId`, `expectedTailTurnId`, `action`（`fork` / `rollback`）；电脑端稳定轮次定位与操作前检查 |
 | `lanpower/files/list` | `cwd`, `path`, `cursor`；授权目录内分页浏览 |
 | `lanpower/files/read` | `cwd`, `path`；授权目录内文本预览 |
+| `lanpower/files/upload` | `cwd`, `name`, `base64`；原始文件上传至当前 Windows 用户的 LanPower 附件目录，名称不可含路径/流，新编号隔离文件，不覆盖既有文件 |
 | `lanpower/files/search` | `cwd`, `query`；授权目录内文件名/路径搜索 |
 | `lanpower/image/read` | `threadId`, `path`；当前授权会话引用的本地图片 |
 | `lanpower/automations/list` | 无；读取授权项目的本机自动化配置，不创建或调度 |
@@ -79,15 +84,15 @@ Cloud 和客户端各最多允许 4 组未完成分段；客户端累计组装�
 | `thread/queue/list` | `threadId`, `cursor`, `limit` |
 | `thread/queue/update` | `threadId`, `queuedSubmissionId`, `input`, `submissionId` |
 | `thread/queue/delete` | `threadId`, `queuedSubmissionId` |
-| `thread/queue/reorder` | `threadId`, `queuedSubmissionIds`，1–32 个不重复编号 |
+| `thread/queue/reorder` | `threadId`, `queuedSubmissionIds`，非空、不重复编号列表 |
 | `thread/queue/start` | `threadId`, `queuedSubmissionId`（必填，防止恢复后执行其他队列项） |
 | `turn/start` | `threadId`, `input`, `model`, `effort`, `mode`（`default` / `plan`）, `submissionId` |
 | `turn/interrupt` | `threadId`, `turnId` |
 | `turn/steer` | `threadId`, `expectedTurnId`, `input`, `submissionId`；必须匹配本 Runtime 的当前任务 |
 | `lanpower/submission/read` | `threadId`, `submissionId`（1–100 字符）；只读取已授权会话的本机回执 |
-| `lanpower/history/item/read` | `threadId`, `reference`（1–100 字符）, `offset`（0–64 Mi，UTF-16 字符偏移）；读取本机会话绑定的临时引用 |
+| `lanpower/history/item/read` | `threadId`, `reference`（1–100 字符）, `offset`（非负 UTF-16 字符偏移）；读取本机会话绑定的临时引用 |
 
-请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。input 最多 13 项：至多一项 `{type:"text", text:"..."}`（16000 个 Unicode 标量，包含文件引用前缀，emoji 代理对计为一个，拒绝未配对代理项）、4 项 `{type:"image", url:"data:image/...;base64,..."}`（png/jpeg/webp/gif，单项最多 700000 字符、合计最多 850000 字符），以及 8 项 `{type:"skill", name, path}`。图片 URL 为 ASCII；UTF-8 帧字节限额与 UTF-16 历史分块偏移分别计量。共享/原窗口发送技能前，Host 验证其与当前授权会话原生目录中的启用项相符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
+请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。input 为非空列表：`{type:"text",text}`、`{type:"image",url:"data:image/...;base64,..."}`（png/jpeg/webp/gif）及 `{type:"skill",name,path}`。不设文字长度、图片大小/数量、技能大小/数量上限，不压缩、不裁剪；拒绝无效 Unicode 与无效图片格式。共享/原窗口发送技能前，Host 验证其与当前授权会话原生目录中的启用项相符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
 
 Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联响应 `{id,error:{code:-32602,message:"<固定类别>",data:{notSent:true}}}`，不进入路由与电脑派发。客户端立即显示未发送并保留草稿；帧结构或编号本身无效仍使用外层错误。断线、超时和已派发请求继续沿用回执查询，不推断未执行。
 
@@ -107,9 +112,9 @@ Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联�
 
 `submissionId` 对四类发送方法为可选兼容字段；1.16 网页生成稳定编号并始终携带。Host 从原生参数中移除它，在本机先记录再派发，相同编号/参数返回原回执而不重新派发；不同会话或参数返回 `submission_mismatch`。成功结果增加 `receipt`；查询返回 `sending|accepted|failed|uncertain|unknown` 及实际可得的任务/队列编号。发送中重启转为 uncertain，只有明确拒绝可标记 failed，传输失联不推断未执行。文件仅保存元数据与哈希，不保存输入正文。
 
-大项替换为 `{type:"lanpowerLargeItem",id,originalType,reference,characters,bytes,wholeTurn}`，`wholeTurn:true` 表示完整轮次。客户端通过 `lanpower/history/item/read` 取得 `{offset,data,nextOffset,characters}`；最多 64 Ki 个 UTF-16 字符，末块 `nextOffset:null`，代理对保持完整。引用绑定 threadId，读取前重新核对授权。1.18 中 Renderer / Host 将发布引用与正文分离：正文缓存各最多 64 MiB，引用最多 4096 个，10 分钟空闲租约续期。正文被淘汰时引用保留，按原生 turn/item 重新定位并核对内容哈希；过期或变化明确返回错误。网页/小程序每项最多自动尝试三次，随后手动重试。正文不写 Cloud。
+大项替换为 `{type:"lanpowerLargeItem",id,originalType,reference,characters,bytes,wholeTurn}`，`wholeTurn:true` 表示完整轮次。客户端通过 `lanpower/history/item/read` 取得 `{offset,data,nextOffset,characters}`；每块最多 64 Ki 个 UTF-16 字符，末块 `nextOffset:null`，代理对保持完整。引用绑定 threadId，读取前重新核对授权。Renderer / Host 将发布引用与正文分离：可重读正文缓存按 64 MiB 预算淘汰，1.21.0 不再拒绝大项或限制引用数量，保留 10 分钟空闲租约续期。正文被淘汰时引用保留，按原生 turn/item 重新定位并核对内容哈希；过期或变化明确返回错误。网页/小程序每项最多自动尝试三次，随后手动重试。正文不写 Cloud。
 
-网页超限页按 8/4/2/1 缩小，在会话内自动恢复完整大项，取消后保留已完成轮次与当前块偏移，失败不重放发送。Cloud 的 1 MiB 帧、16 MiB 结果、请求限速和内存中继边界保持适用。具体测试与人工验收范围见 [P0 记录](codex-remote-p0.md) 和 [首批六项修复](codex-remote-first-six-fixes.md)。
+网页超限页按 8/4/2/1 缩小，在会话内自动恢复完整大项，取消后保留已完成轮次与当前块偏移，失败不重放发送。1.21.0 已移除内容和结果总大小拒绝，保留分块缓冲、背压与内存中继。具体测试与人工验收范围见 [P0 记录](codex-remote-p0.md) 和 [首批六项修复](codex-remote-first-six-fixes.md)。
 
 ## 1.18.0 定位操作与聊天目录
 
@@ -117,15 +122,15 @@ Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联�
 
 `lanpower/history/action` 在电脑端核对项目授权、目标轮次、原生最新尾轮和活动状态。分支使用内部 `thread/fork.lastTurnId`；回退分页读取全会话元数据后计算移除数量，执行前再读最新尾轮。历史变化返回 `history_changed`，不改变客户端阅读位置。该方法仅在共享/原窗口模式启用，不允许客户端指定原生尾部轮数。
 
-`lanpower/library/list` 返回 `{data,pinned,nextCursor,revision}`。电脑端获取活跃/归档授权元数据，总计最多 100000 条；查询覆盖标题、预览、目录、项目名称及别名。`refresh:true` 强制刷新，其他读取最多复用 5 秒快照。游标绑定快照修订号，变化返回 `library_cursor_changed`。`check` 从完整快照核对旧编号；客户端仅删除可靠确认不在视图中的条目，不用首屏缺席推断删除。归档、恢复、新会话和重命名事件触发更新，定期读取补偿遗漏。组织状态与元数据快照修订号分别维护。
+`lanpower/library/list` 返回 `{data,pinned,nextCursor,revision}`。电脑端获取活跃/归档授权元数据，不设总条数上限；查询覆盖标题、预览、目录、项目名称及别名。`refresh:true` 强制刷新，其他读取最多复用 5 秒快照。游标绑定快照修订号，变化返回 `library_cursor_changed`。`check` 从完整快照核对旧编号；客户端仅删除可靠确认不在视图中的条目，不用首屏缺席推断删除。归档、恢复、新会话和重命名事件触发更新，定期读取补偿遗漏。组织状态与元数据快照修订号分别维护。
 
 ## 1.15.1 电脑端项目组织和资源
 
-`lanpower/status.library` 为 `{revision, preferences}`。preferences 包含 `collapsed`、`pinned`、`hidden`、`order`、`aliases`、`sections`、`sort` 与 `chatsFirst`；总计最多 128 KiB，置顶最多 64 个编号，其他集合最多 1024 项，显示名最多 120 字符。更新须带已读取的 revision；冲突返回当前版本及 `conflict:true`，客户端合并后重试。Host 验证置顶会话仍在授权范围，串行写临时文件再替换 `%LOCALAPPDATA%/LanPower/codex-library.json`。该文件只保存组织元数据，不直接改写官方桌面全局状态。
+`lanpower/status.library` 为 `{revision, preferences}`。preferences 包含 `collapsed`、`pinned`、`hidden`、`order`、`aliases`、`sections`、`sort` 与 `chatsFirst`，不设集合数量、别名长度和文件总量上限。更新须带已读取的 revision；冲突返回当前版本及 `conflict:true`，客户端合并后重试。Host 验证置顶会话仍在授权范围，串行写临时文件再替换 `%LOCALAPPDATA%/LanPower/codex-library.json`。该文件只保存组织元数据，不直接改写官方桌面全局状态。
 
-文件路径须落在明确授权目录内，拒绝目录穿越、网络路径和 reparse point。目录每页 100 项、枚举最多 4001 项；文本最多 1 MiB，过大或二进制返回对应标志。文件搜索最多检查 5000 项、深度 6、返回 50 项；达到限制返回 `truncated`。只有浏览和读取，不提供文件写入或命令执行。
+文件路径须落在明确授权目录内，拒绝目录穿越、网络路径和 reparse point。目录每页 100 项，枚举总量、文件大小、搜索项数和深度不设上限；二进制文件返回对应标志。搜索跳过版本库与依赖内部目录。上传只允许新建当前用户附件，不允许覆盖任意电脑文件，不直接执行上传内容。
 
-图片最多 8 MiB，检查 png/jpeg/gif/webp/bmp 文件头，返回 `{contentType,size,base64}`。授权会话目录外的图片须来自该会话已读取的可见内容；引用索引最多 128 个会话、每会话 1024 个路径，不允许其他会话复用。网页按需读取并使用有界 object URL 缓存，切换电脑/连接时清理。
+图片不设文件大小拒绝，检查 png/jpeg/gif/webp/bmp 文件头，返回 `{contentType,size,base64}`。授权会话目录外的图片须来自该会话已读取的可见内容；引用索引按会话隔离，不允许其他会话复用。网页按需读取并使用有界 object URL 缓存，切换电脑/连接时清理。
 
 ## 1.13.1 共享执行与原生队列
 
@@ -149,7 +154,7 @@ Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联�
 
 `lanpower/status` 增加 `sessionHandoff:true` 和 `activeTurns:[{threadId,turnId}]`；旧字段保持兼容。旧 Host 缺少此能力标志时网页禁用交还按钮。
 
-Host 使用只读目录连接及最多 8 个独立会话进程；每会话按自己的活动编号校验引导/暂停。任务结束约 2–4 秒后检查加载状态、全部活动子任务、审批及后台命令，安全时释放该进程并发送 `lanpower/session/released`（`params.threadId`）。主动交还拒绝运行中任务；无法确认后台状态时不释放。其他会话不受影响。断开网页连接仍不结束运行中任务，完成后的释放检查继续进行。
+Host 使用只读目录连接及按需创建的独立会话进程，不设会话数量上限；每会话按自己的活动编号校验引导/暂停。任务结束约 2–4 秒后检查加载状态、全部活动子任务、审批及后台命令，安全时释放该进程并发送 `lanpower/session/released`（`params.threadId`）。主动交还拒绝运行中任务；无法确认后台状态时不释放。其他会话不受影响。断开网页连接仍不结束运行中任务，完成后的释放检查继续进行。
 
 Host 仅转发线程/任务状态、计划、item 开始/完成、AI/工具增量、`turn/diff/updated`、`serverRequest/resolved`、`account/rateLimits/updated` 和 Runtime `error` 通知；账号登录结果和凭据通知仍不转发。
 
@@ -157,19 +162,19 @@ Host 仅转发线程/任务状态、计划、item 开始/完成、AI/工具增�
 |---|---|
 | `item/commandExecution/requestApproval` / `item/fileChange/requestApproval` | `{decision:"accept"/"decline"/"cancel"}`，单次；额外文件目录必须已在本机授权 |
 | `item/permissions/requestApproval` | 拒绝，或仅批准原请求中的网络权限，`scope:"turn"`；不接受文件系统范围 |
-| `item/tool/requestUserInput` | `{answers:{<question-id>:{answers:["..."]}}}`，有数量和文字长度限制 |
+| `item/tool/requestUserInput` | `{answers:{<question-id>:{answers:["..."]}}}`，不设回答数量与文字长度上限 |
 | `mcpServer/elicitation/request` | `{action:"decline"/"cancel", content:null}`；接受需在本机处理 |
 
-审批 ID 必须对应当前待审批集合，提交中的 ID 不能重复发送。Host 再检查决定与待审批原请求，Runtime 确认后清除；Host 拒绝时恢复可操作状态。独立模式未处理请求 5 分钟后拒绝。不存在永久批准、远端登录、任意配置写入、插件安装、任意文件 RPC 或 `command/exec`；文件与图片只开放上文受授权检查的读取方法。
+审批 ID 必须对应当前待审批集合，提交中的 ID 不能重复发送。Host 再检查决定与待审批原请求，Runtime 确认后清除；Host 拒绝时恢复可操作状态。独立模式未处理请求 5 分钟后拒绝。不存在永久批准、远端登录、任意配置写入、插件安装、任意文件 RPC 或 `command/exec`；文件与图片开放上文受授权检查的读取和附件上传，不允许任意文件覆盖。
 
 ## 限额、断线与数据
 
 - 帧大小 1 MiB，JSON 深度 24；Relay 队列最多 32 帧且累计不超过 8 MiB，Agent 出站队列 16 帧、Host 8 个有界本地响应。服务端发送超时 10 秒。分段发送等待队列容量，避免大历史将所有分段一次性塞入 Cloud 内存。
-- 待响应/审批各最多 64；浏览器最多 120 请求/10 秒。Runtime RPC 等待 30 秒、浏览器 35 秒，Relay 待请求超过 120 秒关闭。
+- 待响应/审批不设数量上限；每个页面最多 120 次逻辑请求/10 秒，上传分块不重复计入。Runtime RPC 沿用原生调用超时；网页/小程序和 Relay 在途请求等待 5 分钟，不以消息字数拒绝请求。
 - 30 秒无消息时 Ping，90 秒无响应时关闭；不使用任务耗时判定 Runtime 失败。浏览器退避 1–30 秒、Agent 2–60 秒重连，均不重发任务。
 - Agent 将中继 `error` 帧作为当前连接失败处理；协议拒绝、无效数据与非停机的连接取消进入重试。Host 管道在拒绝无效消息后重新监听，不让远程开发连接异常终止整个 Windows 电源服务。
-- 固定错误码包括 `invalid_frame`、`invalid_chunk`、`method_not_allowed`、`params_not_allowed`、`invalid_decision`、`approval_unavailable`、`request_busy`、`agent_offline`、`remote_backpressure`、`remote_revoked`、`rate_limited`。Host 拒绝返回 `-32000` 与固定类别 `request_rejected/desktop_session_busy/task_running/workspace_not_allowed/turn_changed/approval_unavailable/too_many_sessions/background_running/session_release_unavailable/result_too_large`，不暴露本机异常文本。本机 Runtime 接收上限为 16 MiB，超出 Relay 单帧的响应经分段传输。
+- 固定错误码包括 `invalid_frame`、`invalid_chunk`、`method_not_allowed`、`params_not_allowed`、`invalid_decision`、`approval_unavailable`、`request_busy`、`agent_offline`、`remote_backpressure`、`remote_revoked`、`rate_limited`。Host 拒绝返回 `-32000` 与固定类别 `request_rejected/desktop_session_busy/task_running/workspace_not_allowed/turn_changed/approval_unavailable/too_many_sessions/background_running/session_release_unavailable/result_too_large`，不暴露本机异常文本。本机 Runtime 收发和代理不设置原先的消息字节拒绝，大响应经分段传输。
 - Cloud 仅内存转发，审计记录固定事件类别、账户/设备编号与时间，不保存正文。浏览器内存和本机 Runtime 保存当前任务/历史，项目组织存于本机用户目录，PWA 不缓存会话内容。TLS 在 Cloud 终止，当前不是端到端加密。
 - 部署保持一个 worker/副本，重启丢弃路由与队列。任务是否继续以本机 Host/Runtime 为准，重连后读取状态和 Thread；不能根据超时自动重新执行。
 
-同一共享会话最多保留 64 个在途普通请求和 64 个待审批，待审批正文总量限制为 8 MiB，只保存在内存中。单个页面队列溢出只断开该页面，不撤销其他页面或电脑 Agent。
+同一共享会话的在途请求和待审批正文只保存在内存中，不设上述数量及总量拒绝。单个页面队列溢出只断开该页面，不撤销其他页面或电脑 Agent。

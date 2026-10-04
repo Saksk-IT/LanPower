@@ -5,11 +5,11 @@ from cloud_app.tests.test_codex_remote import remote, connected, browser
 
 
 @pytest.mark.parametrize("character", ["x", "中", "🎨"])
-def test_input_limits_count_unicode_scalars(character):
+def test_long_input_keeps_unicode_validation(character):
     def request(text):
         return {"id": "send", "method": "turn/start", "params": {"threadId": "chat", "input": [{"type": "text", "text": text}]}}
     assert validate_request(request(character * 16000)) == "turn/start"
-    with pytest.raises(ProtocolError): validate_request(request(character * 16001))
+    assert validate_request(request(character * 100000)) == "turn/start"
     with pytest.raises(ProtocolError): validate_request(request("\ud800"))
 
 
@@ -21,7 +21,7 @@ def test_validation_rejection_is_correlated_and_does_not_touch_another_page(remo
             second.send_json({"type": "rpc", "payload": {"id": 1, "method": "lanpower/status", "params": {}}})
             routed = up.receive_json()
             first.send_json({"type": "rpc", "payload": {"id": 1, "method": "turn/start", "params": {
-                "threadId": "chat", "input": [{"type": "text", "text": "x" * 16001}]}}})
+                    "threadId": "chat", "input": [{"type": "text", "text": None}]}}})
             rejected = first.receive_json()
             assert rejected["type"] == "rpc" and rejected["payload"]["id"] == 1
             assert rejected["payload"]["error"] == {"code": -32602, "message": "invalid_params", "data": {"notSent": True}}
@@ -41,9 +41,9 @@ def test_targeted_history_and_metadata_methods_keep_strict_fields():
     with pytest.raises(ProtocolError): check("lanpower/library/list", {"refresh": "true"})
 
 
-def test_combined_images_and_33_queue_entries_are_rejected():
+def test_many_original_images_and_large_queue_can_be_submitted():
     payload = {"id": "send", "method": "turn/start", "params": {"threadId": "chat", "input": [
-        {"type": "image", "url": "data:image/png;base64," + "A" * 220000} for _ in range(4)]}}
-    with pytest.raises(ProtocolError): validate_request(payload)
+        {"type": "image", "url": "data:image/png;base64," + "A" * 220000} for _ in range(10)]}}
+    assert validate_request(payload)
     payload = {"id": "sort", "method": "thread/queue/reorder", "params": {"threadId": "chat", "queuedSubmissionIds": [str(i) for i in range(33)]}}
-    with pytest.raises(ProtocolError): validate_request(payload)
+    assert validate_request(payload)
