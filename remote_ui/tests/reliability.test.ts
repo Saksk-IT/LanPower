@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { StateClock } from '../src/lanpower/state'
 import { newSettings, observeSettings, effectiveSettings, validEfforts } from '../src/lanpower/settings'
-import { readPage, exportHistory, newExport, downloadItem, newDownload, findBeginning, newBeginning } from '../src/lanpower/history'
+import { readPage, HistoryContentReader, refreshHistoryTurn, findBeginning, newBeginning } from '../src/lanpower/history'
 import { RemoteError, type RemoteConnection } from '../src/lanpower/connection'
 
 describe('P0 state and parameter recovery', () => {
@@ -31,29 +31,52 @@ describe('P0 complete bounded history reads', () => {
     const client = {request:async (_:string,p:any) => { limits.push(p.limit); if (p.limit > 1) throw new RemoteError('result_too_large','large'); return {data:[{id:'only'}]} }} as RemoteConnection
     expect((await readPage(client,'thread')).data[0].id).toBe('only'); expect(limits).toEqual([8,4,2,1])
   })
-  it('continues Unicode item download after failure without gaps or duplicated bytes', async () => {
-    const body = JSON.stringify({text:'中文🎨'.repeat(20000)}), state = newDownload(); let failed = false
+  it('restores complete Unicode content in place after interruption without gaps or duplicates', async () => {
+    const original = {id:'reply',type:'agentMessage',text:'中文🎨'.repeat(20000)}
+    const body = JSON.stringify(original), reader = new HistoryContentReader('thread'); let failed = false
+    const item = {id:'reply',type:'lanpowerLargeItem',originalType:'agentMessage',reference:'ref',characters:body.length}
     const client = {request:async (_:string,p:any) => {
       if (p.offset > 0 && !failed) { failed = true; throw new Error('offline') }
       let end = Math.min(body.length,p.offset+1024); if (end < body.length && /[\uD800-\uDBFF]/.test(body[end-1])) end--
       return {data:body.slice(p.offset,end),offset:p.offset,nextOffset:end<body.length ? end : null,characters:body.length}
     }} as RemoteConnection
-    await expect(downloadItem(client,'thread','ref',state)).rejects.toThrow('offline')
-    expect(await (await downloadItem(client,'thread','ref',state)).text()).toBe(body)
+    await expect(reader.read(client,item)).rejects.toThrow('offline')
+    await reader.read(client,item)
+    const turns = reader.apply([{id:'turn',items:[item,{id:'next',type:'agentMessage',text:'后续回复'}]}])
+    expect(turns[0].items[0]).toEqual({...original,lanpowerContentReference:'ref'})
+    expect(turns[0].items[1].text).toBe('后续回复')
+    await reader.read(client,item); expect(reader.apply(turns)).toBe(turns)
   })
-  it('exports 180 turns with a large-item substitution and retries an interrupted page', async () => {
+  it('restores an entire turn at its original position while retaining newer status', async () => {
     const turns = Array.from({length:180},(_,i)=>({id:'turn-'+i,items:[{id:'item-'+i,type:'agentMessage',text:'内容🎨'+i}]}))
-    const whole = JSON.stringify(turns[175]); const pages:number[] = []; let fail = true
+    const whole = JSON.stringify(turns[175]); let fail = true
     const client = {request:async (method:string,p:any) => {
       if (method === 'lanpower/history/item/read') { if (fail) {fail=false;throw new Error('offline')}; return {data:whole,offset:0,nextOffset:null,characters:whole.length} }
-      const offset = Number(p.cursor || 0); pages.push(offset)
-      const data:any[] = turns.slice(Math.max(0,180-offset-p.limit),180-offset).reverse().map(turn => turn.id === 'turn-175' ? {...turn,items:[{type:'lanpowerLargeItem',reference:'large',wholeTurn:true}]} : turn)
-      return {data,nextCursor:offset+p.limit<180?String(offset+p.limit):null}
+      throw new Error('unexpected request')
     }} as RemoteConnection
-    const job = newExport({id:'thread',turns:[],cwd:'target'})
-    await expect(exportHistory(client,'thread',job)).rejects.toThrow('offline')
-    const result = JSON.parse(await (await exportHistory(client,'thread',job)).text())
-    expect(result.turns).toEqual(turns); expect(job.ids.size).toBe(180); expect(pages.slice(0,2)).toEqual([0,8])
+    const reader = new HistoryContentReader('thread')
+    const item = {id:'turn-175',type:'lanpowerLargeItem',reference:'large',wholeTurn:true,characters:whole.length}
+    const packed = turns.map(turn => turn.id === 'turn-175' ? {...turn,status:'completed',items:[item]} : turn)
+    await expect(reader.read(client,item)).rejects.toThrow('offline')
+    await reader.read(client,item)
+    const result = reader.apply(packed)
+    expect(result).toHaveLength(180); expect(result[175].items).toEqual(turns[175]!.items)
+    expect(result[175].status).toBe('completed'); expect(result[174]).toBe(turns[174]); expect(result[176]).toBe(turns[176])
+  })
+  it('cancels a late chunk and rejects content from another item', async () => {
+    const body = JSON.stringify({id:'other',type:'agentMessage',text:'wrong'}), controller = new AbortController()
+    const reader = new HistoryContentReader('thread'), item = {id:'reply',originalType:'agentMessage',reference:'ref',characters:body.length}
+    const client = {request:async () => {controller.abort();return {offset:0,data:body,nextOffset:null,characters:body.length}}} as RemoteConnection
+    await expect(reader.read(client,item,controller.signal)).rejects.toThrow()
+    const other = {request:async () => ({offset:0,data:body,nextOffset:null,characters:body.length})} as RemoteConnection
+    await expect(reader.read(other,item)).rejects.toThrow('会话内容不匹配')
+    expect(reader.apply([{id:'turn',items:[item]}])[0].items[0]).toBe(item)
+  })
+  it('renews an expired older-turn reference through native pagination', async () => {
+    const calls:string[] = []
+    const client = {request:async (_:string,p:any) => {calls.push(p.cursor || 'latest');return p.cursor ? {data:[{id:'older',items:[]}],nextCursor:null} : {data:[{id:'newer'}],nextCursor:'page-2'}}} as RemoteConnection
+    expect((await refreshHistoryTurn(client,'thread','older')).id).toBe('older')
+    expect(calls).toEqual(['latest','page-2'])
   })
   it('locates the beginning while retaining only the last page and cursors', async () => {
     const state = newBeginning()

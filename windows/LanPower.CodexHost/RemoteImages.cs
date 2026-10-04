@@ -25,7 +25,7 @@ public sealed class RemoteImages
             else if (value is JsonArray array) { foreach (var item in array) Visit(item, key); }
             else if (value is JsonValue scalar && scalar.TryGetValue<string>(out var text))
             {
-                if (key is "url" or "path" or "image_path" or "imagePath" or "image_url" or "imageUrl" or "localImage") Add(text);
+                if (key is "url" or "path" or "image_path" or "imagePath" or "image_url" or "imageUrl" or "localImage" or "savedPath") Add(text);
                 if (key is "text" or "message" or "output")
                     foreach (Match match in MarkdownImage.Matches(text)) Add(match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value);
             }

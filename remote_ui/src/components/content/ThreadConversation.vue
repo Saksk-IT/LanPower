@@ -28,9 +28,17 @@
         :data-message-type="message.messageType || ''"
         :data-message-id="message.id"
       >
-        <div v-if="message.activitySummary" class="message-row" data-role="system">
+        <div v-if="message.historyContent" class="message-row lp-history-content" data-role="system" role="status">
+          <span>{{ message.historyContent.error || `正在读取完整内容… ${Math.floor(message.historyContent.loaded / message.historyContent.characters * 100)}%` }}</span>
+          <button v-if="message.historyContent.error" type="button" @click="emit('retryHistoryContent',message.historyContent.reference)">重新读取</button>
+        </div>
+        <div v-else-if="message.activitySummary" class="message-row" data-role="system">
           <ThreadActivitySummary :summary="message.activitySummary" @toggle="togglePresentation('activity', message.activitySummary!.id, $event)" />
         </div>
+        <details v-else-if="message.messageType === 'toolResult'" class="message-row lp-tool-result" data-role="system">
+          <summary>{{ message.text }} · 查看详情</summary>
+          <pre>{{ message.rawPayload }}</pre>
+        </details>
         <div v-else-if="isCommandMessage(message)" class="message-row" data-role="system">
           <ThreadCommand :execution="message.commandExecution!" />
         </div>
@@ -899,6 +907,7 @@ const emit = defineEmits<{
   rollback: [payload: { turnId: string }]
   respondServerRequest: [payload: { id: number; result?: unknown; error?: { code?: number; message: string } }]
   openFile: [path: string]
+  retryHistoryContent: [reference: string]
 }>()
 
 const localizedLiveActivityLabel = computed(() => (

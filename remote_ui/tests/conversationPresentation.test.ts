@@ -13,6 +13,20 @@ function normalize(items: unknown[], status = 'completed', timing = {}, id = 'tu
 }
 
 describe('conversation process folding', () => {
+  it('retains public search and unfamiliar tool records with their complete result', () => {
+    const source = normalize([{id:'search',type:'webSearch',action:{query:'完整结果'}},
+      {id:'tool',type:'futureTool',result:'工具结果末尾',encryptedContent:'private'},final])
+    expect(source.find(message => message.id === 'search')?.rawPayload).toContain('完整结果')
+    expect(source.find(message => message.id === 'tool')?.rawPayload).toContain('工具结果末尾')
+    expect(source.find(message => message.id === 'tool')?.rawPayload).not.toContain('private')
+  })
+  it('keeps automatic content loading and retry visible beside a completed final answer', () => {
+    const source = normalize([user,command(),{id:'picture',type:'lanpowerLargeItem',reference:'ref',characters:1000,historyError:'正在重试'},final])
+    const result = presentConversation(source)
+    expect(result.messages.find(message => message.id === 'picture')?.historyContent).toMatchObject({reference:'ref',error:'正在重试'})
+    expect(result.messages.find(message => message.id === 'final')?.text).toBe('已完成')
+    expect(result.processMessageIds.has('picture')).toBe(false)
+  })
   it('preserves desktop phase, turn status and actual duration through normalization', () => {
     expect(normalize([final], 'completed', {durationMs: 65000})[1]).toMatchObject({agentPhase: 'final_answer', turnStatus: 'completed', turnDurationMs: 65000})
   })

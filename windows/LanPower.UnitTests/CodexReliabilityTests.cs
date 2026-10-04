@@ -53,7 +53,7 @@ public sealed class CodexReliabilityTests
     }
 
     [TestMethod]
-    public void SingleItemBeyondRelayLimitHasCompleteUnicodeDownloadAndThreadIsolation()
+    public void SingleItemBeyondRelayLimitHasCompleteUnicodeReadAndThreadIsolation()
     {
         var text = "开始🎨" + new string('x',17 * 1024 * 1024) + "结尾";
         var item = new JsonObject { ["id"] = "large", ["type"] = "agentMessage", ["text"] = text };
@@ -66,6 +66,24 @@ public sealed class CodexReliabilityTests
         var parts = new System.Text.StringBuilder(); var offset = 0;
         do { var part = store.Read("thread",reference,offset); parts.Append(part["data"]!.GetValue<string>()); if (part["nextOffset"] is null) break; offset = part["nextOffset"]!.GetValue<int>(); } while (true);
         Assert.AreEqual(text,JsonNode.Parse(parts.ToString())!["text"]!.GetValue<string>());
+        Assert.AreEqual(reference,store.Pack("thread",turns)[0]!["items"]![0]!["reference"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public void LargeImagesKeepSmallRepliesVisibleAndStableAcrossRefresh()
+    {
+        var items = new JsonArray();
+        for (var i = 0; i < 3; i++) items.Add(new JsonObject { ["id"] = "image-" + i, ["type"] = "imageGeneration", ["result"] = new string('x',1500000) });
+        items.Add(new JsonObject { ["id"] = "final", ["type"] = "agentMessage", ["text"] = "我建议采用 A 的主界面" });
+        var turns = new JsonArray(new JsonObject { ["id"] = "design", ["items"] = items });
+        var store = new RemoteHistoryStore(); var first = store.Pack("thread",turns); var next = store.Pack("thread",turns);
+        Assert.AreEqual(4,first[0]!["items"]!.AsArray().Count);
+        Assert.AreEqual("我建议采用 A 的主界面",first[0]!["items"]![3]!["text"]!.GetValue<string>());
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.IsFalse(first[0]!["items"]![i]!["wholeTurn"]!.GetValue<bool>());
+            Assert.AreEqual(first[0]!["items"]![i]!["reference"]!.GetValue<string>(),next[0]!["items"]![i]!["reference"]!.GetValue<string>());
+        }
     }
 
     [TestMethod]

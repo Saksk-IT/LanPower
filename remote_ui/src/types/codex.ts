@@ -214,6 +214,7 @@ export type UiMessage = {
   fileChanges?: UiFileChange[]
   fileChangeStatus?: UiFileChangeStatus
   messageType?: string
+  historyContent?: { reference: string; loaded: number; characters: number; error: string }
   rawPayload?: string
   isUnhandled?: boolean
   commandExecution?: CommandExecutionData

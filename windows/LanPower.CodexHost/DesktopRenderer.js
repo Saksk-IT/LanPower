@@ -65,14 +65,32 @@
       for (const [key, entry] of historyItems) {
         if (Date.now() - entry.time > 600000) { historyCharacters -= entry.body.length; historyItems.delete(key); }
       }
+      const imagePaths = new Set();
+      const addPath = value => { if (typeof value === 'string' && imagePaths.size < 1024 && /^(?:[A-Za-z]:[\\/]|\/|file:)/i.test(value)) imagePaths.add(value); };
+      const observeImages = (value, key) => {
+        if (Array.isArray(value)) { for (const part of value) observeImages(part,key); }
+        else if (value && typeof value === 'object') { for (const [name,part] of Object.entries(value)) observeImages(part,name); }
+        else if (typeof value === 'string') {
+          if (['url','path','image_path','imagePath','image_url','imageUrl','localImage','savedPath'].includes(key)) addPath(value);
+          if (['text','message','output'].includes(key)) {
+            for (const match of value.matchAll(/!\[[^\]]*\]\((?:<([^>]+)>|([^\r\n)]+))\)/g)) addPath(match[1] || match[2]);
+          }
+        }
+      };
+      observeImages(item);
+      const descriptor = reference => ({ id: item.id, type: 'lanpowerLargeItem', originalType: wholeTurn ? 'turn' : item.type,
+        reference, characters: body.length, bytes: new TextEncoder().encode(body).length, wholeTurn,
+        ...(imagePaths.size ? {imageReferences:Array.from(imagePaths,path => ({path}))} : {}) });
+      for (const [reference, entry] of historyItems) {
+        if (entry.threadId === threadId && entry.body === body) { entry.time = Date.now(); return descriptor(reference); }
+      }
       while ((historyCharacters + body.length) * 2 > 64 * 1024 * 1024 && historyItems.size) {
         const key = historyItems.keys().next().value;
         historyCharacters -= historyItems.get(key).body.length; historyItems.delete(key);
       }
       const reference = 'native-' + (++sequence) + '-' + Math.random().toString(36).slice(2);
       historyItems.set(reference, { threadId, body, time: Date.now() }); historyCharacters += body.length;
-      return { id: item.id, type: 'lanpowerLargeItem', originalType: wholeTurn ? 'turn' : item.type,
-        reference, characters: body.length, bytes: new TextEncoder().encode(body).length, wholeTurn };
+      return descriptor(reference);
     };
     const publicTurn = turn => ({ ...turn, items: (turn.items || []).map(item => {
       if (item.type !== 'reasoning') return item;
@@ -80,9 +98,10 @@
     }) });
     const packTurn = (threadId, turn) => {
       const visible = publicTurn(turn);
-      if (JSON.stringify(visible).length > 2 * 1024 * 1024)
+      const packed = { ...visible, items: visible.items.map(item => JSON.stringify(item).length > 128 * 1024 ? storeHistory(threadId, item) : item) };
+      if (JSON.stringify(packed).length > 2 * 1024 * 1024)
         return { ...visible, items: [storeHistory(threadId, visible, true)] };
-      return { ...visible, items: visible.items.map(item => JSON.stringify(item).length > 128 * 1024 ? storeHistory(threadId, item) : item) };
+      return packed;
     };
     const emit = (kind, payload) => {
       if (disposed) return;

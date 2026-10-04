@@ -1,6 +1,6 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.16.0`，Codex Remote 增加严格校验的发送回执查询和历史分块读取，网页完成 P0 五项可靠性优化，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。本轮 Codex 相关 41 项测试通过。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+当前源码版本：Cloud `1.16.1`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。本轮 Codex 相关 41 项测试通过。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
 小程序 `2.1.0` 的首次使用及界面截图见 [第一版说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
 

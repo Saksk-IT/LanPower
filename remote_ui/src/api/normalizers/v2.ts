@@ -404,6 +404,11 @@ export function toUiFileChanges(changes: unknown): UiFileChange[] {
 }
 
 function toUiMessages(item: ThreadItem): UiMessage[] {
+  if ((item as any).type === 'lanpowerLargeItem') {
+    const raw = item as any
+    return [{id:raw.id,role:'system',text:'',messageType:'historyContent',
+      historyContent:{reference:raw.reference,loaded:raw.historyLoaded || 0,characters:raw.characters,error:raw.historyError || ''}}]
+  }
   if (item.type === 'agentMessage') {
     // New desktop versions expose the phase; older protocol snapshots omit it.
     const phase = (item as typeof item & { phase?: unknown }).phase
@@ -446,7 +451,9 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   }
 
   if (item.type === 'imageView') {
-    return []
+    const raw = item as unknown as Record<string,unknown>
+    const source = [raw.path,raw.url,raw.imagePath,raw.image_url].find(value => typeof value === 'string' && value.trim())
+    return typeof source === 'string' ? [{id:item.id,role:'assistant',text:'',images:[source],messageType:'imageView'}] : []
   }
 
   {
@@ -507,7 +514,7 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
     const fileChanges = toUiFileChanges(item.changes)
     const fileChangeStatus = normalizeFileChangeStatus(item.status)
     if (fileChanges.length === 0 || fileChangeStatus !== 'completed') {
-      return []
+      return [{id:item.id,role:'system',text:'文件修改记录',messageType:'toolResult',rawPayload:toRawPayload(item)}]
     }
     return [
       {
@@ -521,7 +528,13 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
     ]
   }
 
-  return []
+  const raw = item as unknown as Record<string,unknown>
+  // Context compaction contains internal context, rather than a public tool result.
+  if (raw.type === 'contextCompaction') return [{id:item.id,role:'system',text:'会话上下文已整理',messageType:'contextCompaction'}]
+  const labels: Record<string,string> = {webSearch:'搜索了网页',mcpToolCall:'调用了工具',dynamicToolCall:'调用了工具',collabAgentToolCall:'协作任务'}
+  const text = labels[String(raw.type)] || '会话记录'
+  const publicPayload = JSON.stringify(item,(key,value) => ['encryptedContent','encrypted_content'].includes(key) ? undefined : value,2)
+  return [{id:item.id,role:'system',text,messageType:'toolResult',rawPayload:publicPayload}]
 }
 
 function normalizeCommandStatus(value: unknown): CommandExecutionData['status'] {

@@ -54,7 +54,7 @@
             <button role="menuitem" @click="projectAction('new')">新建聊天</button><button role="menuitem" @click="projectAction('files')">浏览项目文件</button><button role="menuitem" @click="renameProject">重命名显示名称</button><button role="menuitem" @click="moveProject(-1)">向上移动</button><button role="menuitem" @click="moveProject(1)">向下移动</button><hr /><button role="menuitem" @click="hideProject">收纳项目</button>
           </template>
           <template v-else>
-            <button role="menuitem" @click="pinThread">{{ preferences.pinned.includes(menu.id) ? '取消置顶' : '置顶聊天' }}</button><button role="menuitem" @click="threadAction('rename')">重命名</button><button role="menuitem" @click="threadAction('fork')">分支聊天</button><button role="menuitem" @click="threadAction('export')">导出完整聊天</button><hr /><button role="menuitem" @click="threadAction(archived ? 'unarchive' : 'archive')">{{ archived ? '恢复聊天' : '归档聊天' }}</button>
+            <button role="menuitem" @click="pinThread">{{ preferences.pinned.includes(menu.id) ? '取消置顶' : '置顶聊天' }}</button><button role="menuitem" @click="threadAction('rename')">重命名</button><button role="menuitem" @click="threadAction('fork')">分支聊天</button><hr /><button role="menuitem" @click="threadAction(archived ? 'unarchive' : 'archive')">{{ archived ? '恢复聊天' : '归档聊天' }}</button>
           </template>
         </div>
       </div>

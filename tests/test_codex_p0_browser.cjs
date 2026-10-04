@@ -8,8 +8,8 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
   const calls = [], errors = [], root = 'D:/Projects/P0', receipts = new Map();
   const state = {revision:1,active:{},approvals:[],queue:[],loseReceipt:false,model:'gpt-6.1-sol'};
   const history = Array.from({length:180},(_,i)=>({id:'turn-'+i,status:'completed',items:[{id:'user-'+i,type:'userMessage',content:[{type:'text',text:'用户 '+i}]},{id:'answer-'+i,type:'agentMessage',text:i===0?'P0 最早回复':'完整回复 '+i,phase:'final_answer'}]}));
-  const huge = JSON.stringify({id:'huge-item',type:'agentMessage',text:'开始🎨'+ 'x'.repeat(17*1048576)+'末尾'});
-  history[178].items.push({id:'huge-item',type:'lanpowerLargeItem',reference:'huge',characters:huge.length,bytes:Buffer.byteLength(huge),wholeTurn:false});
+  const huge = JSON.stringify({id:'huge-item',type:'commandExecution',command:'fixture-long-command',status:'completed',aggregatedOutput:'开始🎨'+ 'x'.repeat(17*1048576)+'末尾',exitCode:0});
+  history[178].items.push({id:'huge-item',type:'lanpowerLargeItem',reference:'huge',originalType:'commandExecution',characters:huge.length,bytes:Buffer.byteLength(huge),wholeTurn:false});
   const thread = id => ({id,name:id==='one'?'P0 会话一':'P0 会话二',cwd:root,control:'shared',model:id==='one'?state.model:'gpt-6.1-sol',reasoningEffort:'high',collaborationMode:{mode:'default'},status:{type:state.active[id]?'active':'idle'},turns:(id==='one'?history.slice(-8):[]).concat(state.active[id]?[{id:state.active[id],status:'inProgress',items:[]}]:[]),historyCursor:id==='one'?'8':null,lanpowerRevision:state.revision});
   let holdRead = false, heldRead = null, releaseRead;
   async function rpc(request) {
@@ -99,12 +99,15 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.equal(calls.find(c=>c.method==='turn/interrupt').params.turnId,'accepted-turn');
     await page.getByRole('button',{name:'跳至对话开头',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.conversation-root')?.textContent.includes('P0 最早回复'));
     assert.ok(calls.some(c=>c.method==='thread/turns/list'&&c.params.limit===2));
-    const downloadPromise=page.waitForEvent('download',{timeout:90000});await page.getByRole('button',{name:'导出完整会话',exact:true}).click();
-    await page.getByRole('button',{name:'取消读取',exact:true}).click();await page.getByRole('button',{name:'继续读取',exact:true}).click();
-    const download=await downloadPromise,exported=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
-    assert.equal(exported.turns.length,180);assert.equal(JSON.stringify(exported.turns[178].items.at(-1)),huge);
+    assert.equal(await page.getByRole('button',{name:'导出完整会话',exact:true}).count(),0);
+    await page.getByRole('button',{name:'返回最新消息',exact:true}).click();
+    await page.locator('[data-message-id="answer-179"]').waitFor();
+    await page.waitForFunction(()=>document.querySelectorAll('.lp-history-content').length===0,null,{timeout:90000});
+    await page.locator('[data-message-id="worked:turn-178"] .turn-process-toggle').click();
+    await page.locator('.native-activity-toggle').last().click();await page.locator('.native-command-toggle').last().click();
+    assert.equal(await page.locator('.native-command-output').last().textContent(),JSON.parse(huge).aggregatedOutput);
     assert.deepEqual(errors,[]);
     const output=path.resolve(__dirname,'../private/codex-remote-p0/browser');fs.mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,'p0-complete.png'),animations:'disabled'});
-    console.log(JSON.stringify({draftAndImageIsolation:true,nativeSettingsPreserveChoice:true,staleEventsAndSnapshots:true,lostReceiptQueriedWithoutReplay:true,approvalOnce:true,queueRecovery:true,stopCorrectTurn:true,adaptiveHistory180:true,singleItemOver16MiB:true,exportCancelContinue:true,browserErrors:0}));
+    console.log(JSON.stringify({draftAndImageIsolation:true,nativeSettingsPreserveChoice:true,staleEventsAndSnapshots:true,lostReceiptQueriedWithoutReplay:true,approvalOnce:true,queueRecovery:true,stopCorrectTurn:true,adaptiveHistory180:true,singleItemOver16MiB:true,automaticContentRestored:true,browserErrors:0}));
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});

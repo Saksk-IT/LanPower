@@ -23,7 +23,7 @@ public sealed class RemoteHistoryStore
                     items[i] = Store(threadId, item);
             if (Encoding.UTF8.GetByteCount(turn.ToJsonString(CodexRemoteProtocol.JsonOptions)) > 8 * 1024 * 1024)
             {
-                // A very large turn made of many small items also needs a complete download.
+                // A turn made of many small items is restored automatically in chunks.
                 var original = turns.OfType<JsonObject>().First(t => t["id"]?.GetValue<string>() == turn["id"]?.GetValue<string>());
                 turn["items"] = new JsonArray(Store(threadId, RemoteHistory.VisibleTurns(new JsonArray(original.DeepClone()))[0]!.AsObject(), true));
             }
@@ -37,9 +37,15 @@ public sealed class RemoteHistoryStore
         var size = body.Length * 2L;
         if (size > MaxLocalBytes) throw new InvalidDataException("history_item_too_large");
         foreach (var key in _items.Where(p => DateTimeOffset.UtcNow - p.Value.Time > TimeSpan.FromMinutes(10)).Select(p => p.Key).ToArray()) Drop(key);
-        while (_bytes + size > MaxLocalBytes && _items.Count > 0) Drop(_items.Keys.First());
-        var reference = Guid.NewGuid().ToString("N");
-        _items[reference] = (threadId, body, DateTimeOffset.UtcNow); _bytes += size;
+        var reference = _items.FirstOrDefault(p => p.Value.Thread == threadId && p.Value.Body == body).Key;
+        if (reference is not null)
+            _items[reference] = (threadId, body, DateTimeOffset.UtcNow);
+        else
+        {
+            while (_bytes + size > MaxLocalBytes && _items.Count > 0) Drop(_items.Keys.First());
+            reference = Guid.NewGuid().ToString("N");
+            _items[reference] = (threadId, body, DateTimeOffset.UtcNow); _bytes += size;
+        }
         return new() { ["id"] = item["id"]?.DeepClone(), ["type"] = "lanpowerLargeItem", ["originalType"] = wholeTurn ? "turn" : item["type"]?.DeepClone(),
             ["reference"] = reference, ["characters"] = body.Length, ["bytes"] = Encoding.UTF8.GetByteCount(body), ["wholeTurn"] = wholeTurn };
     }

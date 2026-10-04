@@ -26,7 +26,7 @@ function fixture() {
   return { context, manager, conversation, events, replies, listeners, emit, attach }
 }
 describe('original desktop renderer integration', () => {
-  it('downloads a native turn above 16 MiB without a large CDP frame or private reasoning', async () => {
+  it('reads native content above 16 MiB without hiding other items or relaying private reasoning', async () => {
     const f = fixture(), expected = '开始🎨' + 'x'.repeat(17 * 1024 * 1024) + '结尾'
     ;(f.manager as any).sendRequest = async () => ({data:[{id:'huge-turn',items:[{id:'large',type:'agentMessage',text:expected},{id:'private',type:'reasoning',content:['secret'],encryptedContent:'secret',summary:['public']}]}],nextCursor:null})
     const a = await f.attach('adapterA','eventA')
@@ -35,8 +35,29 @@ describe('original desktop renderer integration', () => {
     const item = page.data[0].items[0], chunks:string[] = []; let offset: number | null = 0
     do { const result = await a.rpc('codex-web/local/history/item/read',{threadId:'chat',reference:item.reference,offset});chunks.push(result.data);offset=result.nextOffset } while (offset !== null)
     const original = JSON.parse(chunks.join(''))
-    expect(original.items[0].text).toBe(expected); expect(original.items[1]).toEqual({id:'private',type:'reasoning',summary:['public']})
+    expect(original.text).toBe(expected); expect(page.data[0].items[1]).toEqual({id:'private',type:'reasoning',summary:['public']})
+    expect(item.wholeTurn).toBe(false)
+    const repeated = await a.rpc('codex-web/local/history/page',{threadId:'chat',limit:1})
+    expect(repeated.data[0].items[0].reference).toBe(item.reference)
     await expect(a.rpc('codex-web/local/history/item/read',{threadId:'other',reference:item.reference,offset:0})).rejects.toThrow('history_reference_expired')
+    a.dispose()
+  })
+  it('keeps a short final reply visible when three generated images exceed the turn threshold', async () => {
+    const f = fixture(), images = Array.from({length:3},(_,i) => ({id:'image-'+i,type:'imageGeneration',result:'x'.repeat(1500000)}))
+    const final = {id:'answer',type:'agentMessage',text:'我建议采用 A 的主界面',phase:'final_answer'}
+    ;(f.manager as any).sendRequest = async () => ({data:[{id:'design',items:[...images,final]}],nextCursor:null})
+    const a = await f.attach('adapterA','eventA'), page = await a.rpc('codex-web/local/history/page',{threadId:'chat',limit:1})
+    expect(page.data[0].items.at(-1)).toEqual(final)
+    expect(page.data[0].items.filter((item:any) => item.type === 'lanpowerLargeItem')).toHaveLength(3)
+    expect(page.data[0].items.every((item:any) => !item.wholeTurn)).toBe(true)
+    a.dispose()
+  })
+  it('retains referenced images when many small items require whole-turn chunking', async () => {
+    const f = fixture(), items = Array.from({length:50},(_,i) => ({id:'part-'+i,type:'agentMessage',text:'x'.repeat(48000)}))
+    items.push({id:'final',type:'agentMessage',text:'![图片](<D:/Images/from-original.png>)'})
+    ;(f.manager as any).sendRequest = async () => ({data:[{id:'many',items}],nextCursor:null})
+    const a = await f.attach('adapterA','eventA'), page = await a.rpc('codex-web/local/history/page',{threadId:'chat',limit:1})
+    expect(page.data[0].items[0]).toMatchObject({wholeTurn:true,imageReferences:[{path:'D:/Images/from-original.png'}]})
     a.dispose()
   })
   it('removes an approval resolved in the native cache without a notification', async () => {

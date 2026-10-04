@@ -18,7 +18,7 @@ const errors: Record<string, string> = {
   submission_mismatch: '提交标识与原请求不一致，请查询发送回执。',
   submission_store_unavailable: '电脑端发送回执暂不可用，请检查本机状态。',
   submission_store_full: '电脑端有过多待确认提交，请先确认发送结果。',
-  history_reference_expired: '超大内容引用已过期，请刷新这轮历史后重新下载。',
+  history_reference_expired: '内容引用已过期，正在重新读取对应历史。',
   history_item_too_large: '此内容超过电脑端临时缓存上限，请在原窗口取回。',
   controller_busy: '另一页面正在控制此电脑，请关闭该页面后重连。',
   remote_revoked: '开发权限已变化，请重新确认授权。',

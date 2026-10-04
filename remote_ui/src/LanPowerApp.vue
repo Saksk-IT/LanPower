@@ -8,14 +8,13 @@
       </LanPowerThreadTree>
     </aside>
     <main v-show="view === 'chat'" class="lp-conversation">
-      <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表"><IconTablerLayoutSidebar /></button><button v-if="sidebarCollapsed" class="lp-expand lp-icon-button" @click="sidebarCollapsed = false" aria-label="展开侧栏"><IconTablerLayoutSidebar /></button><div><h1>{{ currentTitle }}</h1></div><button v-if="currentCwd" class="lp-header-pill" @click="openFiles(currentCwd)" aria-label="浏览项目文件"><IconTablerFolder /><span>{{ projectName(currentCwd) }}</span></button><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button :disabled="loadingAllHistory" @click="jumpToBeginning">跳至对话开头</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button><button :disabled="loadingAllHistory" @click="exportChat">导出完整会话</button></div></details></header>
+      <header class="lp-chat-header"><button class="lp-back" @click="chatOpen = false" aria-label="返回会话列表"><IconTablerLayoutSidebar /></button><button v-if="sidebarCollapsed" class="lp-expand lp-icon-button" @click="sidebarCollapsed = false" aria-label="展开侧栏"><IconTablerLayoutSidebar /></button><div><h1>{{ currentTitle }}</h1></div><button v-if="currentCwd" class="lp-header-pill" @click="openFiles(currentCwd)" aria-label="浏览项目文件"><IconTablerFolder /><span>{{ projectName(currentCwd) }}</span></button><details v-if="threadId" class="lp-actions"><summary aria-label="会话操作">•••</summary><div><button @click="refreshCurrent">刷新会话</button><button :disabled="loadingAllHistory" @click="jumpToBeginning">跳至对话开头</button><button @click="renameThread">重命名</button><button @click="forkThread()">分支会话</button><button @click="archiveThread">归档</button></div></details></header>
       <div class="lp-chat-status" role="status"><span>{{ stateLabel }}</span><span>{{ taskLabel }}</span><span>{{ syncLabel }}</span><span>{{ desktopControl ? '原 Codex 窗口' : sharedControl ? '备用共享窗口' : '本机 Codex' }}</span></div>
       <p v-if="feedback" class="lp-feedback" role="status">{{ feedback }}<button @click="feedback = ''" aria-label="关闭提示">×</button></p>
       <template v-if="threadId">
         <p v-if="historyProgress" class="lp-history-progress" role="status">{{ historyProgress }} <button v-if="loadingAllHistory" @click="cancelHistory">取消读取</button><button v-else-if="historyResume" :disabled="!ready" @click="resumeHistory">继续读取</button></p>
         <p v-if="beginningIndex >= 0" class="lp-history-progress">正在阅读对话开头 <button :disabled="loadingEarlier || beginningIndex === 0" @click="loadLater">读取后续消息</button><button :disabled="!ready" @click="returnLatest">返回最新消息</button></p>
-        <p v-for="item in largeItems" :key="item.reference" class="lp-large-item">超大内容 · {{ (item.bytes / 1048576).toFixed(1) }} MB <button :disabled="!ready || loadingAllHistory" @click="downloadLarge(item)">完整下载{{ item.wholeTurn ? '这一轮' : '内容' }}</button></p>
-        <ThreadConversation ref="conversation" :messages="messages" :pending-requests="selectedApprovals" :live-overlay="liveOverlay" :is-loading="loadingChat" :active-thread-id="threadId" :cwd="currentCwd" :has-more-persisted-above="Boolean(historyCursor)" :is-loading-persisted-above="loadingEarlier" :load-earlier-messages="loadEarlier" :allow-file-actions="false" @fork-thread="forkThread($event.turnIndex)" @rollback="rollback($event.turnId)" @respond-server-request="respondApproval" @open-file="openFiles(currentCwd,$event)" />
+        <ThreadConversation ref="conversation" :messages="messages" :pending-requests="selectedApprovals" :live-overlay="liveOverlay" :is-loading="loadingChat" :active-thread-id="threadId" :cwd="currentCwd" :has-more-persisted-above="Boolean(historyCursor)" :is-loading-persisted-above="loadingEarlier" :load-earlier-messages="loadEarlier" :allow-file-actions="false" @fork-thread="forkThread($event.turnIndex)" @rollback="rollback($event.turnId)" @respond-server-request="respondApproval" @open-file="openFiles(currentCwd,$event)" @retry-history-content="retryContent" />
         <div class="lp-compose-area">
           <p v-if="editingQueue" class="lp-edit-queue">正在修改排队消息 <button @click="cancelQueueEdit">取消</button></p>
           <QueuedMessages :messages="queueRows" :disabled="!canControl || busy" @edit="editQueue" @delete="deleteQueue" @steer="startQueue" @reorder="reorderQueue" />
@@ -35,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import ThreadConversation from './components/content/ThreadConversation.vue'
 import ThreadComposer, { type ComposerDraftPayload, type SubmitPayload, type ThreadComposerExposed } from './components/content/ThreadComposer.vue'
 import QueuedMessages from './components/content/QueuedMessages.vue'
@@ -47,7 +46,7 @@ import IconTablerLayoutSidebar from './components/icons/IconTablerLayoutSidebar.
 import IconTablerFolder from './components/icons/IconTablerFolder.vue'
 import RemoteFeaturePage from './components/content/RemoteFeaturePage.vue'
 import RemoteFilesPanel from './components/content/RemoteFilesPanel.vue'
-import { mergeHistory, readPage, readThread, newExport, exportHistory, newBeginning, findBeginning, newDownload, downloadItem, type ExportJob, type BeginningJob, type LargeDownload } from './lanpower/history'
+import { mergeHistory, readPage, readThread, newBeginning, findBeginning, HistoryContentReader, refreshHistoryTurn, type BeginningJob } from './lanpower/history'
 import { newSettings, observeSettings, effectiveSettings, modelId, validEfforts, type ModelCapability, type ThreadSettings, type SendSettings } from './lanpower/settings'
 import { StateClock } from './lanpower/state'
 import { reasoningSummary, timestampMs } from './lanpower/turnPresentation'
@@ -75,8 +74,13 @@ const nativeModels = ref<ModelCapability[]>([]), settingsVersion = ref(0), unsup
 const clock = new StateClock(), settingsByThread = new Map<string,ThreadSettings>(), drafts = new Map<string,ComposerDraftPayload>(), queueEdits = new Map<string,string>()
 type Receipt = {submissionId:string;method:string;payload:SubmitPayload;settings:SendSettings;state:'sending'|'accepted'|'failed'|'uncertain';turnId?:string;message?:string}
 const receipts = new Map<string,Receipt>(), receiptVersion = ref(0), queryingReceipt = ref(false), receiptsSupported = ref(false)
-const historyProgress = ref(''), historyResume = ref<'beginning'|'export'|'item'|''>(''), beginningIndex = ref(-1)
-let historyAbort: AbortController | null = null, beginningJob: BeginningJob | null = null, exportJob: ExportJob | null = null, largeJob: {item:any;job:LargeDownload} | null = null
+const historyProgress = ref(''), historyResume = ref<'beginning'|''>(''), beginningIndex = ref(-1)
+let historyAbort: AbortController | null = null, beginningJob: BeginningJob | null = null
+const contentState = shallowRef<Record<string,{loaded:number;error:string}>>({})
+let contentReader: HistoryContentReader | null = null, contentAbort: AbortController | null = null
+let contentRun = 0, restoringContent = false, contentRetry: ReturnType<typeof setTimeout> | undefined, contentRetryDelay = 2000
+function pauseContent(): void { contentRun++; contentAbort?.abort(); contentAbort = null; restoringContent = false; clearTimeout(contentRetry) }
+function resetContent(): void { pauseContent(); contentReader = null; contentState.value = {}; contentRetryDelay = 2000 }
 function sessionKey(id = threadId.value): string { return `${deviceId.value}:${id}` }
 function threadSettings(): ThreadSettings { const key = sessionKey(); if (!settingsByThread.has(key)) settingsByThread.set(key,newSettings()); return settingsByThread.get(key)! }
 function displaySettings(): void { const options = effectiveSettings(threadSettings()); selectedModel.value = options.model; selectedEffort.value = options.effort; selectedMode.value = options.mode; settingsVersion.value++ }
@@ -93,10 +97,9 @@ const sendBlocked = computed(() => { receiptVersion.value; return ['sending','un
 const receiptLabel = computed(() => { receiptVersion.value; return {sending:'发送中，正在等待电脑回执。',accepted:'原窗口已接受。',failed:'发送失败，输入已恢复。',uncertain:'发送结果待确认，请先查询回执或查阅原窗口；禁止直接重复发送。'}[sendReceipt.value?.state || 'accepted'] })
 const taskLabel = computed(() => !ready.value ? '任务状态待恢复' : selectedApprovals.value.length ? '等待审批或回复' : activeTurn.value ? '正在工作' : '当前无运行任务')
 const syncLabel = computed(() => !threadId.value ? '' : !ready.value ? `历史缓存${lastSync.value ? ' · 上次同步 ' + new Date(lastSync.value).toLocaleTimeString('zh-CN') : ''}` : recovering.value || loadingChat.value ? '正在恢复原窗口状态' : syncFailed.value ? '最近同步失败 · 显示历史缓存' : lastSync.value ? '最近同步 ' + new Date(lastSync.value).toLocaleTimeString('zh-CN') : '尚未同步')
-const largeItems = computed<any[]>(() => (current.value?.turns || []).flatMap((t:any) => (t.items || []).filter((i:any) => i.type === 'lanpowerLargeItem')))
 function saveDraft(): void { if (threadId.value && composer.value) { const key = sessionKey(); drafts.set(key,composer.value.getDraft()); if (editingQueue.value) queueEdits.set(key,editingQueue.value); else queueEdits.delete(key) } }
 async function hydrateSavedDraft(): Promise<void> { const key = sessionKey(), s = selection; await nextTick(); if (key === sessionKey() && s === selection) { editingQueue.value = queueEdits.get(key) || ''; composer.value?.hydrateDraft(drafts.get(key) || {text:'',imageUrls:[],skills:[],fileAttachments:[]}) } }
-function resetHistory(): void { historyAbort?.abort(); historyAbort = null; historyProgress.value = ''; historyResume.value = ''; loadingAllHistory.value = false; beginningIndex.value = -1; beginningJob = null; exportJob = null; largeJob = null }
+function resetHistory(): void { historyAbort?.abort(); historyAbort = null; historyProgress.value = ''; historyResume.value = ''; loadingAllHistory.value = false; beginningIndex.value = -1; beginningJob = null; resetContent() }
 const activeTurns = ref<Record<string, string>>({}), approvals = ref<UiServerRequest[]>([])
 const queue = ref<any[]>([]), editingQueue = ref(''), composer = ref<ThreadComposerExposed | null>(null)
 const loadingChat = ref(false), loadingLibrary = ref(false), loadingEarlier = ref(false), busy = ref(false), interrupting = ref(false)
@@ -135,7 +138,9 @@ const currentTitle = computed(() => current.value?.name || current.value?.previe
 const currentCwd = computed(() => current.value?.cwd || '')
 const messages = computed(() => current.value ? normalizeThreadMessagesV2({ thread: {...current.value,turns:(current.value.turns || []).map((turn:any) => {
   const timing = turnTimings.get(timingKey(current.value.id,turn.id))
-  return timing ? {...turn,startedAt:turn.startedAt ?? timing.startedAt,completedAt:turn.completedAt ?? timing.completedAt} : turn
+  return {...turn,...(timing ? {startedAt:turn.startedAt ?? timing.startedAt,completedAt:turn.completedAt ?? timing.completedAt} : {}),
+    items:(turn.items || []).map((item:any) => item.type === 'lanpowerLargeItem' ? {...item,
+      historyLoaded:contentState.value[item.reference]?.loaded || 0,historyError:contentState.value[item.reference]?.error || ''} : item)}
 })} } as any) : [])
 const selectedApprovals = computed(() => approvals.value.filter(a => a.threadId === threadId.value))
 const liveOverlay = computed<UiLiveOverlay | null>(() => {
@@ -166,7 +171,7 @@ function addApproval(event: RpcEvent): void {
 }
 function onState(value: string): void {
   const wasReady = ready.value; state.value = value
-  if (!ready.value) { epoch++; busy.value = false; syncing = false; recovering.value = false; loadingLibrary.value = false; loadingChat.value = false; loadingEarlier.value = false; interrupting.value = false; historyAbort?.abort(); libraryDraft = null; resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }; clock.clear() }
+  if (!ready.value) { epoch++; busy.value = false; syncing = false; recovering.value = false; loadingLibrary.value = false; loadingChat.value = false; loadingEarlier.value = false; interrupting.value = false; historyAbort?.abort(); libraryDraft = null; if (value === 'revoked' || value === 'disabled') resetRemoteImages(); resetApprovals(); queue.value = []; overlay.value = { activityLabel: '', activityDetails: [], reasoningText: '', errorText: '' }; clock.clear() }
   else if (!wasReady) void restore()
 }
 async function restore(): Promise<void> {
@@ -431,26 +436,66 @@ async function archiveThread(): Promise<void> {
   if (!canControl.value || activeTurn.value || !confirm('归档当前会话？')) return
   try { await connection.request('thread/archive', { threadId: threadId.value }); threads.value = threads.value.filter(t => t.id !== threadId.value); threadId.value = ''; current.value = null; chatOpen.value = false; syncUrl(); await loadThreads() } catch (error) { showError(error) }
 }
-async function exportChat(): Promise<void> {
-  if (!ready.value || !current.value || loadingAllHistory.value) return
-  const key = sessionKey(); exportJob ||= newExport(current.value)
-  historyAbort = new AbortController(); const controller = historyAbort; loadingAllHistory.value = true; historyResume.value = 'export'
-  try { const blob = await exportHistory(connection,threadId.value,exportJob,controller.signal,count => { historyProgress.value = `正在导出完整对话，已处理 ${count} 轮…` }); if (key === sessionKey()) { downloadBlob(blob,'codex-conversation.json'); historyProgress.value = `完整对话已导出，共 ${exportJob.turns.length} 轮。`; historyResume.value = ''; exportJob = null } }
-  catch (error) { if (key === sessionKey()) historyError(error) }
-  finally { if (key === sessionKey()) loadingAllHistory.value = false }
-}
-function downloadBlob(blob: Blob, filename: string): void { const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url),1000) }
 function cancelHistory(): void { historyAbort?.abort() }
 function historyError(error: unknown): void { historyProgress.value = error instanceof DOMException && error.name === 'AbortError' ? '读取已取消，可继续。' : `读取中断，可继续：${error instanceof Error ? error.message : '连接未完成'}` }
-function resumeHistory(): void { if (historyResume.value === 'export') void exportChat(); else if (historyResume.value === 'beginning') void jumpToBeginning(); else if (largeJob) void downloadLarge(largeJob.item) }
-async function downloadLarge(item:any): Promise<void> {
-  if (!ready.value || loadingAllHistory.value) return
-  const key = sessionKey(); if (largeJob?.item.reference !== item.reference) largeJob = {item,job:newDownload()}
-  historyAbort = new AbortController(); loadingAllHistory.value = true; historyResume.value = 'item'
-  try { const blob = await downloadItem(connection,threadId.value,item.reference,largeJob!.job,historyAbort.signal,count => { historyProgress.value = `正在读取超大内容，${Math.floor(count / item.characters * 100)}%…` }); if (key === sessionKey()) { downloadBlob(blob,'codex-content.json'); historyProgress.value = '超大内容已完整下载。'; historyResume.value = ''; largeJob = null } }
-  catch (error) { if (key === sessionKey()) historyError(error) }
-  finally { if (key === sessionKey()) loadingAllHistory.value = false }
+function resumeHistory(): void { if (historyResume.value === 'beginning') void jumpToBeginning() }
+function retryContent(reference?: string): void {
+  clearTimeout(contentRetry)
+  const next = {...contentState.value}
+  for (const key of Object.keys(next)) if (!reference || key === reference) next[key] = {...next[key]!,error:''}
+  contentState.value = next; void restoreContent()
 }
+async function restoreContent(): Promise<void> {
+  if (!ready.value || !current.value || current.value.id !== threadId.value || restoringContent || loadingAllHistory.value) return
+  const run = contentRun, id = threadId.value, s = selection
+  contentReader ||= new HistoryContentReader(id)
+  const reader = contentReader, controller = contentAbort ||= new AbortController()
+  const valid = () => run === contentRun && s === selection && ready.value && current.value?.id === id
+  restoringContent = true
+  try {
+    while (valid()) {
+      const restored = reader.apply(current.value.turns || [])
+      if (restored !== current.value.turns) current.value = {...current.value,turns:restored}
+      reader.prune(restored)
+      const pending = restored.flatMap((turn:any) => (turn.items || []).filter((item:any) =>
+        item.type === 'lanpowerLargeItem' && !contentState.value[item.reference]?.error).map((item:any) => ({turnId:turn.id,item})))
+      // Restore visible replies and pictures before long command output.
+      pending.sort((a:any,b:any) => Number(b.item.wholeTurn || ['agentMessage','userMessage','imageGeneration','image_generation'].includes(b.item.originalType))
+        - Number(a.item.wholeTurn || ['agentMessage','userMessage','imageGeneration','image_generation'].includes(a.item.originalType)))
+      const target = pending[0]; if (!target) break
+      const {item,turnId} = target
+      try {
+        await reader.read(connection,item,controller.signal,loaded => {
+          if (valid()) contentState.value = {...contentState.value,[item.reference]:{loaded,error:''}}
+        })
+        contentRetryDelay = 2000
+      } catch (error) {
+        if (!valid() || controller.signal.aborted) return
+        if (error instanceof RemoteError && error.code === 'history_reference_expired') {
+          reader.forget(item.reference)
+          try {
+            const turn = await refreshHistoryTurn(connection,id,turnId,controller.signal)
+            if (!valid()) return
+            current.value = {...current.value,turns:current.value.turns.map((value:any) => value.id === turnId ? turn : value)}
+            continue
+          } catch { if (!valid() || controller.signal.aborted) return }
+        } else if (!(error instanceof RemoteError)) reader.forget(item.reference)
+        contentState.value = {...contentState.value,[item.reference]:{loaded:contentState.value[item.reference]?.loaded || 0,error:'内容读取中断，正在自动重试。'}}
+      }
+    }
+  } finally {
+    if (run === contentRun) {
+      restoringContent = false
+      const references = new Set((current.value?.turns || []).flatMap((turn:any) => (turn.items || []).filter((item:any) => item.type === 'lanpowerLargeItem').map((item:any) => item.reference)))
+      contentState.value = Object.fromEntries(Object.entries(contentState.value).filter(([reference]) => references.has(reference)))
+      if (ready.value && Object.values(contentState.value).some(value => value.error)) {
+        contentRetry = setTimeout(() => retryContent(),contentRetryDelay); contentRetryDelay = Math.min(30000,contentRetryDelay * 2)
+      }
+    }
+  }
+}
+watch([current,loadingAllHistory],() => { void restoreContent() })
+watch(ready,value => { if (!value) pauseContent(); else retryContent() })
 function onEvent(event: RpcEvent): void {
   const p = event.params || {}, id = p.threadId || p.thread?.id
   if (id && !clock.event(id,p.lanpowerRevision)) return
@@ -570,9 +615,10 @@ function openNewThread(cwd?: string): void { if (cwd) { view.value = 'chat'; voi
 async function createFromDialog(): Promise<void> { await newThread(projectCwd.value); if (threadId.value) { newThreadDialog.value = false; view.value = 'chat' } }
 async function newChat(): Promise<void> { if (!ready.value || busy.value || !chatSupported.value) return; busy.value = true; try { const result = await connection.request('lanpower/chat/start',selectedModel.value ? {model:selectedModel.value} : {}); busy.value = false; view.value = 'chat'; await loadThreads(); await selectThread(result.thread.id) } catch(error) { showError(error) } finally { busy.value = false } }
 async function toggleArchived(): Promise<void> { if (loadingLibrary.value) return; archivedView.value = !archivedView.value; listCursor.value = ''; threads.value = []; await loadThreads() }
-async function sidebarThreadAction(action: string, id: string): Promise<void> { if (id !== threadId.value) await openThread(id); if (threadId.value !== id || loadingChat.value) return; if (action === 'rename') await renameThread(); else if (action === 'fork') await forkThread(); else if (action === 'export') await exportChat(); else if (action === 'archive') await archiveThread(); else if (action === 'unarchive') { try { await connection.request('thread/unarchive',{threadId:id}); await toggleArchived() } catch(error) { showError(error) } } }
+async function sidebarThreadAction(action: string, id: string): Promise<void> { if (id !== threadId.value) await openThread(id); if (threadId.value !== id || loadingChat.value) return; if (action === 'rename') await renameThread(); else if (action === 'fork') await forkThread(); else if (action === 'archive') await archiveThread(); else if (action === 'unarchive') { try { await connection.request('thread/unarchive',{threadId:id}); await toggleArchived() } catch(error) { showError(error) } } }
 async function jumpToBeginning(): Promise<void> {
   if (!ready.value || !threadId.value || loadingAllHistory.value || loadingEarlier.value) return
+  pauseContent()
   const key = sessionKey(); beginningJob ||= newBeginning(); historyAbort = new AbortController(); loadingAllHistory.value = true; historyResume.value = 'beginning'
   try {
     const page = await findBeginning(connection,threadId.value,beginningJob,historyAbort.signal,count => { historyProgress.value = `正在定位对话开头，已检查 ${count} 轮…` })
@@ -589,7 +635,12 @@ async function loadLater(): Promise<void> {
   catch (error) { if (key === sessionKey()) showError(error) }
   finally { if (key === sessionKey()) loadingEarlier.value = false }
 }
-async function returnLatest(): Promise<void> { resetHistory(); await refreshCurrent(); conversation.value?.jumpToLatest() }
+async function returnLatest(): Promise<void> {
+  resetHistory()
+  if (current.value) current.value = {...current.value,turns:[]}
+  historyCursor.value = ''
+  await refreshCurrent(); conversation.value?.jumpToLatest()
+}
 async function loadSkills(cwd: string, e = epoch, s = selection): Promise<void> { skills.value = []; if (!sharedControl.value || !cwd) return; try { const result = await connection.request('skills/list',{cwd}); if (e === epoch && s === selection) skills.value = [...new Map((result.data || []).flatMap((entry:any) => entry.skills || []).filter((skill:any) => skill.enabled !== false).map((skill:any) => [skill.path,skill])).values()] as any[] } catch {} }
 function openFiles(cwd: string, path = ''): void { filePath.value = path; filesCwd.value = cwd }
 async function attachProjectFile(path: string): Promise<void> { if (!threadId.value || !canControl.value) { feedback.value = '请先打开此项目的聊天，再添加文件。'; return }; view.value = 'chat'; chatOpen.value = true; await nextTick(); composer.value?.addProjectFile(path); filesCwd.value = '' }
@@ -603,5 +654,5 @@ onMounted(() => {
   polling = setInterval(() => { if (document.visibilityState === 'visible') { void updatePower(); void refreshCurrent(); void refreshStatus(); void loadThreads(); void queryReceipt() } }, 30000)
 })
 function restoreVisible(): void { if (document.visibilityState !== 'visible') return; if (ready.value) { void refreshCurrent(); void refreshStatus(); void queryReceipt() } else if (deviceId.value && state.value !== 'controller_busy' && state.value !== 'revoked') reconnect() }
-onBeforeUnmount(() => { document.removeEventListener('visibilitychange',restoreVisible); historyAbort?.abort(); drafts.clear(); queueEdits.clear(); settingsByThread.clear(); receipts.clear(); clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
+onBeforeUnmount(() => { document.removeEventListener('visibilitychange',restoreVisible); historyAbort?.abort(); resetContent(); drafts.clear(); queueEdits.clear(); settingsByThread.clear(); receipts.clear(); clearInterval(polling); clearTimeout(libraryTimer); clearTimeout(reconcileTimer); cancelAnimationFrame(streamFrame); resetRemoteImages(); connection.stop() })
 </script>

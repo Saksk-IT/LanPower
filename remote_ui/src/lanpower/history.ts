@@ -22,56 +22,79 @@ export async function readThread(client: RemoteConnection, threadId: string): Pr
   }
 }
 
-export type LargeDownload = { offset: number; parts: Blob[]; complete: boolean; characters?: number }
-export const newDownload = (): LargeDownload => ({offset:0,parts:[],complete:false})
-export async function downloadItem(client: RemoteConnection, threadId: string, reference: string, job: LargeDownload, signal?: AbortSignal, progress: (count:number)=>void = () => {}): Promise<Blob> {
-  while (!job.complete) {
-    await client.paceHistory?.(signal)
-    const part = await client.request('lanpower/history/item/read',{threadId,reference,offset:job.offset},signal)
-    if (part.offset !== job.offset || typeof part.data !== 'string' || !part.data.length || !Number.isSafeInteger(part.characters) || part.characters < job.offset + part.data.length ||
-      job.characters !== undefined && job.characters !== part.characters || part.nextOffset !== null && part.nextOffset !== job.offset + part.data.length ||
-      part.nextOffset === null && job.offset + part.data.length !== part.characters) throw new Error('内容分块不连续，请重新读取这轮历史。')
-    job.characters = part.characters
-    job.parts.push(new Blob([part.data])); job.offset += part.data.length; job.complete = part.nextOffset === null
-    progress(job.offset)
+type ContentRead = { offset: number; parts: string[]; characters?: number; complete: boolean; value?: any }
+
+// One selected conversation only. Chunking is a transport detail, never a file download.
+export class HistoryContentReader {
+  private reads = new Map<string,ContentRead>()
+  constructor(private threadId: string) {}
+
+  async read(client: RemoteConnection, item: any, signal?: AbortSignal, progress: (count:number)=>void = () => {}): Promise<void> {
+    let job = this.reads.get(item.reference)
+    if (!job) { job = {offset:0,parts:[],complete:false}; this.reads.set(item.reference,job) }
+    while (!job.complete) {
+      await client.paceHistory?.(signal)
+      signal?.throwIfAborted()
+      const part = await client.request('lanpower/history/item/read',{threadId:this.threadId,reference:item.reference,offset:job.offset},signal)
+      signal?.throwIfAborted()
+      if (part.offset !== job.offset || typeof part.data !== 'string' || !part.data.length || part.data.length > 65536 ||
+        !Number.isSafeInteger(part.characters) || part.characters !== item.characters || part.characters < job.offset + part.data.length ||
+        job.characters !== undefined && job.characters !== part.characters || part.nextOffset !== null && part.nextOffset !== job.offset + part.data.length ||
+        part.nextOffset === null && job.offset + part.data.length !== part.characters) throw new Error('内容分段不连续，正在重新读取。')
+      job.characters = part.characters
+      job.parts.push(part.data); job.offset += part.data.length; job.complete = part.nextOffset === null
+      progress(job.offset)
+    }
+    if (!job.value) {
+      const value = JSON.parse(job.parts.join(''))
+      if (!value || value.id !== item.id || (item.wholeTurn ? !Array.isArray(value.items) : value.type !== item.originalType)) {
+        this.reads.delete(item.reference); throw new Error('会话内容不匹配，正在重新读取。')
+      }
+      job.value = value; job.parts = []
+    }
   }
-  return new Blob(job.parts,{type:'application/json;charset=utf-8'})
+
+  apply(turns: any[]): any[] {
+    let changed = false
+    const result = turns.map(turn => {
+      const whole = (turn.items || []).find((item:any) => item.type === 'lanpowerLargeItem' && item.wholeTurn)
+      const restored = whole && this.reads.get(whole.reference)?.value
+      if (restored) { changed = true; return {...restored,...turn,items:restored.items,lanpowerContentReference:whole.reference} }
+      const items = (turn.items || []).map((item:any) => {
+        const value = item.type === 'lanpowerLargeItem' && !item.wholeTurn && this.reads.get(item.reference)?.value
+        if (!value) return item
+        changed = true; return {...value,lanpowerContentReference:item.reference}
+      })
+      return items.some((item:any,index:number) => item !== turn.items[index]) ? {...turn,items} : turn
+    })
+    return changed ? result : turns
+  }
+
+  prune(turns: any[]): void {
+    const references = new Set<string>()
+    for (const turn of turns) {
+      if (turn.lanpowerContentReference) references.add(turn.lanpowerContentReference)
+      for (const item of turn.items || []) {
+        if (item.type === 'lanpowerLargeItem') references.add(item.reference)
+        if (item.lanpowerContentReference) references.add(item.lanpowerContentReference)
+      }
+    }
+    for (const reference of this.reads.keys()) if (!references.has(reference)) this.reads.delete(reference)
+  }
+  forget(reference: string): void { this.reads.delete(reference) }
 }
 
-export type ExportJob = { cursor?: string | null; page?: any; metadata: any; turns: Blob[]; ids: Set<string>; downloads: Map<string,LargeDownload>; complete: boolean }
-export function newExport(metadata: any): ExportJob {
-  const {turns,historyCursor,...rest} = metadata
-  return {metadata:rest,turns:[],ids:new Set(),downloads:new Map(),complete:false}
-}
-async function turnBlob(client: RemoteConnection, id: string, turn: any, job: ExportJob, signal?: AbortSignal): Promise<Blob> {
-  const itemBlob = async (item:any): Promise<Blob> => {
-    if (item.type !== 'lanpowerLargeItem') return new Blob([JSON.stringify(item)])
-    let download = job.downloads.get(item.reference)
-    if (!download) { download = newDownload(); job.downloads.set(item.reference,download) }
-    return downloadItem(client,id,item.reference,download,signal)
+export async function refreshHistoryTurn(client: RemoteConnection, threadId: string, turnId: string, signal?: AbortSignal): Promise<any> {
+  const seen = new Set<string>(); let cursor: string | undefined
+  while (true) {
+    const page = await readPage(client,threadId,cursor,signal)
+    const turn = (page.data || []).find((value:any) => value.id === turnId)
+    if (turn) return turn
+    const next = page.nextCursor
+    if (!next) throw new Error('这轮内容已变化，正在刷新会话。')
+    if (seen.has(next)) throw new Error('历史游标未推进，正在重新读取。')
+    seen.add(next); cursor = next
   }
-  const whole = (turn.items || []).find((i:any) => i.type === 'lanpowerLargeItem' && i.wholeTurn)
-  if (whole) return itemBlob(whole)
-  const {items,...metadata} = turn, parts: BlobPart[] = [JSON.stringify(metadata).slice(0,-1),',"items":[']
-  for (const [index,item] of (items || []).entries()) { if (index) parts.push(','); parts.push(await itemBlob(item)) }
-  parts.push(']}'); return new Blob(parts)
-}
-export async function exportHistory(client: RemoteConnection, id: string, job: ExportJob, signal?: AbortSignal, progress: (count:number)=>void = () => {}): Promise<Blob> {
-  while (!job.complete) {
-    const page = job.page ||= await readPage(client,id,job.cursor || undefined,signal), next = page.nextCursor || null
-    if (next && next === job.cursor) throw new Error('历史游标未推进，请重试读取。')
-    // Commit one turn only after every large item has finished; a retry cannot leave a hole.
-    for (const turn of page.data || []) {
-      if (job.ids.has(turn.id)) continue
-      const blob = await turnBlob(client,id,turn,job,signal)
-      job.turns.push(blob); job.ids.add(turn.id); job.downloads.clear(); progress(job.turns.length)
-    }
-    job.cursor = next; job.complete = !next; job.page = undefined
-  }
-  const parts: BlobPart[] = [JSON.stringify(job.metadata).slice(0,-1),',"turns":[']
-  for (let index = job.turns.length-1; index >= 0; index--) { if (index !== job.turns.length-1) parts.push(','); parts.push(job.turns[index]!) }
-  parts.push(']}')
-  return new Blob(parts,{type:'application/json;charset=utf-8'})
 }
 
 export type BeginningJob = { cursor?: string; pages: Array<string | undefined>; lastPage: any; count: number; complete: boolean }

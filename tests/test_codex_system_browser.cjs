@@ -59,9 +59,10 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.locator('.lp-actions summary').click();await page.getByRole('button',{name:'跳至对话开头',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('.conversation-root')?.textContent.includes('最早的完整回复'));
     assert.ok(calls.filter(c=>c.method==='thread/turns/list').length>=22,'read history beyond 128 turns');
-    const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'导出完整会话',exact:true}).click();
-    const downloaded=await downloadPromise, file=await downloaded.path(), exported=JSON.parse(fs.readFileSync(file,'utf8'));
-    assert.equal(exported.turns.length,180);assert.equal(exported.turns[179].items.find(i=>i.id==='cmd-long').aggregatedOutput,longOutput);
+    assert.equal(await page.getByRole('button',{name:'导出完整会话',exact:true}).count(),0);
+    await page.getByRole('button',{name:'返回最新消息',exact:true}).click();
+    await page.locator('.native-activity-toggle').last().click();await page.locator('.native-command-toggle').last().click();
+    assert.equal(await page.locator('.native-command-output').last().textContent(),longOutput);
     await page.locator('.lp-actions summary').click();
     await page.locator('.lp-project[data-project-path="D:/Other/Demo"] .lp-folder-toggle').click();
     await page.waitForFunction(()=>window.__fixtureSocket.readyState===1);await new Promise(resolve=>setTimeout(resolve,500));

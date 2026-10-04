@@ -39,7 +39,7 @@ function finalAnswerIds(messages: UiMessage[]): Set<string> {
   ])
 }
 
-/** A display projection only: never mutate the history used by export or reconciliation. */
+/** A display projection only: never mutate the original history used by reconciliation. */
 export function presentConversation(
   source: UiMessage[],
   expandedTurns: ReadonlySet<string> = new Set(),
@@ -62,7 +62,7 @@ export function presentConversation(
     const first = turn[0]!
     const finals = first.turnStatus === 'completed' ? finalAnswerIds(turn) : new Set<string>()
     const process = turn.filter(message => message.role !== 'user' && message.messageType !== 'worked'
-      && message.messageType !== 'turnError' && !finals.has(message.id))
+      && message.messageType !== 'turnError' && !message.historyContent && !finals.has(message.id))
     const canFold = first.turnStatus === 'completed' && finals.size > 0 && process.length > 0
     const processId = `process:${turnKey(first)}`
     const processExpanded = expandedTurns.has(processId)
@@ -116,7 +116,7 @@ export function presentConversation(
     for (const message of grouped) {
       if (!insertedHeader && message.role !== 'user') { messages.push(header); insertedHeader = true }
       if (message.messageType === 'worked') continue
-      if (message.role === 'user' || finals.has(message.id) || message.messageType === 'turnError' || processExpanded) messages.push(message)
+      if (message.role === 'user' || finals.has(message.id) || message.messageType === 'turnError' || message.historyContent || processExpanded) messages.push(message)
     }
   }
   return {messages, activityIds, activityMemberIds, processIds, finalMessageIds, processMessageIds}
