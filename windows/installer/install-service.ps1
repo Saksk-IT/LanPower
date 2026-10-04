@@ -145,6 +145,8 @@ try {
         }
     }
     if (-not $healthy) { throw 'LAN 服务未通过启动检查。' }
+    $stage = '注册 Codex Remote 自动启动与恢复'
+    & (Join-Path $PSScriptRoot 'codex-startup.ps1') -AppDir $AppDir
     if ($legacyTask) { Unregister-ScheduledTask -TaskName 'LanPower LAN Control' -Confirm:$false }
 } catch {
     # Capture service exit codes before stopping or deleting a failed new service.

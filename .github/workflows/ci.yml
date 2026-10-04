@@ -46,6 +46,9 @@ jobs:
       - name: Installer service recovery tests
         shell: powershell
         run: ./windows/installer/tests/test-install-recovery.ps1
+      - name: Codex login startup and recovery tests
+        shell: powershell
+        run: ./windows/installer/tests/test-codex-startup.ps1
       - name: Install Inno Setup
         shell: pwsh
         run: |

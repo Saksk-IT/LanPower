@@ -128,10 +128,10 @@ const remoteApprovalIds = new Map<number, string | number>()
 const approvalKeys = new Map<string, number>()
 const labels: Record<string, string[]> = {
   idle: ['请选择电脑', '选择电脑后读取原窗口的项目和会话。'], connecting: ['连接中', '正在连接开发电脑…'],
-  cloud_offline: ['电脑未连接', '电脑上线并登录 Windows 后会自动连接。'], host_offline: ['等待电脑登录', '请登录 Windows 并打开 LanPower。'],
+  cloud_offline: ['电脑未连接', '电脑上线并登录 Windows 后会自动连接。'], host_offline: ['等待电脑登录', '登录 Windows 后后台自动启动，正在等待恢复。'],
   disabled: ['尚未授权', '请在电脑的 LanPower 启用 Codex Remote 并保存授权。'], host_ready: ['正在读取 Codex', '正在连接电脑上的 Codex。'],
   runtime_starting: ['正在读取 Codex', '正在读取原窗口的项目与最近会话。'], runtime_ready: ['已连接', ''],
-  runtime_error: ['Codex 未就绪', '请在电脑的 LanPower 点击「连接原 Codex 窗口」。'],
+  runtime_error: ['Codex 未就绪', '请确认 Codex 已打开并登录，后台会自动重新连接；首次使用请在 LanPower 连接原窗口。'],
   disconnected: ['连接已断开', '正在重连；电脑上的任务会继续运行。'], update_required: ['需要更新 Cloud', '请更新至 1.16.2，以支持多个页面同时连接。'],
   revoked: ['开发授权已变化','请重新检查登录与开发权限后重连。'],
 }

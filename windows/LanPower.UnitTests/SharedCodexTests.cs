@@ -105,6 +105,40 @@ public sealed class SharedCodexTests
         finally { Directory.Delete(root, true); }
     }
 
+    [TestMethod]
+    public async Task RestartedTransportRecoversNativeStateWithoutReplayingTaskOrQueue()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "LanPowerRecoveryTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var server = new SharedFixture(root);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var token = deadline.Token;
+            var config = new CodexHostSettings(true, [root], AutoDiscover: false, SharedControl: true);
+            await using var remote = new RemoteRuntime(() => config, t => RuntimeClient.ConnectAsync(server.Endpoint, server.Bearer, t));
+            await remote.OpenAsync(token);
+            await remote.HandleAsync(Request("thread/read", new() { ["threadId"] = "native-chat", ["includeTurns"] = true }), token);
+            await remote.HandleAsync(Request("turn/start", new() { ["threadId"] = "native-chat", ["input"] = Input("existing task") }), token);
+            await remote.HandleAsync(Request("thread/queue/add", new() { ["threadId"] = "native-chat", ["clientUserMessageId"] = "one", ["input"] = Input("existing queue") }), token);
+            var mutations = server.Mutations;
+            server.Disconnect();
+            while (remote.Running) await Task.Delay(20, token);
+            Assert.IsTrue(await remote.ReconnectAsync(token));
+            var restored = (await remote.HandleAsync(Request("thread/read", new() { ["threadId"] = "native-chat", ["includeTurns"] = true }), token))!["result"]!["thread"]!;
+            Assert.AreEqual("inProgress", restored["turns"]![0]!["status"]!.GetValue<string>());
+            var queue = (await remote.HandleAsync(Request("thread/queue/list", new() { ["threadId"] = "native-chat" }), token))!["result"]!["data"]!.AsArray();
+            Assert.AreEqual(1, queue.Count);
+            Assert.AreEqual(mutations, server.Mutations, "Recovery must only read the existing native state.");
+            Assert.IsFalse(await remote.ReconnectAsync(token), "An already-connected runtime must not create duplicate listeners.");
+            server.Disconnect();
+            while (remote.Running) await Task.Delay(20, token);
+            config = config with { Enabled = false };
+            Assert.IsFalse(await remote.ReconnectAsync(token));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private sealed class SharedFixture : IAsyncDisposable
     {
         private readonly HttpListener _listener = new(); private readonly CancellationTokenSource _stop = new();
@@ -113,6 +147,8 @@ public sealed class SharedCodexTests
         public Uri Endpoint { get; }
         public string Bearer { get; } = new('a', 64);
         public bool Active { get; private set; }
+        public int Mutations { get; private set; }
+        public void Disconnect() { foreach (var peer in _peers) peer.Socket.Abort(); }
         public bool HideHistory { get; set; }
         public bool NoRolloutUntilStart { get; set; }
         public string MissingHistory { get; set; } = "no rollout found for thread id native-chat";
@@ -143,6 +179,7 @@ public sealed class SharedCodexTests
                 using var data = new MemoryStream(); WebSocketReceiveResult frame;
                 do { frame = await peer.Socket.ReceiveAsync(buffer, _stop.Token); if (frame.MessageType == WebSocketMessageType.Close) return; data.Write(buffer, 0, frame.Count); } while (!frame.EndOfMessage);
                 var request = JsonNode.Parse(data.ToArray())!.AsObject(); var method = request["method"]?.GetValue<string>(); var p = request["params"]?.AsObject() ?? new(); var result = new JsonObject();
+                if (method is "turn/start" or "turn/steer" or "turn/interrupt" or "thread/queue/add") Mutations++;
                 if (method is null) { await Broadcast(new() { ["method"] = "serverRequest/resolved", ["params"] = new JsonObject { ["requestId"] = request["id"]!.DeepClone() } }); continue; }
                 if (!request.ContainsKey("id")) continue;
                 if (method == "account/read") result["account"] = new JsonObject { ["type"] = "fixture" };

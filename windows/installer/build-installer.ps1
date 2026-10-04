@@ -32,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Codex 共享服务发布失败。' }
 # Package UTF-8 BOM scripts so Chinese error messages survive installation.
 $setupDir = Join-Path $outputDir 'setup'
 New-Item -ItemType Directory -Path $setupDir -Force | Out-Null
-foreach ($name in @('install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'uninstall-service.ps1')) {
+foreach ($name in @('install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'codex-startup.ps1', 'uninstall-service.ps1')) {
     [IO.File]::WriteAllText((Join-Path $setupDir $name),
         [IO.File]::ReadAllText((Join-Path $PSScriptRoot $name), [Text.Encoding]::UTF8), [Text.UTF8Encoding]::new($true))
 }

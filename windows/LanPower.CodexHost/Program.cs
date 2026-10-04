@@ -131,9 +131,23 @@ async Task WatchLocal()
                 if (!config.Enabled) State("disabled");
             }
             if (running && !runtime.Running) State(config.Enabled ? "runtime_error" : "disabled");
+            if (session is not null)
+            {
+                using var reconnect = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                reconnect.CancelAfter(TimeSpan.FromSeconds(25));
+                if (await runtime.ReconnectAsync(reconnect.Token))
+                {
+                    State("runtime_ready");
+                    foreach (var pending in runtime.PendingApprovals)
+                        Emit(new { type = "rpc", session, payload = pending });
+                }
+            }
             running = runtime.Running;
         }
-        catch (Exception error) when (error is IOException or InvalidDataException) { State("runtime_error"); }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { break; }
+        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException or
+            TimeoutException or UnauthorizedAccessException or OperationCanceledException or System.ComponentModel.Win32Exception)
+        { running = runtime.Running; State("runtime_error"); }
         finally { runtimeLock.Release(); }
     }
 }

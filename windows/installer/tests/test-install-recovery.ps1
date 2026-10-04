@@ -11,7 +11,8 @@ $blocks = @($ast.FindAll({
     $node.Body.Extent.Text.Contains('Start-Service -Name $serviceName')
 }, $true))
 if ($blocks.Count -ne 1) { throw 'Cannot locate the service registration and startup block.' }
-$startup = [ScriptBlock]::Create($blocks[0].Extent.Text)
+$startup = [ScriptBlock]::Create($blocks[0].Extent.Text.Replace(
+    '& (Join-Path $PSScriptRoot ''codex-startup.ps1'') -AppDir $AppDir', 'Register-TestCodexStartup'))
 $traps = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.TrapStatementAst] }, $true))
 if ($traps.Count -ne 1) { throw 'Cannot locate the installer failure trap.' }
 $earlyFailure = [ScriptBlock]::Create($traps[0].Extent.Text + "`nthrow 'original install failure'")
@@ -60,6 +61,10 @@ function sc.exe {
     $script:deletedService++
 }
 function Test-LanPowerServiceHealth { param($Port, $Token) return $true }
+function Register-TestCodexStartup {
+    $script:registeredStartup++
+    if ($script:mode -eq 'startup task failure') { throw 'original install failure' }
+}
 function Write-LanPowerInstallFailure {
     param($Stage, $Failure, $ResultPath, $LogPath)
     $script:reported++
@@ -77,12 +82,14 @@ foreach ($case in @(
     @{ Mode = 'early exit'; Existing = $false },
     @{ Mode = 'registration failure'; Existing = $false },
     @{ Mode = 'firewall failure'; Existing = $false },
+    @{ Mode = 'startup task failure'; Existing = $false },
     @{ Mode = 'cleanup failure'; Existing = $false },
     @{ Mode = 'start failure'; Existing = $true }
 )) {
     $script:mode = $case.Mode
     $script:createdService = $script:deletedService = $script:stoppedService = 0
     $script:stoppedTask = $script:restoredTask = $script:removedTask = $script:reported = 0
+    $script:registeredStartup = 0
     $serviceCreated = $false
     $failureReported = $false
     $service = if ($case.Existing) { [pscustomobject]@{ Status = 'Stopped' } } else { $null }
@@ -97,7 +104,7 @@ foreach ($case in @(
     try { . $startup } catch { $caught = $_ }
     $label = $case.Mode + ', existing=' + $case.Existing
     if ($case.Mode -eq 'success') {
-        Assert-Recovery ($null -eq $caught -and $script:removedTask -eq 1 -and $script:deletedService -eq 0 -and $script:reported -eq 0) ($label + ': legacy task removed only after success')
+        Assert-Recovery ($null -eq $caught -and $script:removedTask -eq 1 -and $script:deletedService -eq 0 -and $script:reported -eq 0 -and $script:registeredStartup -eq 1) ($label + ': Codex startup registered and legacy task removed only after success')
     } else {
         Assert-Recovery ($null -ne $caught -and $script:restoredTask -eq 1 -and $script:removedTask -eq 0) ($label + ': failure propagates and legacy task restarts')
         Assert-Recovery ($script:reported -eq 1 -and $script:reportedBeforeStop -and $failureReported) ($label + ': diagnostic captured before cleanup')

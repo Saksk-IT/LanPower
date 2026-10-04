@@ -34,8 +34,8 @@ $expected = @(
     'Desktop/LanPower.Desktop.exe', 'Desktop/D3DCompiler_47_cor3.dll', 'Desktop/PenImc_cor3.dll',
     'Desktop/PresentationNative_cor3.dll', 'Desktop/vcruntime140_cor3.dll', 'Desktop/wpfgfx_cor3.dll',
     'CodexHost/LanPower.CodexHost.exe',
-    'CodexServer/1.18.1/LanPower.CodexServer.exe',
-    'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'uninstall-service.ps1'
+    'CodexServer/1.18.2/LanPower.CodexServer.exe',
+    'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'codex-startup.ps1', 'uninstall-service.ps1'
 )
 $seen = @()
 $files = @(
@@ -58,6 +58,7 @@ $files = @(
 )
 if ($files.Count -ne $expected.Count) { throw '便携包文件不完整。' }
 New-Item -ItemType Directory -Path $appDir -Force | Out-Null
+& (Join-Path $sourceRoot 'codex-startup.ps1') -AppDir $appDir -Mode Pause
 $service = Get-Service -Name 'LanPowerService' -ErrorAction SilentlyContinue
 if ($service -and $service.Status -ne 'Stopped') {
     Stop-Service -Name 'LanPowerService' -Force
@@ -71,8 +72,4 @@ foreach ($file in $files) {
 }
 & (Join-Path $appDir 'install-service.ps1') -AppDir $appDir
 if (-not $?) { throw '服务安装失败。' }
-$shortcutPath = Join-Path ([Environment]::GetFolderPath('CommonStartup')) 'LanPower Codex Host.lnk'
-$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
-$shortcut.TargetPath = Join-Path $appDir 'CodexHost\LanPower.CodexHost.exe'
-$shortcut.Save()
 Write-Output '安装完成，请用 Open.cmd 打开 LanPower。'

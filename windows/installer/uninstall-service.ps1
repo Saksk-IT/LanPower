@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'codex-startup.ps1') -AppDir $PSScriptRoot -Mode Remove
 $installedHost = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'CodexHost\LanPower.CodexHost.exe'))
 Get-CimInstance Win32_Process -Filter "Name='LanPower.CodexHost.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $installedHost } |

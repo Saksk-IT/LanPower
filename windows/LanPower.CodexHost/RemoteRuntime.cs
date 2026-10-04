@@ -4,8 +4,11 @@ using LanPower.Shared;
 
 namespace LanPower.CodexHost;
 
-public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<CancellationToken, Task<RuntimeClient>>? sharedConnection = null, RemoteSubmissionStore? submissions = null) : IAsyncDisposable
+public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<CancellationToken, Task<RuntimeClient>>? sharedConnection = null, RemoteSubmissionStore? submissions = null, TimeProvider? clock = null) : IAsyncDisposable
 {
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private DateTimeOffset _reconnectAt;
+    private int _reconnectDelay = 2;
     private readonly RemoteSubmissionStore _submissions = submissions ?? new();
     private readonly RemoteHistoryStore _history = new();
     private readonly HashSet<string> _unsupported = new();
@@ -137,8 +140,25 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
             if (id is not null && _threads.ContainsKey(id)) { _images.Observe(id, p); Notify(message); }
         };
         await _runtime.InitializeAsync(token);
-        _initialized = true;
         await RefreshCatalogAsync(token);
+        _initialized = true;
+        _reconnectAt = default; _reconnectDelay = 2;
+    }
+
+    // Restore only the native/shared transport. Never replay RPCs or restart independent task workers.
+    public async Task<bool> ReconnectAsync(CancellationToken token)
+    {
+        var config = settings();
+        if (Running || !config.Enabled || !(config.DesktopControl || config.SharedControl) ||
+            _clock.GetUtcNow() < _reconnectAt) return false;
+        try { await OpenAsync(token); return true; }
+        catch
+        {
+            await DisposeAsync();
+            _reconnectAt = _clock.GetUtcNow().AddSeconds(_reconnectDelay);
+            _reconnectDelay = Math.Min(30, _reconnectDelay * 2);
+            throw;
+        }
     }
 
     private async Task RefreshCatalogAsync(CancellationToken token)

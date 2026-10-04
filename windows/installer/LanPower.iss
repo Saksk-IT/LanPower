@@ -1,4 +1,4 @@
-#define AppVersion "1.18.1"
+#define AppVersion "1.18.2"
 
 [Setup]
 AppId={{8A2B40CB-05CD-4A61-8A72-CFE71A60A8B2}
@@ -32,12 +32,13 @@ Source: "..\out\codexserver\LanPower.CodexServer.exe"; DestDir: "{app}\CodexServ
 Source: "..\out\setup\install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\network-selection.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\out\setup\install-diagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\codex-startup.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\out\setup\codex-startup.ps1"; Flags: dontcopy
 Source: "..\out\setup\uninstall-service.ps1"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: InstallLanPowerService
 
 [Icons]
 Name: "{group}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Check: ServiceIsReady
 Name: "{autodesktop}\LanPower"; Filename: "{app}\Desktop\LanPower.Desktop.exe"; Tasks: desktopicon; Check: ServiceIsReady
-Name: "{commonstartup}\LanPower Codex Host"; Filename: "{app}\CodexHost\LanPower.CodexHost.exe"; Check: ServiceIsReady
 
 [Tasks]
 Name: desktopicon; Description: "创建桌面快捷方式"
@@ -56,6 +57,15 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
+  ExtractTemporaryFile('codex-startup.ps1');
+  if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\codex-startup.ps1') +
+    '" -AppDir "' + ExpandConstant('{app}') + '" -Mode Pause',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+  begin
+    Result := '无法暂停现有 Codex Remote 后台进程，请稍后重试。';
+    Exit;
+  end;
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop LanPowerService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   if (not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -NonInteractive -Command "try { $s = Get-Service LanPowerService -ErrorAction SilentlyContinue; if ($s) { $s.WaitForStatus(''Stopped'', [TimeSpan]::FromSeconds(30)) }; exit 0 } catch { exit 1 }"',
