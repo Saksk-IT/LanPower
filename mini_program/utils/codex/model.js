@@ -32,7 +32,7 @@ function buildLibrary(projects, threads, preferences, query = '') {
 }
 const emptyDraft = () => ({text: '', images: [], skills: [], files: [], editingQueue: ''});
 const blankSettings = () => ({model: '', effort: '', mode: 'default'});
-const newSettings = () => ({native: blankSettings(), overrides: {}, initialized: false});
+const newSettings = () => ({native: blankSettings(), overrides: {}, initialized: false, permissions: null});
 const effectiveSettings = settings => ({...settings.native, ...settings.overrides});
 const modelId = model => model.model || model.id || '';
 const validEfforts = model => (model && model.supportedReasoningEfforts || []).map(row => row.reasoningEffort);
@@ -40,6 +40,8 @@ function observeSettings(settings, thread, fallback) {
   if (!settings.initialized) { settings.native.model = fallback; settings.initialized = true; }
   if (thread.model) settings.native.model = thread.model;
   if ('reasoningEffort' in thread) settings.native.effort = thread.reasoningEffort || '';
+  if ('effort' in thread) settings.native.effort = thread.effort || '';
+  settings.permissions = require('./permissions').observePermissions('id' in thread ? null : settings.permissions, thread);
   const mode = thread.collaborationMode && thread.collaborationMode.mode || thread.collaborationMode;
   if (['default', 'plan'].includes(mode)) settings.native.mode = mode;
 }

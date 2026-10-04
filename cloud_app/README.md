@@ -1,6 +1,6 @@
 # CodexDock Cloud
 
-Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.21.1`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
+Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.22.0`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
 
 ## 更新与兼容记录
 

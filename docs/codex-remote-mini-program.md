@@ -1,6 +1,8 @@
 # CodexDock 微信小程序
 
-当前产品名称为 **CodexDock**；小程序源码为 `3.2.3`，配套 Windows / Cloud / Web 为 `1.21.1`。主功能是 Codex Remote 远程开发与会话控制，电源管理为配套功能。当前入口和新版首页见 [使用指南](codex-remote.md) 与 [首页说明](codex-mini-home.md)。以下保留 3.0 工作台的实现范围与验收记录。
+当前产品名称为 **CodexDock**；小程序源码为 `3.3.0`，配套 Windows / Cloud / Web 为 `1.22.0`。主功能是 Codex Remote 远程开发与会话控制，电源管理为配套功能。当前入口和新版首页见 [使用指南](codex-remote.md) 与 [首页说明](codex-mini-home.md)。以下保留 3.0 工作台的实现范围与验收记录。
+
+`3.3.0` 会话内容页按 iOS 参考改为轻量活动行和独立折叠；模型、智能强度、批准、附件、聊天管理、文件选择与更改使用原生弹窗。实际权限确认与未接入能力、编译预览和验收范围见 [会话页面说明](codex-mini-conversation.md)。
 
 小程序 `3.2.2` 按 ChatGPT iOS Codex 页面重做首页：最近与项目列表、电脑选择、搜索、弹出排序/管理菜单及原生剩余用量均接入已有功能，支持浅色与深色。入口和验证见 [首页说明](codex-mini-home.md)。
 

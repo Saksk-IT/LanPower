@@ -4,7 +4,8 @@ const {CodexConnection, STATES} = require('../../utils/codex-remote');
 const {VERSION} = require('../../utils/version');
 const {CodexController} = require('../../utils/codex/controller');
 const {modelId, effectiveSettings, validEfforts} = require('../../utils/codex/model');
-const {previewText} = require('../../utils/codex/conversation');
+const {previewText, changesSummary} = require('../../utils/codex/conversation');
+const {permissionOptions, permissionLabels, permissionMode} = require('../../utils/codex/permissions');
 const {ImageCache} = require('../../utils/codex/resources');
 const {capabilityStatus} = require('../../utils/codex/native-status');
 const {projectName} = require('../../utils/codex-format');
@@ -13,6 +14,8 @@ const HOME_KEY = 'lanpower_codex_home';
 const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2', CACHE_KEY = 'lanpower_device_cache_v2';
 const dataOf = event => event.currentTarget.dataset;
 const modal = options => new Promise(resolve => wx.showModal({...options, success: result => resolve(!!result.confirm), fail: () => resolve(false)}));
+const effortNames = {none: '关闭', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '超高', max: 'Max', ultra: 'Ultra'};
+const modelName = row => (row && (row.displayName || modelId(row)) || '').replace(/^gpt-/i, '').replace(/-(sol|astra|luna)$/i, (_, name) => ' ' + name[0].toUpperCase() + name.slice(1));
 
 Page({
   data: {version: VERSION, theme: 'light', themeMode: 'system', authorized: false, view: 'library', sheet: '', devices: [], deviceId: '', deviceName: '选择开发电脑', deviceIndex: 0,
@@ -20,7 +23,9 @@ Page({
     search: '', searchOpen: false, homeMenu: false, homeOrder: 'project', recentFirst: true, libraryFilter: 'all', recent: [], recentTotal: 0, recentCollapsed: false, recentTimeline: false, recentHasPrevious: false, recentHasNext: false, quotaSummary: [], groups: [], chats: [], pinned: [], hiddenProjects: [], hasMore: false, archived: false, chatSupported: false, projects: [], libraryHasPrevious: false, libraryHasNext: false, chatsFirst: false, sections: {}, sort: 'updated',
     title: '新聊天', project: '', cwd: '', messages: [], totalMessages: 0, windowStart: 0, windowEnd: 0, hasWindowBefore: false, hasWindowAfter: false, historyCursor: '', readingHistory: false, historyProgress: '', historyResume: false, beginningIndex: -1,
     prompt: '', draftImages: [], draftSkills: [], draftFiles: [], canSend: false, canControl: false, canInterrupt: false, canRelease: false, activeTurnId: '', running: false, interrupting: false, sendLabel: '发送', sendMode: 'queue', queueSupported: false,
-    selectedModel: '', selectedEffort: '', selectedMode: 'default', models: [], efforts: [], planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
+    selectedModel: '', selectedModelName: '', selectedEffort: '', selectedEffortName: '', selectedMode: 'default', models: [], efforts: [], effortChoices: [], effortIndex: -1, effortPercent: 0, planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
+    selectedPermission: 'unknown', permissionLabel: '批准状态待确认', permissionChoices: permissionOptions, permissionsSupported: false, changingPermissions: false, contextPercent: null,
+    inputFocused: false, uploadingAttachment: false, changes: {count: 0, added: 0, removed: 0, files: []}, changesPage: 1, changesPages: 1,
     receiptState: '', receiptLabel: '', queryingReceipt: false, queue: [], editingQueue: '', approvals: [], approval: null, responding: false, keyboardHeight: 0, scrollTarget: '', showJump: false,
     renameTitle: '', renameDraft: '', newProjects: [], newProjectQuery: '', projectMenu: null, threadMenuPinned: false,
     catalogKind: 'skill', catalogQuery: '', catalogRows: [], catalogLoading: false, catalogError: '', catalogHasMore: false, catalogCwdIndex: 0, catalogPage: 1, catalogHasPrevious: false,
@@ -69,12 +74,15 @@ Page({
     const recentSize = home.timeline ? 15 : 6;
     this.recentOffset = home.timeline ? Math.min(this.recentOffset, Math.max(0, Math.ceil(home.recent.length / recentSize) - 1) * recentSize) : 0;
     const options = effectiveSettings(c.threadSettings), model = c.models.find(row => modelId(row) === options.model), draft = c.draft, receipt = c.receipt;
+    const efforts = validEfforts(model), effortIndex = efforts.indexOf(options.effort), permission = c.ready ? permissionMode(c.threadSettings.permissions, c.current && c.current.cwd || '') : 'unknown';
+    const usage = c.nativeUsage.context(c.threadId).usage, changes = changesSummary(c.current);
+    const changesPages = Math.max(1, Math.ceil(changes.files.length / 40)); this.changeOffset = Math.min(this.changeOffset || 0, (changesPages - 1) * 40);
     const messages = c.messages((key, index) => this.imagePaths.get(key + ':img:' + index) || '');
     const queue = c.queue.map((entry, index) => { const value = require('../../utils/codex/conversation').userContent(entry.input); return {id: entry.id, text: previewText(value.text, 800), images: value.images.length, skills: value.skills.map(skill => skill.name).join(' · '), position: index + 1}; });
     const approvals = c.selectedApprovals.map(request => ({key: JSON.stringify(request.id), title: c.approvalView(JSON.stringify(request.id)).title}));
     let sheet = this.data.sheet, approval = sheet === 'approval' ? c.approvalView(this.approvalKey) : null;
     if (sheet === 'approval' && !approval) sheet = '';
-    const canSend = c.canControl && !c.busy && !c.sendBlocked && !approvals.length && !!(draft.text.trim() || draft.images.length || draft.skills.length || draft.files.length);
+    const canSend = c.canControl && !c.busy && !c.sendBlocked && !c.changingPermissions && !this.data.uploadingAttachment && !approvals.length && !!(draft.text.trim() || draft.images.length || draft.skills.length || draft.files.length);
     const value = {ready: c.ready, state: c.state, stateTitle: labels[0], stateHint: labels[1], recovering: c.recovering, loading: c.loadingLibrary || c.loadingThread, busy: c.busy, feedback: c.feedback,
       recent: rows(home.recent.slice(this.recentOffset, this.recentOffset + recentSize)), recentTotal: home.recent.length, recentTimeline: home.timeline, recentHasPrevious: this.recentOffset > 0, recentHasNext: this.recentOffset + recentSize < home.recent.length,
       quotaSummary: quotaSummary(c.nativeUsage.state.snapshots),
@@ -89,7 +97,12 @@ Page({
       prompt: draft.text, draftImages: draft.images.map((image, index) => ({src: image.src || '', index})), draftSkills: draft.skills.map((skill, index) => ({name: skill.name, index})), draftFiles: draft.files.map((file, index) => ({label: file.label, index})), editingQueue: draft.editingQueue,
       canControl: c.canControl, canSend, canInterrupt: c.canControl && !!c.activeTurn && !c.interrupting, canRelease: c.canControl && !c.sharedControl && c.handoff && !c.activeTurn, activeTurnId: c.activeTurn, running: !!c.activeTurn, interrupting: c.interrupting,
       sendLabel: draft.editingQueue ? '保存修改' : c.activeTurn ? this.data.sendMode === 'queue' && c.queueSupported ? '加入队列' : '引导任务' : '发送', queueSupported: c.queueSupported,
-      selectedModel: options.model, selectedEffort: options.effort, selectedMode: options.mode, models: c.models.map(row => ({value: modelId(row), name: row.displayName || modelId(row)})), efforts: validEfforts(model), planSupported: c.planSupported,
+      selectedModel: options.model, selectedModelName: modelName(model) || options.model || '原窗口模型', selectedEffort: options.effort, selectedEffortName: effortNames[options.effort] || options.effort || '默认', selectedMode: options.mode,
+      models: c.models.map(row => ({value: modelId(row), name: modelName(row), description: row.description || ''})), efforts, effortIndex, effortPercent: effortIndex < 0 || efforts.length < 2 ? 0 : effortIndex / (efforts.length - 1) * 100,
+      effortChoices: efforts.map((value, index) => ({value, index, name: effortNames[value] || value})), planSupported: c.planSupported,
+      selectedPermission: permission, permissionLabel: permissionLabels[permission], permissionsSupported: c.permissionsSupported, changingPermissions: c.changingPermissions,
+      contextPercent: usage && Number.isFinite(usage.remainingContextPercent) ? Math.max(0, Math.min(100, usage.remainingContextPercent)) : null,
+      changes: {...changes, files: changes.files.slice(this.changeOffset, this.changeOffset + 40).map((file, index) => ({path: file.path, kind: file.kind, added: file.added, removed: file.removed, index: this.changeOffset + index}))}, changesPages, changesPage: this.changeOffset / 40 + 1,
       settingsHint: Object.keys(c.threadSettings.overrides).length ? '已选择下次新任务参数；排队和引导沿用当前任务。' : '', taskState: c.liveLabel(), elapsed: c.duration(), plan: c.overlay.plan,
       syncLabel: c.recovering || c.loadingThread ? '正在恢复原窗口状态' : !c.ready ? '显示历史缓存' : c.syncFailed ? '同步未完成 · 显示缓存' : c.lastSync ? '最近同步 ' + new Date(c.lastSync).toLocaleTimeString('zh-CN', {hour12: false}) : '',
       controlHint: c.threadArchived ? '已归档，恢复后可继续' : c.canControl ? c.desktopControl ? '原 Codex 窗口' : c.sharedControl ? '备用共享窗口' : '本机 Codex' : c.current && c.current.control === 'desktop' && !c.sharedControl ? '桌面占用 · 只读' : '',
@@ -103,7 +116,7 @@ Page({
   },
   paintResources() {
     const resource = this.controller.resources;
-    if (this.data.view === 'files') {
+    if (this.data.view === 'files' || this.data.sheet === 'files') {
       const state = resource.fileView(), all = state.files; state.files = all.slice(this.fileOffset, this.fileOffset + 50);
       this.setData({fileState: state, fileProject: projectName(state.cwd), fileHasPrevious: this.fileOffset > 0, fileHasNext: this.fileOffset + 50 < all.length});
     }
@@ -136,7 +149,7 @@ Page({
   navigate(event) { const page = dataOf(event).page; if (page === 'codex') return; wx.redirectTo({url: page === 'lan' ? '/pages/index/index' : '/pages/cloud/cloud?tab=' + page}); },
   back() { this.setData({view: this.auxReturn || 'library', sheet: '', keyboardHeight: 0}); this.auxReturn = ''; this.paint(); },
   backLibrary() { this.setData({view: 'library', sheet: '', keyboardHeight: 0}); this.paint(); },
-  async selectThread(event) { this.follow = true; this.setData({view: 'chat', sheet: ''}); await this.controller.selectThread(dataOf(event).id); this.paint(); },
+  async selectThread(event) { this.follow = true; this.changeOffset = 0; this.setData({view: 'chat', sheet: '', progressOpen: false, inputFocused: false}); await this.controller.selectThread(dataOf(event).id); this.paint(); },
   readThread(id, navigate = true) { if (navigate) this.setData({view: 'chat'}); return this.controller.selectThread(id); },
   search(event) { this.setData({search: event.detail.value}); this.libraryOffset = 0; this.chatOffset = 0; this.recentOffset = 0; clearTimeout(this.librarySearchTimer); this.librarySearchTimer = setTimeout(() => this.controller.searchLibrary(this.data.search),250); this.paint(); },
   toggleSearch() { const open = !this.data.searchOpen; this.setData({searchOpen: open, homeMenu: false, keyboardHeight: 0}); if (!open) { if (wx.hideKeyboard) wx.hideKeyboard(); this.search({detail: {value: ''}}); } },
@@ -163,14 +176,35 @@ Page({
   async createThread(event) { const id = await this.controller.createThread(dataOf(event).path, false, this.data.selectedModel); if (id) { this.follow = true; this.setData({view: 'chat', sheet: ''}); this.paint(); } },
   async newChat() { const id = await this.controller.createThread('', true, this.data.selectedModel); if (id) { this.follow = true; this.setData({view: 'chat', sheet: ''}); this.paint(); } },
   input(event) { this.controller.input(event.detail.value); },
+  inputFocus() { this.setData({inputFocused: true}); },
+  inputBlur() { this.setData({inputFocused: false}); },
   keyboard(event) { this.setData({keyboardHeight: Math.max(0, Number(event.detail.height) || 0)}); },
   confirmSend(event) { if (this.data.sendWithEnter) { if (event.detail.value !== undefined) this.controller.input(event.detail.value); void this.send(); } },
-  async send() { this.follow = true; await this.controller.submit(this.controller.queueSupported ? this.data.sendMode : 'steer'); this.paint(); },
+  async send() { if (this.data.uploadingAttachment) return; this.follow = true; await this.controller.submit(this.controller.queueSupported ? this.data.sendMode : 'steer'); this.paint(); },
   interrupt() { return this.controller.interrupt(); },
   chooseSendMode(event) { const mode = dataOf(event).mode; this.setData({sendMode: mode === 'steer' ? 'steer' : 'queue'}); this.saveInputPreferences(); this.paint(); },
   chooseSetting(event) { const {key, value} = dataOf(event); this.controller.chooseSetting(key, value); this.paint(); },
   inheritSettings() { this.controller.inheritSettings(); this.paint(); },
   openOptions() { this.setData({sheet: 'options'}); },
+  openOptionList(event) { const kind = dataOf(event).kind; if (['models', 'effort'].includes(kind)) this.setData({sheet: kind}); },
+  chooseModel(event) { this.controller.chooseSetting('model', dataOf(event).value); this.setData({sheet: 'options'}); this.paint(); },
+  chooseEffort(event) { const value = dataOf(event).value; if (this.data.efforts.includes(value)) this.controller.chooseSetting('effort', value); this.paint(); },
+  optionBack() { this.setData({sheet: 'options'}); },
+  openPermissions() { this.setData({sheet: 'permissions'}); this.paint(); },
+  permissionHelp() { this.showDetail('批准 Codex 操作', '请求批准：编辑项目外的文件和访问互联网前询问你。\n\n替我批准：由电脑上的自动审核评估请求，需要你处理时显示审批。\n\n完全访问：允许 Codex 完全访问计算机，请确认你信任当前任务。\n\n自定义：在电脑的 config.toml 中管理。\n\n这里显示电脑确认的实际权限。更改用于后续任务，运行中的任务和已有审批保留原设置。'); },
+  async choosePermission(event) {
+    const mode = dataOf(event).value, c = this.controller, key = c.key;
+    if (mode === 'custom') { c.notify('自定义权限请在电脑配置后刷新聊天。'); return; }
+    if (mode === this.data.selectedPermission || !c.permissionsSupported || !c.canControl || c.changingPermissions) return;
+    if (mode === 'full-access' && !await modal({title: '允许完全访问？', content: 'Codex 将能访问项目外的文件和网络。仅在信任当前任务时开启。', confirmText: '允许'})) return;
+    if (key !== c.key) return;
+    await c.changePermissions(mode); this.paint();
+  },
+  openStatus() { this.setData({sheet: 'status'}); this.paint(); },
+  copyThreadId() { this.copyText(this.controller.threadId); this.closeSheet(); },
+  openChanges() { this.changeOffset = 0; this.setData({sheet: 'changes'}); this.paint(); },
+  changesPage(event) { this.changeOffset = Math.max(0, (this.changeOffset || 0) + Number(dataOf(event).direction) * 40); this.paint(); },
+  showChange(event) { const file = changesSummary(this.controller.current).files[Number(dataOf(event).index)]; if (file) this.showDetail(file.path, file.diff || '此文件未提供差异内容。', 'code'); },
   async openMenu(event) { const id = event && dataOf(event).id; if (id && id !== this.controller.threadId) await this.controller.selectThread(id); if (!this.controller.current) return; this.setData({sheet: 'menu', threadMenuPinned: this.controller.library.preferences.pinned.includes(this.controller.threadId)}); this.paint(); },
   openProjectMenu(event) { const group = this.controller.libraryView('').projects.find(row => row.id === dataOf(event).id); if (group) this.setData({sheet: 'project', projectMenu: {id: group.id, name: group.name, path: group.path}}); },
   projectAction(event) { const {action} = dataOf(event), project = this.data.projectMenu; if (!project) return; if (action === 'new') return this.createThread({currentTarget: {dataset: {path: project.path}}}); if (action === 'files') return this.openFiles({currentTarget: {dataset: {cwd: project.path}}}); if (action === 'rename') { this.renameTarget = {kind: 'project', id: project.id}; this.setData({sheet: 'rename', renameTitle: '项目显示名', renameDraft: project.name}); return; } this.controller.changeLibrary(action === 'up' || action === 'down' ? 'move' : 'hidden', project.id, action === 'up' ? -1 : 1); this.closeSheet(); },
@@ -226,20 +260,24 @@ Page({
     catch (error) { if (c === this.controller && context === c.key && epoch === c.epoch) c.notify(error.message); return ''; }
   },
   async toggleImageRow(event) {
-    const {key} = dataOf(event), c = this.controller, context = c.key, row = c.rows.find(value => value.key === key); if (!row || row.kind !== 'imageActivity') return;
+    const {key} = dataOf(event), c = this.controller, context = c.key, row = c.rows.find(value => value.key === key); if (!row || !row.images.length) return;
     c.toggleImageRow(key); this.paint();
     if (c.expandedImages.has(key)) for (let index = 0; index < row.images.length; index++) { if (c !== this.controller || context !== c.key || !c.expandedImages.has(key)) break; await this.loadImagePreview(key, index); }
   },
   async viewImage(event) {
-    const {key, index} = dataOf(event), path = await this.loadImagePreview(key, Number(index));
-    if (path && wx.previewImage) wx.previewImage({current: path, urls: [path]});
+    const {key, index} = dataOf(event), c = this.controller, context = c.key, epoch = c.epoch, row = c.rows.find(value => value.key === key);
+    if (!row) return;
+    const paths = await Promise.all(row.images.map((_, imageIndex) => this.loadImagePreview(key, imageIndex))), current = paths[Number(index)];
+    if (current && c === this.controller && context === c.key && epoch === c.epoch && this.visible && wx.previewImage) wx.previewImage({current, urls: paths.filter(Boolean)});
   },
-  async addImages() {
-    const c = this.controller, key = c.key; if (!c.canControl || c.busy || c.sendBlocked) return; const count = 9; // WeChat picker batch size; repeated selections accumulate without a draft limit.
+  previewDraftImage(event) { const image = this.data.draftImages[Number(dataOf(event).index)]; if (image && image.src && wx.previewImage) wx.previewImage({current: image.src, urls: this.data.draftImages.map(row => row.src).filter(Boolean)}); },
+  async addImages(event) {
+    const c = this.controller, key = c.key; if (!c.canControl || c.busy || c.sendBlocked) return;
+    const source = event && dataOf(event).source === 'camera' ? 'camera' : 'album', count = source === 'camera' ? 1 : 9;
     try {
       const files = await new Promise((resolve, reject) => {
-        if (wx.chooseMedia) wx.chooseMedia({count, mediaType: ['image'], sizeType: ['original'], success: result => resolve(result.tempFiles.map(file => file.tempFilePath)), fail: reject});
-        else wx.chooseImage({count, sizeType: ['original'], success: result => resolve(result.tempFilePaths), fail: reject});
+        if (wx.chooseMedia) wx.chooseMedia({count, sourceType: [source], mediaType: ['image'], sizeType: ['original'], success: result => resolve(result.tempFiles.map(file => file.tempFilePath)), fail: reject});
+        else wx.chooseImage({count, sourceType: [source], sizeType: ['original'], success: result => resolve(result.tempFilePaths), fail: reject});
       });
       const fs = wx.getFileSystemManager();
       for (const filePath of files) {
@@ -255,33 +293,43 @@ Page({
   removeAttachment(event) { this.controller.removeAttachment(dataOf(event).kind, Number(dataOf(event).index)); this.paint(); },
   async addFiles() {
     const c = this.controller, key = c.key, cwd = c.current && c.current.cwd;
-    if (!c.canControl || c.busy || c.sendBlocked || !cwd) return;
+    if (!c.canControl || c.busy || c.sendBlocked || !cwd || this.data.uploadingAttachment) return;
     if (!wx.chooseMessageFile) return c.notify('当前微信版本不支持文件选择，请更新微信。');
+    this.setData({uploadingAttachment: true});
     try {
       const result = await new Promise((resolve,reject) => wx.chooseMessageFile({count:100,type:'all',success:resolve,fail:reject}));
+      // A native file picker may temporarily hide the Page and close its SocketTask.
+      for (let attempt = 0; !c.canControl && attempt < 100 && c === this.controller && key === c.key && !this.unloaded; attempt++) await new Promise(resolve => setTimeout(resolve, 100));
+      if (c !== this.controller || key !== c.key || this.unloaded) return;
+      if (!c.canControl) throw new Error('连接尚未恢复，重新连接后再选择文件。');
       const fs = wx.getFileSystemManager();
       for (const file of result.tempFiles) {
+        c.notify('正在添加文件：' + file.name);
         const data = await new Promise((resolve,reject) => fs.readFile({filePath:file.path,success:resolve,fail:reject}));
         if (c !== this.controller || key !== c.key || !c.canControl) return;
         const uploaded = await this.connection.request('lanpower/files/upload',{cwd,name:file.name,base64:wx.arrayBufferToBase64(data.data)});
         if (c !== this.controller || key !== c.key || !c.canControl) return;
         c.addFile(uploaded.path);
       }
-      this.closeSheet(); this.paint();
+      c.notify('文件已添加到消息。'); this.closeSheet(); this.paint();
     } catch (failure) { if (key === c.key && !String(failure.errMsg || '').includes('cancel')) c.notify(failure.message || '文件上传未完成，请重试。'); }
+    finally { if (!this.unloaded) { this.setData({uploadingAttachment: false}); this.paint(); } }
   },
   openAttachments() { this.setData({sheet: 'attachments'}); },
+  togglePlanMode() { if (!this.controller.planSupported || this.controller.activeTurn) return; this.controller.chooseSetting('mode', this.data.selectedMode === 'plan' ? 'default' : 'plan'); this.closeSheet(); this.paint(); },
+  openFileSheet() { const cwd = this.controller.current && this.controller.current.cwd; if (!cwd || !this.controller.ready) return this.controller.notify('请先连接电脑并选择项目。'); this.fileOffset = 0; this.setData({sheet: 'files'}); void this.controller.resources.open(cwd); this.paintResources(); },
+  selectFileProject(event) { const project = this.data.projects[Number(event.detail.value)]; if (!project || !this.controller.ready) return; this.fileOffset = 0; void this.controller.resources.open(project.path); this.paintResources(); },
   openFiles(event) { const dataset = event ? dataOf(event) : {}, cwd = dataset.cwd || this.controller.current && this.controller.current.cwd || this.data.projects[0] && this.data.projects[0].path; if (!cwd || !this.controller.ready) return this.controller.notify('请先连接电脑并选择项目。'); this.auxReturn = this.data.view === 'chat' ? 'chat' : 'library'; this.fileOffset = 0; this.setData({view: 'files', sheet: ''}); void this.controller.resources.open(cwd, dataset.path || ''); },
   openFile(event) { const {path, directory} = dataOf(event); this.fileOffset = 0; return directory ? this.controller.resources.directory(path) : this.controller.resources.files('lanpower/files/read', {path}); },
-  fileParent() { return this.controller.resources.directory(this.data.fileState.parent); },
-  fileRoot() { return this.controller.resources.directory('.'); },
+  fileParent() { this.fileOffset = 0; return this.controller.resources.directory(this.data.fileState.parent); },
+  fileRoot() { this.fileOffset = 0; return this.controller.resources.directory('.'); },
   fileBack() { this.controller.resources.state.selected = null; this.paintResources(); },
   fileSearch(event) { const value = event.detail.value; this.controller.resources.state.query = value; clearTimeout(this.searchTimer); this.searchTimer = setTimeout(() => { this.fileOffset = 0; void this.controller.resources.search(value); }, 300); },
   filesMore() { return this.controller.resources.more(); },
   filePage(event) { this.fileOffset = Math.max(0, this.fileOffset + Number(dataOf(event).direction) * 50); this.paintResources(); },
   fileFull() { const file = this.controller.resources.state.selected; if (file) this.showDetail(file.path, file.content || '', 'code'); },
-  attachFile() { const resources = this.controller.resources, file = resources.state.selected; if (!file) return; try { this.controller.addFile(resources.absolute(file.path)); this.setData({view: 'chat'}); this.auxReturn = ''; this.paint(); } catch (error) { this.controller.notify(error.message); } },
-  openFeature(event) { const kind = dataOf(event).kind; this.auxReturn = this.data.view === 'chat' ? 'chat' : 'library'; this.setData({homeMenu: false, view: kind === 'settings' ? 'settings' : kind === 'automations' ? 'automations' : 'catalog', sheet: '', catalogKind: kind === 'automations' ? 'automations' : 'skill', catalogQuery: ''}); this.catalogLimit = 30; if (kind !== 'settings') return this.refreshCatalog(); },
+  attachFile() { const resources = this.controller.resources, file = resources.state.selected; if (!file) return; try { this.controller.addFile(resources.absolute(file.path)); this.setData({view: 'chat', sheet: ''}); this.auxReturn = ''; this.paint(); } catch (error) { this.controller.notify(error.message); } },
+  openFeature(event) { const kind = dataOf(event).kind; this.auxReturn = this.data.view === 'chat' ? 'chat' : 'library'; this.setData({homeMenu: false, view: kind === 'settings' ? 'settings' : kind === 'automations' ? 'automations' : 'catalog', sheet: '', catalogKind: kind === 'automations' ? 'automations' : kind === 'plugins' ? 'plugin' : 'skill', catalogQuery: ''}); this.catalogLimit = 30; if (kind !== 'settings') return this.refreshCatalog(); },
   chooseCatalog(event) { this.catalogLimit = 30; this.setData({catalogKind: dataOf(event).kind, catalogQuery: ''}); return this.refreshCatalog(); },
   chooseCatalogCwd(event) { this.setData({catalogCwdIndex: Number(event.detail.value)}); return this.refreshCatalog(); },
   refreshCatalog() { if (!this.controller.ready) return; const project = this.data.projects[this.data.catalogCwdIndex], cwd = project && project.path || this.controller.current && this.controller.current.cwd || ''; return this.controller.resources.directoryCatalog(this.data.catalogKind, cwd); },

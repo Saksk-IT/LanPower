@@ -1,1 +1,1 @@
-module.exports = {VERSION: '3.2.3', PROTOCOL_VERSION: '2'};
+module.exports = {VERSION: '3.3.0', PROTOCOL_VERSION: '2'};

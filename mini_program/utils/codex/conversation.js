@@ -1,5 +1,44 @@
 const {markdown, utf8Length, elapsed} = require('../codex-format');
 const {timestamp} = require('./model');
+const {diffSummary} = require('../codex-format');
+const isRunning = status => ['inProgress', 'in_progress', 'running'].includes(status);
+function activitySummary(members) {
+  const counts = {command: 0, read: 0, list: 0, search: 0, file: 0, tool: 0};
+  for (const member of members) counts[member.action || 'tool']++;
+  const parts = [];
+  if (counts.read) parts.push(`已读取 ${counts.read} 个文件`);
+  if (counts.list) parts.push(`已列出 ${counts.list} 个目录`);
+  if (counts.search) parts.push(`已执行 ${counts.search} 次搜索`);
+  if (counts.file) parts.push(`已修改 ${counts.file} 组文件`);
+  if (counts.command) parts.push(`已运行 ${counts.command} 条命令`);
+  if (counts.tool) parts.push(`已调用 ${counts.tool} 个工具`);
+  return parts.join('，');
+}
+function commandAction(item) {
+  const actions = item.commandActions || [], action = actions.length === 1 ? actions[0] : null;
+  const type = action && action.type, name = action && (action.name || action.path || action.query) || '';
+  if (type === 'read') return {action: 'read', icon: 'book', label: `${isRunning(item.status) ? '正在读取' : '已读取'} ${name || '文件'}`};
+  if (['listFiles', 'list_files'].includes(type)) return {action: 'list', icon: 'folder', label: `${isRunning(item.status) ? '正在列出' : '已列出'} ${name || '目录'}`};
+  if (type === 'search') return {action: 'search', icon: 'search', label: `${isRunning(item.status) ? '正在搜索' : '已搜索'} ${name || '项目内容'}`};
+  return {action: 'command', icon: 'terminal', label: `${isRunning(item.status) ? '正在运行' : '已运行'} ${item.command || '命令'}`};
+}
+function changesSummary(thread) {
+  const turn = (thread && thread.turns || []).slice().reverse().find(value => value.diff || (value.items || []).some(item => item.type === 'fileChange' && (item.changes || []).length));
+  if (!turn) return {turnId: '', files: [], count: 0, added: 0, removed: 0};
+  const files = new Map();
+  for (const item of turn.items || []) if (item.type === 'fileChange') for (const file of item.changes || []) {
+    if (!file.path) continue;
+    const diff = file.diff || '', counts = diffSummary(diff), previous = files.get(file.path);
+    files.set(file.path, {path: file.path, kind: typeof file.kind === 'string' ? file.kind : file.kind && file.kind.type || '', diff: (previous ? previous.diff + '\n' : '') + diff,
+      added: (previous ? previous.added : 0) + counts.added, removed: (previous ? previous.removed : 0) + counts.removed});
+  }
+  // A turn diff is authoritative; avoid double-counting its file-change events.
+  if (turn.diff) for (const file of diffSummary(turn.diff).files) {
+    files.set(file.path, {...(files.get(file.path) || {}), ...file, diff: files.get(file.path) && files.get(file.path).diff || turn.diff});
+  }
+  const rows = Array.from(files.values());
+  return {turnId: turn.id, files: rows, count: rows.length, added: rows.reduce((sum, row) => sum + row.added, 0), removed: rows.reduce((sum, row) => sum + row.removed, 0)};
+}
 function userContent(content) {
   const blocks = Array.isArray(content) ? content : [], raw = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('\n');
   const match = /^# Files mentioned by the user:\n([\s\S]*?)\n\n## My request for Codex:\n([\s\S]*)$/.exec(raw);
@@ -12,10 +51,13 @@ function itemRow(item, turn, index) {
   const row = {key: `${turn.id}:${item.id}`, turnId: turn.id, turnIndex: index, itemId: item.id, status: item.status || turn.status || '', text: '', kind: 'activity', label: '', images: [], files: [], skills: []};
   if (item.type === 'userMessage') return {...row, kind: 'user', ...userContent(item.content)};
   if (item.type === 'agentMessage') return {...row, kind: 'assistant', text: item.text || '', phase: item.phase || '', images: Array.from(String(item.text || '').matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)).map(match => match[1])};
-  if (item.type === 'reasoning') return {...row, kind: 'reasoning', label: '思考摘要', text: (item.summary || []).filter(part => typeof part === 'string').join('\n\n')};
+  if (item.type === 'reasoning') {
+    const text = (item.summary || []).filter(part => typeof part === 'string').join('\n\n');
+    return {...row, kind: 'reasoning', icon: 'spark', label: previewText(text.split('\n')[0].replace(/[*#`]/g, '').trim() || (isRunning(row.status) ? '正在思考' : '思考摘要'), 100), text};
+  }
   if (item.type === 'plan') return {...row, kind: 'plan', label: '计划', text: item.text || ''};
-  if (item.type === 'commandExecution') return {...row, label: '运行命令', command: item.command || '', text: item.aggregatedOutput || '', exitCode: item.exitCode, cwd: item.cwd || ''};
-  if (item.type === 'fileChange') return {...row, label: '修改文件', files: (item.changes || []).map(c => ({path: c.path, label: c.path, kind: typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type || '', diff: c.diff || ''})), text: (item.changes || []).map(c => `${c.path}\n${c.diff || ''}`).join('\n\n')};
+  if (item.type === 'commandExecution') return {...row, ...commandAction({...item, status: row.status}), command: item.command || '', text: item.aggregatedOutput || '', exitCode: item.exitCode, cwd: item.cwd || ''};
+  if (item.type === 'fileChange') return {...row, action: 'file', icon: 'file', label: `${isRunning(row.status) ? '正在修改' : '已修改'} ${(item.changes || []).length} 个文件`, files: (item.changes || []).map(c => ({path: c.path, label: c.path, kind: typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type || '', diff: c.diff || ''})), text: (item.changes || []).map(c => `${c.path}\n${c.diff || ''}`).join('\n\n')};
   if (item.type === 'lanpowerLargeItem') return {...row, kind: 'large', reference: item.reference, characters: item.characters, label: item.wholeTurn ? '读取完整这一轮' : '读取完整内容', text: `${item.characters || 0} 字符，点击继续读取`};
   if (['imageGeneration', 'image_generation'].includes(item.type)) {
     const result = typeof item.result === 'string' ? item.result.trim() : '', source = !result ? '' : /^(data:|https?:|file:|[A-Za-z]:[\\/]|\/)/.test(result) ? result : `data:image/png;base64,${result.replace(/\s/g, '')}`;
@@ -26,11 +68,12 @@ function itemRow(item, turn, index) {
     return source ? {...row, kind: 'imageActivity', imageAction: 'view', label: '已查看 1 张图像', images: [source]} : null;
   }
   const labels = {mcpToolCall:'MCP 工具',dynamicToolCall:'动态工具',collabAgentToolCall:'协作任务',webSearch:'网页搜索',contextCompaction:'上下文整理',enteredReviewMode:'开始审查',exitedReviewMode:'审查结果'};
-  if (item.type === 'contextCompaction') return {...row,label:'上下文整理',text:'会话上下文已整理；仅显示公开提示。'};
+  if (item.type === 'contextCompaction') return {...row, kind: 'compaction', label: '已精简上下文', text: ''};
+  if (item.type === 'webSearch') return {...row, action: 'search', icon: 'search', label: `${isRunning(row.status) ? '正在搜索' : '已搜索'} ${previewText(item.query || item.action && item.action.query || '网页', 100)}`, text: JSON.stringify(item.action || {query: item.query}, null, 2)};
   const status = item.error || item.success === false || ['failed','error'].includes(item.status) ? '失败' : ['inProgress','in_progress'].includes(row.status) ? '进行中' : '已完成';
   const title = [labels[item.type] || `新条目（${item.type}）`,item.server,item.tool || item.name,status].filter(Boolean).join(' · ');
   const safe = JSON.stringify(item,function(key,value) { return ['encryptedContent','encrypted_content','reasoningContent','reasoning_content'].includes(key) || this.type === 'reasoning' && key === 'content' ? undefined : value; },2);
-  return {...row,label:title,text:safe};
+  return {...row, action: 'tool', icon: 'tool', label:title,text:safe};
 }
 function projectConversation(thread, expandedTurns = new Set(), expandedActivities = new Set(), expandedImages = new Set()) {
   const rows = [];
@@ -43,18 +86,19 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
     const finalIds = new Set([...finals, ...normalized.filter(row => row.imageAction === 'generate' && row.images.length)].map(row => row.key));
     const foldable = turn.status === 'completed' && finalIds.size && normalized.some(row => row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key));
     const start = timestamp(turn.startedAt), end = timestamp(turn.completedAt), duration = turn.durationMs !== undefined ? turn.durationMs : start && end ? end - start : undefined;
-    const work = {key: `work:${turn.id}`, kind: 'work', turnId: turn.id, turnIndex: index, text: duration !== undefined ? `用时 ${elapsed(duration / 1000)}` : turn.status === 'inProgress' ? '正在工作' : turn.status === 'interrupted' ? '已停止' : '工作过程', foldable: !!foldable, expanded: expandedTurns.has(turn.id), images: [], files: [], skills: []};
+    const work = {key: `work:${turn.id}`, kind: 'work', turnId: turn.id, turnIndex: index, text: duration !== undefined ? `用时 ${elapsed(duration / 1000)}` : turn.status === 'inProgress' ? '正在工作' : turn.status === 'interrupted' ? '已停止' : '工作过程', summary: activitySummary(normalized.filter(row => row.kind === 'activity')), foldable: !!foldable, expanded: expandedTurns.has(turn.id), images: [], files: [], skills: []};
     let inserted = false;
     for (let position = 0; position < normalized.length;) {
       const row = normalized[position];
       if (!inserted && row.kind !== 'user') { rows.push(work); inserted = true; }
       if (foldable && !expandedTurns.has(turn.id) && row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key)) { position++; continue; }
-      if (row.kind !== 'activity') { rows.push(row.kind === 'imageActivity' ? {...row, expanded: expandedImages.has(row.key)} : row); position++; continue; }
+      if (row.kind !== 'activity') { rows.push({...row, expanded: row.kind === 'imageActivity' ? expandedImages.has(row.key) : expandedActivities.has(row.key), imagesExpanded: expandedImages.has(row.key)}); position++; continue; }
       const members = [];
       while (position < normalized.length && normalized[position].kind === 'activity') members.push(normalized[position++]);
-      const key = `activity:${row.key}`, files = members.some(member => member.files.length), commands = members.some(member => member.command);
-      rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', label: files ? commands ? '编辑了文件，运行了命令' : '编辑了文件' : commands ? '运行了命令' : '调用了工具', text: '', count: members.length, expanded: expandedActivities.has(key), failed: members.some(m => m.status === 'failed' || typeof m.exitCode === 'number' && m.exitCode !== 0)});
-      if (expandedActivities.has(key)) rows.push(...members);
+      const key = `activity:${row.key}`, failed = members.some(m => m.status === 'failed' || typeof m.exitCode === 'number' && m.exitCode !== 0);
+      if (members.length === 1) { rows.push({...row, expanded: expandedActivities.has(row.key), failed}); continue; }
+      rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', icon: members.some(member => member.action === 'search') ? 'search' : row.icon || 'terminal', label: members.some(member => isRunning(member.status)) ? '正在工作 · ' + activitySummary(members) : activitySummary(members), text: '', count: members.length, expanded: expandedActivities.has(key), failed});
+      if (expandedActivities.has(key)) rows.push(...members.map(member => ({...member, expanded: expandedActivities.has(member.key), failed: member.status === 'failed' || typeof member.exitCode === 'number' && member.exitCode !== 0})));
     }
     if (!inserted) rows.push(work);
     if (turn.error) rows.push({key: `error:${turn.id}`, kind: 'error', turnId: turn.id, text: turn.error.message || '任务出错', images: [], files: [], skills: []});
@@ -72,11 +116,12 @@ function conversationWindow(rows, offset = null, imageView = () => '') {
   const candidates = rows.slice(from, from + 36);
   for (const row of (latest ? candidates.slice().reverse() : candidates)) {
     const text = previewText(row.text), value = {...row, text, hasMoreText: text.length < String(row.text || '').length,
+      label: previewText(row.label, 180), summary: previewText(row.summary, 220),
       command: previewText(row.command, 800),
       domId: 'row-' + encodeURIComponent(row.key).replace(/%/g, '-'),
       images: (row.images || []).map((source, index) => ({key: row.key + ':img:' + index, src: imageView(row.key, index), label: '查看图片'})),
       files: (row.files || []).map(file => ({path: file.path, label: file.label || file.path, kind: file.kind || ''})),
-      links: Array.from(String(row.text || '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]}))};
+      links: Array.from(String(row.text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]}))};
     if (row.kind === 'assistant') value.nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
     const size = utf8Length(JSON.stringify(value)); if (bytes + size > 380000) break;
     bytes += size; selected.push(value);
@@ -84,4 +129,4 @@ function conversationWindow(rows, offset = null, imageView = () => '') {
   if (latest) { selected.reverse(); start = rows.length - selected.length; }
   return {messages: selected, windowStart: start, windowEnd: start + selected.length, totalMessages: rows.length, hasWindowBefore: start > 0, hasWindowAfter: start + selected.length < rows.length};
 }
-module.exports = {userContent, itemRow, projectConversation, conversationWindow, previewText};
+module.exports = {userContent, itemRow, projectConversation, conversationWindow, previewText, changesSummary};

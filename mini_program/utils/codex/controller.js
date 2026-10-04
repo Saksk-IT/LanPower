@@ -4,6 +4,7 @@ const {projectConversation, conversationWindow, userContent} = require('./conver
 const {approvalView, approvalResult} = require('./approvals');
 const {ResourceBrowser} = require('./resources');
 const {NativeUsage} = require('./native-status');
+const {permissionMode, permissionLabels} = require('./permissions');
 const {elapsed} = require('../codex-format');
 const error = (message, code = 'not_sent') => Object.assign(new Error(message), {code, uncertain: false});
 let submissionSequence = 0;
@@ -13,7 +14,7 @@ const submissionId = () => `mini-${Date.now().toString(36)}-${++submissionSequen
 class CodexController {
   constructor(connection, changed = () => {}) {
     this.connection = connection; this.changed = changed; this.clock = new StateClock();
-    this.drafts = new Map(); this.settings = new Map(); this.receipts = new Map(); this.epoch = 0; this.selection = 0;
+    this.drafts = new Map(); this.settings = new Map(); this.receipts = new Map(); this.permissionRequests = new Map(); this.epoch = 0; this.selection = 0;
     this.state = 'idle'; this.deviceId = ''; this.threadId = ''; this.current = null; this.feedback = '';
     this.resources = new ResourceBrowser(connection, () => this.ready, () => this.emit());
     this.nativeUsage = new NativeUsage(connection, () => this.ready, () => this.emit());
@@ -27,6 +28,7 @@ class CodexController {
   get threadSettings() { if (!this.settings.has(this.key)) this.settings.set(this.key, newSettings()); return this.settings.get(this.key); }
   get activeTurn() { return this.activeTurns.get(this.threadId) || ''; }
   get receipt() { return this.receipts.get(this.key); }
+  get changingPermissions() { return this.permissionRequests.has(this.key); }
   get sendBlocked() { return !!this.receipt && ['sending', 'uncertain'].includes(this.receipt.state); }
   get canControl() { return this.ready && this.synced && !this.recovering && !this.loadingThread && !!this.current && this.current.id === this.threadId && !this.threadArchived && this.loggedIn && (this.sharedControl || this.current.control !== 'desktop'); }
   get selectedApprovals() { return Array.from(this.approvals.values()).filter(request => request.params && request.params.threadId === this.threadId); }
@@ -40,7 +42,7 @@ class CodexController {
     this.nativeUsage.reset(); this.capabilityPaging = false; this.resources.paging = false;
     this.resetHistory(); this.activeTurns = new Map(); this.approvals = new Map(); this.approvalAnswers = new Map(); this.queue = []; this.threads = []; this.projects = []; this.models = [];
     this.listCursor = ''; this.listSeen = new Set(); this.archived = false; this.threadArchived = false; this.library = {revision: 0, preferences: defaultPreferences()};
-    this.sharedControl = false; this.desktopControl = false; this.queueSupported = false; this.planSupported = false; this.chatSupported = false; this.receiptsSupported = false;
+    this.sharedControl = false; this.desktopControl = false; this.queueSupported = false; this.planSupported = false; this.chatSupported = false; this.receiptsSupported = false; this.permissionsSupported = false; this.permissionRequests.clear();
     this.unsupportedMethods = []; this.loggedIn = true; this.busy = false; this.interrupting = false; this.responding = false; this.queryingReceipt = false; this.recovering = false;
     this.loadingThread = false; this.loadingLibrary = false; this.syncing = false; this.statusReading = false; this.synced = false; this.lastSync = 0; this.syncFailed = false; this.overlay = {label: '', plan: [], error: ''};
     this.libraryDraft = null; this.librarySaving = false; this.resources.reset();
@@ -53,6 +55,7 @@ class CodexController {
   onState(state) {
     const wasReady = this.ready; this.state = state;
     if (!this.ready) {
+      this.permissionRequests.clear();
       clearTimeout(this.quotaTimer); this.nativeUsage.reset('电脑连接未就绪，无法取得当前额度与上下文。');
       this.epoch++; this.busy = false; this.syncing = false; this.statusReading = false; this.queryingReceipt = false; this.readingHistory = false; this.loadingThread = false; this.loadingLibrary = false; this.recovering = false; this.interrupting = false; this.responding = false;
       this.approvals.clear(); this.queue = []; this.resources.reset(); this.clock.clear(); this.libraryDraft = null; this.synced = false;
@@ -77,6 +80,7 @@ class CodexController {
     finally { if (e === this.epoch) { this.recovering = false; this.emit(); void this.restoreContent(); } }
   }
   applyStatus(status, stamp = this.clock.capture()) {
+    this.permissionsSupported = status.permissionsControl === true;
     this.capabilityPaging = status.capabilityPaging === true; this.resources.paging = this.capabilityPaging;
     this.sharedControl = !!status.sharedControl; this.desktopControl = !!status.desktopControl; this.queueSupported = !!status.queueSupported; this.chatSupported = !!status.chatSupported; this.receiptsSupported = !!status.submissionReceipts;
     this.targetedHistoryActions = !!status.targetedHistoryActions;
@@ -164,6 +168,22 @@ class CodexController {
     this.emit();
   }
   inheritSettings() { this.threadSettings.overrides = {}; this.emit(); }
+  async changePermissions(mode) {
+    if (!['ask', 'auto-review', 'full-access'].includes(mode) || !this.canControl || !this.permissionsSupported || this.busy || this.sendBlocked || this.changingPermissions) return;
+    const e = this.epoch, s = this.selection, id = this.threadId, key = this.key, token = {};
+    this.permissionRequests.set(key, token); this.emit();
+    try {
+      const result = await this.connection.request('lanpower/permissions/set', {threadId: id, permissionMode: mode});
+      if (!this.valid(e, s)) return;
+      if (!result.thread || result.thread.id !== id) throw error('电脑未返回此聊天的实际权限。');
+      observeSettings(this.threadSettings, result.thread, modelId(this.models[0] || {}));
+      this.notify(permissionMode(this.threadSettings.permissions, this.current.cwd || '') === mode
+        ? `已切换为${permissionLabels[mode]}${this.activeTurn ? '，用于后续任务；当前任务和待回复的审批保留原设置。' : '。'}`
+        : '已读取电脑的实际权限，请核对电脑上的配置限制。');
+      this.reconcile();
+    } catch (failure) { if (this.valid(e, s)) { this.notify('权限更改未确认：' + failure.message); this.reconcile(); } }
+    finally { if (this.permissionRequests.get(key) === token) this.permissionRequests.delete(key); this.emit(); }
+  }
   input(text) { this.draft.text = text; this.emit(); }
   addSkill(skill) { if (!this.canControl) throw error('请先打开可以控制的聊天。'); if (!this.draft.skills.some(row => row.path === skill.path)) this.draft.skills.push({name: skill.name, path: skill.path}); this.emit(); }
   addFile(path) { if (!this.canControl) throw error('请先打开可以控制的聊天。'); if (!this.draft.files.some(file => file.path === path)) this.draft.files.push({label: path.replace(/\\/g, '/').split('/').pop(), path}); this.emit(); }
@@ -175,7 +195,7 @@ class CodexController {
     if (!input.length) throw error('请先输入内容或添加附件。'); return input;
   }
   async submit(mode = 'queue') {
-    if (!this.canControl || this.busy || this.sendBlocked) return;
+    if (!this.canControl || this.busy || this.sendBlocked || this.changingPermissions) return;
     const e = this.epoch, s = this.selection, id = this.threadId, key = this.key, draft = clone(this.draft), options = clone(effectiveSettings(this.threadSettings)), active = this.activeTurn;
     let input;
     try {
@@ -338,7 +358,7 @@ class CodexController {
     if (event.method === 'turn/started' && id && p.turn && p.turn.id) this.activeTurns.set(id, p.turn.id);
     if (event.method === 'turn/completed' && !oldTurn) this.activeTurns.delete(id);
     if (event.method === 'thread/name/updated') { const name = p.threadName || p.name; this.threads = this.threads.map(thread => thread.id === id ? {...thread, name} : thread); if (this.current && this.current.id === id) this.current.name = name; }
-    if (event.method === 'thread/settings/updated' && id) { const key = this.deviceId + ':' + id, settings = this.settings.get(key) || newSettings(); this.settings.set(key, settings); observeSettings(settings, p.settings || p, modelId(this.models[0] || {})); }
+    if (event.method === 'thread/settings/updated' && id) { const key = this.deviceId + ':' + id, settings = this.settings.get(key) || newSettings(); this.settings.set(key, settings); observeSettings(settings, p.threadSettings || p.settings || p, modelId(this.models[0] || {})); }
     if (['thread/started', 'thread/archived', 'thread/unarchived'].includes(event.method)) { void this.loadThreads(); return; }
     if (event.method === 'thread/name/updated' && this.libraryCatalog) void this.loadThreads();
     if (event.method === 'thread/status/changed') this.threads = this.threads.map(thread => thread.id === id ? {...thread, status: p.status} : thread);
@@ -363,6 +383,7 @@ class CodexController {
       }
       if (p.turnId === this.activeTurn) this.overlay.label = event.method === 'item/completed' ? '正在思考' : item && item.type === 'agentMessage' ? '正在撰写回复' : item && item.type === 'commandExecution' ? '正在运行命令' : '正在思考';
     } else if (event.method === 'turn/plan/updated' && (!p.turnId || p.turnId === this.activeTurn)) this.overlay.plan = (p.plan || []).map(step => ({step: step.step, status: step.status}));
+    else if (event.method === 'turn/diff/updated') { const turn = turns.find(value => value.id === p.turnId); if (turn) turn.diff = p.diff || ''; }
     else if (event.method === 'error' && (!p.turnId || p.turnId === this.activeTurn)) this.overlay.error = p.error && p.error.message || '任务出错，请查看原窗口。';
     if (event.method === 'turn/completed') this.reconcile(); this.emit();
   }
@@ -371,8 +392,8 @@ class CodexController {
     this.reconcileTimer = setTimeout(() => { if (e !== this.epoch || !this.ready) return; if (this.busy || this.syncing || this.loadingThread || this.readingHistory) { this.reconcile(); return; } void this.refreshStatus(); void this.refreshCurrent(); }, 500);
   }
   messages(imageView) { this.rows = projectConversation(this.current, this.expandedTurns, this.expandedActivities, this.expandedImages); return conversationWindow(this.rows, this.windowOffset, imageView); }
-  toggleImageRow(key) { if (!this.rows.some(row => row.key === key && row.kind === 'imageActivity')) return; if (this.expandedImages.has(key)) this.expandedImages.delete(key); else this.expandedImages.add(key); this.emit(); }
-  toggleRow(key, turnId) { const set = key.startsWith('activity:') ? this.expandedActivities : this.expandedTurns, value = key.startsWith('activity:') ? key : turnId; if (set.has(value)) set.delete(value); else set.add(value); this.emit(); }
+  toggleImageRow(key) { if (!this.rows.some(row => row.key === key && row.images && row.images.length)) return; if (this.expandedImages.has(key)) this.expandedImages.delete(key); else this.expandedImages.add(key); this.emit(); }
+  toggleRow(key, turnId) { const work = key.startsWith('work:'), set = work ? this.expandedTurns : this.expandedActivities, value = work ? turnId : key; if (set.has(value)) set.delete(value); else set.add(value); this.emit(); }
   async earlier() {
     const view = this.messages(); if (view.windowStart > 0) { this.windowOffset = Math.max(0, view.windowStart - 24); this.emit(); return; }
     if (!this.ready || !this.historyCursor || this.readingHistory || this.beginningIndex >= 0) return;
