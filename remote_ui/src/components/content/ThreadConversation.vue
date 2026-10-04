@@ -42,6 +42,9 @@
         <div v-else-if="isCommandMessage(message)" class="message-row" data-role="system">
           <ThreadCommand :execution="message.commandExecution!" />
         </div>
+        <div v-else-if="message.messageType === 'imageView' && message.images?.length" class="message-row" data-role="system">
+          <ThreadImageActivity :key="`${activeThreadId}:${message.id}`" :images="message.images" :thread-id="activeThreadId" :cwd="cwd" :action="message.imageAction" @open="openImageModal" />
+        </div>
         <div v-else-if="message.messageType === 'reasoning'" class="message-row" data-role="system">
           <ThreadWorkIndicator label="思考过程" :running="false" :reasoning-text="message.text">
             <div v-html="renderMarkdownBlocksAsHtml(message.text)" />
@@ -151,11 +154,10 @@
               <ul
                 v-if="message.images && message.images.length > 0"
                 class="message-image-list"
-                :class="{ 'message-generated-image-list': message.messageType === 'imageView' }"
                 :data-role="message.role"
               >
                 <li v-for="imageUrl in message.images" :key="imageUrl" class="message-image-item">
-                  <RemoteMessageImage :source="imageUrl" :thread-id="activeThreadId" :cwd="cwd" :thumbnail="message.role === 'user'" :image-class="message.messageType === 'imageView' ? 'message-generated-image-preview' : ''" :alt="message.messageType === 'imageView' ? '生成的图片' : '消息图片'" @open="openImageModal" />
+                  <RemoteMessageImage :source="imageUrl" :thread-id="activeThreadId" :cwd="cwd" :thumbnail="message.role === 'user'" alt="消息图片" @open="openImageModal" />
                 </li>
               </ul>
 
@@ -762,6 +764,7 @@ import ThreadToolResult from './ThreadToolResult.vue'
 import { retainRemoteImage, imageDownloadName, observeRemoteImages } from '../../lanpower/images'
 import RemoteMessageImage from './RemoteMessageImage.vue'
 import ThreadCommand from './ThreadCommand.vue'
+import ThreadImageActivity from './ThreadImageActivity.vue'
 import ThreadActivitySummary from './ThreadActivitySummary.vue'
 import ThreadWorkIndicator from './ThreadWorkIndicator.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -4333,10 +4336,6 @@ onBeforeUnmount(() => {
   @apply ml-auto justify-end;
 }
 
-.message-generated-image-list {
-  @apply gap-3;
-}
-
 .message-image-item {
   @apply m-0;
 }
@@ -4347,10 +4346,6 @@ onBeforeUnmount(() => {
 
 .message-image-preview {
   @apply block w-16 h-16 object-cover;
-}
-
-.message-generated-image-preview {
-  @apply w-auto h-auto max-w-[min(560px,85vw)] max-h-[min(460px,62vh)] object-contain bg-white;
 }
 
 .message-file-attachments {

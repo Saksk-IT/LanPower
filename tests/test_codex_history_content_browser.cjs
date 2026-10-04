@@ -4,13 +4,15 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 (async () => {
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
   const password = fs.readFileSync(path.resolve(__dirname,'../deploy/docker/private/dev-login.txt'),'utf8').match(/^Password: (.+)$/m)[1].trim();
-  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=';
+  let png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=';
   const design = process.env.LANPOWER_NATIVE_DESIGN_FIXTURE ? JSON.parse(fs.readFileSync(process.env.LANPOWER_NATIVE_DESIGN_FIXTURE,'utf8')) : {
-    id:'design-turn',status:'completed',items:[...Array.from({length:3},(_,i)=>({id:'image-'+i,type:'imageGeneration',result:png,revisedPrompt:'x'.repeat(750000)})),
+    id:'design-turn',status:'completed',items:[{id:'viewed-image',type:'imageView',path:'D:/Projects/History/portrait.png'},...Array.from({length:3},(_,i)=>({id:'image-'+i,type:'imageGeneration',result:png,revisedPrompt:'x'.repeat(750000)})),
       {id:'answer',type:'agentMessage',phase:'final_answer',text:'我建议采用 A 的主界面，搭配 B 的深色模式和 C 的审批弹层。完整正文末尾。'}],
   };
   const final = design.items.find(item=>item.type==='agentMessage'&&item.phase==='final_answer');
   const images = design.items.filter(item=>item.type==='imageGeneration');
+  const imageActivities = design.items.filter(item=>['imageGeneration','image_generation','imageView'].includes(item.type));
+  const previewOutput=path.resolve(__dirname,'../private/codex-image-preview-1.18.1/browser');fs.mkdirSync(previewOutput,{recursive:true});
   const body = JSON.stringify(design), calls = [], errors = [], downloads = [];
   const subscribe = () => () => {};
   const manager = {getHostId:()=> 'local',getConversation:()=>({requests:[]}),getRecentConversations:()=>[],sendRequest:async()=>({data:[design],nextCursor:null}),
@@ -69,6 +71,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
       };
     });
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('download',d=>downloads.push(d.suggestedFilename()));
+    png=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=240;canvas.height=960;const c=canvas.getContext('2d');c.fillStyle='#eef2ff';c.fillRect(0,0,240,960);c.fillStyle='#4169e1';for(let i=0;i<6;i++)c.fillRect(20,30+i*150,200,90);return canvas.toDataURL('image/png').split(',')[1];});
     await page.goto(base+'/login');await page.locator('[name=username]').fill('admin');await page.locator('[name=password]').fill(password);
     await Promise.all([page.waitForURL('**/dashboard'),page.locator('form[action="/login"] button').click()]);
     await page.goto(base+'/remote');await page.locator('[data-thread-id="design"] .lp-thread-title').click();
@@ -77,9 +80,31 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
     assert.ok(calls.filter(call=>call.method==='lanpower/history/item/read').filter(call=>call.offset===65536).length>=2,'resume the interrupted segment');
     assert.equal(await page.getByRole('button',{name:/完整下载|导出完整/}).count(),0);
     assert.ok((await page.locator(`[data-message-id="${final.id}"]`).textContent()).includes('我建议采用'));
-    for (const image of images) {
+    for (const image of imageActivities) {
+      const activity=page.locator(`[data-message-id="${image.id}"]`),toggle=activity.locator('.native-image-toggle');
+      assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+      assert.equal(await activity.locator('.lp-remote-image').count(),0,'collapsed activities do not mount full-size images');
+      assert.ok((await toggle.textContent()).includes(image.type==='imageView'?'已查看 1 张图像':'已生成 1 张图像'));
+      await toggle.click();
       const preview=page.locator(`[data-message-id="${image.id}"] img`);await preview.scrollIntoViewIfNeeded();
       await page.waitForFunction(id=>document.querySelector(`[data-message-id="${id}"] img`)?.naturalWidth>0,image.id);
+      const box=await activity.locator('.lp-remote-image').boundingBox();assert.ok(box.width<=141&&box.height<=141,JSON.stringify(box));
+    }
+    if (!process.env.LANPOWER_NATIVE_DESIGN_FIXTURE) {
+      const activity=page.locator('[data-message-id="viewed-image"]'),toggle=activity.locator('.native-image-toggle');
+      for(const width of [1440,390,320]) {
+        await page.setViewportSize({width,height:900});await activity.scrollIntoViewIfNeeded();
+        const box=await activity.locator('.lp-remote-image').boundingBox();assert.ok(box.width<=141&&box.height<=141);
+        assert.equal(await activity.locator('img').evaluate(img=>getComputedStyle(img).objectFit),'contain');
+        await activity.screenshot({path:path.join(previewOutput,`image-preview-${width}.png`),animations:'disabled'});
+        await activity.locator('.lp-remote-image').click();await page.waitForFunction(()=>document.querySelector('.image-modal-image')?.naturalHeight===960);
+        await page.keyboard.press('Escape');assert.equal(await page.locator('.image-modal-backdrop').count(),0);
+        await toggle.click();assert.equal(await activity.locator('.lp-remote-image').count(),0);
+        await activity.screenshot({path:path.join(previewOutput,`image-collapsed-${width}.png`),animations:'disabled'});
+        await toggle.click();await activity.locator('img').waitFor();
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      }
+      await page.setViewportSize({width:1440,height:980});
     }
     const markdownImages=page.locator(`[data-message-id="${final.id}"] .lp-remote-image`);
     for (let index=0;index<await markdownImages.count();index++) {
@@ -90,6 +115,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
     await page.locator('.lp-actions summary').click();await page.getByRole('button',{name:'刷新会话',exact:true}).click();
     await page.waitForTimeout(350);
     assert.equal(calls.filter(call=>call.method==='lanpower/history/item/read').length,before,'refresh retains already restored content');
+    assert.equal(await page.locator('.native-image-toggle[aria-expanded="true"]').count(),imageActivities.length,'refresh preserves expanded previews');
     await page.locator('.lp-actions summary').click();
     const output=path.resolve(__dirname,'../private/codex-history-content/browser');fs.mkdirSync(output,{recursive:true});
     await page.locator(`[data-message-id="${final.id}"] .message-text`).filter({hasText:'我建议采用'}).scrollIntoViewIfNeeded();
@@ -110,9 +136,10 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
     await page.locator('.lp-back').click();await page.locator('[data-thread-id="design"] .lp-thread-title').click();
     await page.locator(`[data-message-id="${final.id}"]`).waitFor();
     await page.waitForFunction(()=>document.querySelectorAll('.lp-history-content').length===0,null,{timeout:45000});
-    assert.equal(await page.locator('.conversation-item[data-message-type="imageView"]').count(),3);
+    assert.equal(await page.locator('.conversation-item[data-message-type="imageView"]').count(),imageActivities.length);
+    assert.equal(await page.locator('.native-image-toggle[aria-expanded="true"]').count(),0,'switching conversations resets preview expansion');
     assert.ok(calls.some(call=>call.method==='thread/turns/list'),'refresh expired references automatically');
     assert.deepEqual(downloads,[]);assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({nativePublicReplay:Boolean(process.env.LANPOWER_NATIVE_DESIGN_FIXTURE),completeReply:true,generatedImages:3,markdownImages:await markdownImages.count(),automaticChunkRead:true,reconnectResume:true,expiredReferenceRenewed:true,lateContentIsolation:true,refreshRetainsContent:true,widths:[1440,390],downloads:0,browserErrors:0}));
+    console.log(JSON.stringify({nativePublicReplay:Boolean(process.env.LANPOWER_NATIVE_DESIGN_FIXTURE),completeReply:true,generatedImages:images.length,foldableImageActivities:imageActivities.length,compactPortraitPreview:true,originalImageModal:true,markdownImages:await markdownImages.count(),automaticChunkRead:true,reconnectResume:true,expiredReferenceRenewed:true,lateContentIsolation:true,refreshRetainsContent:true,widths:[1440,390,320],downloads:0,browserErrors:0}));
   } finally {adapter.dispose();await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exitCode=1});

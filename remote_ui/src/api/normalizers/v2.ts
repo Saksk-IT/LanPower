@@ -454,7 +454,7 @@ function toUiMessages(item: ThreadItem, turnStatus?: string): UiMessage[] {
   if (item.type === 'imageView') {
     const raw = item as unknown as Record<string,unknown>
     const source = [raw.path,raw.url,raw.imagePath,raw.image_url].find(value => typeof value === 'string' && value.trim())
-    return typeof source === 'string' ? [{id:item.id,role:'assistant',text:'',images:[source],messageType:'imageView'}] : []
+    return typeof source === 'string' ? [{id:item.id,role:'assistant',text:'',images:[source],messageType:'imageView',imageAction:'view'}] : []
   }
 
   {
@@ -469,6 +469,7 @@ function toUiMessages(item: ThreadItem, turnStatus?: string): UiMessage[] {
           text: '',
           images: [result],
           messageType: 'imageView',
+          imageAction: 'generate',
         },
       ]
     }

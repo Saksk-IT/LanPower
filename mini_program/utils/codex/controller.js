@@ -32,7 +32,7 @@ class CodexController {
     if (this.historyScope) this.historyScope.cancel(); if (this.contentScope) this.contentScope.cancel();
     this.historyScope = null; this.contentScope = null; this.contentReader = null; this.contentRun = (this.contentRun || 0) + 1; this.restoringContent = false; clearTimeout(this.contentRetry);
     this.historyCursor = ''; this.historySeen = new Set(); this.beginning = null; this.beginningIndex = -1; this.historyProgress = ''; this.historyResume = false; this.readingHistory = false;
-    this.windowOffset = null; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.contentProgress = {}; this.contentFailures = new Map(); this.rows = [];
+    this.windowOffset = null; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.expandedImages = new Set(); this.contentProgress = {}; this.contentFailures = new Map(); this.rows = [];
   }
   resetDevice() {
     this.resetHistory(); this.activeTurns = new Map(); this.approvals = new Map(); this.approvalAnswers = new Map(); this.queue = []; this.threads = []; this.projects = []; this.models = [];
@@ -364,7 +364,8 @@ class CodexController {
     clearTimeout(this.reconcileTimer); const e = this.epoch;
     this.reconcileTimer = setTimeout(() => { if (e !== this.epoch || !this.ready) return; if (this.busy || this.syncing || this.loadingThread || this.readingHistory) { this.reconcile(); return; } void this.refreshStatus(); void this.refreshCurrent(); }, 500);
   }
-  messages(imageView) { this.rows = projectConversation(this.current, this.expandedTurns, this.expandedActivities); return conversationWindow(this.rows, this.windowOffset, imageView); }
+  messages(imageView) { this.rows = projectConversation(this.current, this.expandedTurns, this.expandedActivities, this.expandedImages); return conversationWindow(this.rows, this.windowOffset, imageView); }
+  toggleImageRow(key) { if (!this.rows.some(row => row.key === key && row.kind === 'imageActivity')) return; if (this.expandedImages.has(key)) this.expandedImages.delete(key); else this.expandedImages.add(key); this.emit(); }
   toggleRow(key, turnId) { const set = key.startsWith('activity:') ? this.expandedActivities : this.expandedTurns, value = key.startsWith('activity:') ? key : turnId; if (set.has(value)) set.delete(value); else set.add(value); this.emit(); }
   async earlier() {
     const view = this.messages(); if (view.windowStart > 0) { this.windowOffset = Math.max(0, view.windowStart - 24); this.emit(); return; }

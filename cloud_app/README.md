@@ -1,10 +1,12 @@
 # LanPower Cloud Web 与 Windows Cloud Direct
 
-当前源码版本：Cloud `1.18.0`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。本轮 Cloud 全部 233 项测试通过；关联未发送回执、稳定历史操作和完整聊天目录见 [首批六项修复](../docs/codex-remote-first-six-fixes.md)。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
+工作过程图片已增加折叠标题：默认收起，展开显示 140×140 等比例缩略图，点击可查看大图。Windows / Cloud / Web `1.18.1`，小程序 `3.0.2`；行为和验证见 [图片折叠预览](../docs/codex-image-preview.md)。
 
-微信小程序 `3.0.1` 已接入完整远程控制接口，使用原生界面与独立状态控制器；详见 [小程序重构说明](../docs/codex-remote-mini-program.md)。本轮只更新本机 Docker 与 Windows，保留设备身份、配对和开发授权。
+当前源码版本：Cloud `1.18.1`，Codex Remote 网页自动分段读取并直接显示完整会话，已取消会话下载及 JSON 导出，详见 [完整会话显示](../docs/codex-history-content.md)。P0 五项可靠性能力继续保留，见 [验收记录](../docs/codex-remote-p0.md)。既有微信 WSS、手机开发权限和长期授权继续适用；Cloud 仍仅使用有界内存中继，不保存聊天正文。本轮 Cloud 全部 233 项测试通过；关联未发送回执、稳定历史操作和完整聊天目录见 [首批六项修复](../docs/codex-remote-first-six-fixes.md)。正式 Cloud 仍为 `1.7.2`；当前公开版本仍为 `1.6.1`，镜像 `ghcr.io/saksk-it/lanpower-cloud:1.6.1`。v1.7 的计划任务、实时状态、手机权限与微信离线通知见 [升级说明](../docs/upgrade-v1.7.md)。数据库迁移仍为 `0009_automation`，升级前需使用 SQLite backup API 备份数据库及私有配置；保留原数据卷。
 
-小程序 `3.0.1` 的首次使用及界面预览见 [原生工作台说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
+微信小程序 `3.0.2` 已接入完整远程控制接口，使用原生界面与独立状态控制器；详见 [小程序重构说明](../docs/codex-remote-mini-program.md)。本轮只更新本机 Docker 与 Windows，保留设备身份、配对和开发授权。
+
+小程序 `3.0.2` 的首次使用及界面预览见 [原生工作台说明](../docs/codex-remote-mini-program.md)。Cloud「手机授权」支持为已有手机修改权限，勾选 Codex Remote 后直接生效，无需重新配对；关闭权限会在授权复核时断开手机开发连接。旧版未区分权限的手机继续保留电源权限，不自动获得开发能力。
 
 原窗口整合的 `/remote` 复用成熟 Vue 会话、输入、审批与队列组件，Windows Host 直接连接原官方窗口。新增原生历史翻页、分支与回退白名单；Cloud 继续内存转发。真实本机审批后命令执行及原生队列增删改/排序通过，见 [原窗口整合说明](../docs/codex-original-window.md)。
 

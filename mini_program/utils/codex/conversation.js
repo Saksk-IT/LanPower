@@ -18,10 +18,13 @@ function itemRow(item, turn, index) {
   if (item.type === 'fileChange') return {...row, label: '修改文件', files: (item.changes || []).map(c => ({path: c.path, label: c.path, kind: typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type || '', diff: c.diff || ''})), text: (item.changes || []).map(c => `${c.path}\n${c.diff || ''}`).join('\n\n')};
   if (item.type === 'lanpowerLargeItem') return {...row, kind: 'large', reference: item.reference, characters: item.characters, label: item.wholeTurn ? '读取完整这一轮' : '读取完整内容', text: `${item.characters || 0} 字符，点击继续读取`};
   if (['imageGeneration', 'image_generation'].includes(item.type)) {
-    const result = item.result || '', source = /^(data:|https?:|file:|[A-Za-z]:[\\/]|\/)/.test(result) ? result : `data:image/png;base64,${result.replace(/\s/g, '')}`;
-    return {...row, kind: 'assistant', label: '生成的图片', images: source ? [source] : []};
+    const result = typeof item.result === 'string' ? item.result.trim() : '', source = !result ? '' : /^(data:|https?:|file:|[A-Za-z]:[\\/]|\/)/.test(result) ? result : `data:image/png;base64,${result.replace(/\s/g, '')}`;
+    return source ? {...row, kind: 'imageActivity', label: '已生成 1 张图像', images: [source]} : null;
   }
-  if (item.type === 'imageView') return null;
+  if (item.type === 'imageView') {
+    const source = [item.path, item.url, item.imagePath, item.image_url].find(value => typeof value === 'string' && value.trim());
+    return source ? {...row, kind: 'imageActivity', label: '已查看 1 张图像', images: [source]} : null;
+  }
   const labels = {mcpToolCall:'MCP 工具',dynamicToolCall:'动态工具',collabAgentToolCall:'协作任务',webSearch:'网页搜索',contextCompaction:'上下文整理',enteredReviewMode:'开始审查',exitedReviewMode:'审查结果'};
   if (item.type === 'contextCompaction') return {...row,label:'上下文整理',text:'会话上下文已整理；仅显示公开提示。'};
   const status = item.error || item.success === false || ['failed','error'].includes(item.status) ? '失败' : ['inProgress','in_progress'].includes(row.status) ? '进行中' : '已完成';
@@ -29,7 +32,7 @@ function itemRow(item, turn, index) {
   const safe = JSON.stringify(item,function(key,value) { return ['encryptedContent','encrypted_content','reasoningContent','reasoning_content'].includes(key) || this.type === 'reasoning' && key === 'content' ? undefined : value; },2);
   return {...row,label:title,text:safe};
 }
-function projectConversation(thread, expandedTurns = new Set(), expandedActivities = new Set()) {
+function projectConversation(thread, expandedTurns = new Set(), expandedActivities = new Set(), expandedImages = new Set()) {
   const rows = [];
   for (const [index, turn] of (thread && thread.turns || []).entries()) {
     const normalized = (turn.items || []).map(item => itemRow(item, turn, index)).filter(Boolean);
@@ -37,7 +40,7 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
     const phaseAware = answers.some(row => row.phase), finals = answers.filter(row => row.phase === 'final_answer');
     const last = normalized[normalized.length - 1];
     if (!finals.length && !phaseAware && last && last.kind === 'assistant') finals.push(last);
-    const finalIds = new Set([...finals, ...normalized.filter(row => row.kind === 'assistant' && row.images.length)].map(row => row.key));
+    const finalIds = new Set([...finals, ...normalized.filter(row => ['assistant', 'imageActivity'].includes(row.kind) && row.images.length)].map(row => row.key));
     const foldable = turn.status === 'completed' && finalIds.size && normalized.some(row => row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key));
     const start = timestamp(turn.startedAt), end = timestamp(turn.completedAt), duration = turn.durationMs !== undefined ? turn.durationMs : start && end ? end - start : undefined;
     const work = {key: `work:${turn.id}`, kind: 'work', turnId: turn.id, turnIndex: index, text: duration !== undefined ? `用时 ${elapsed(duration / 1000)}` : turn.status === 'inProgress' ? '正在工作' : turn.status === 'interrupted' ? '已停止' : '工作过程', foldable: !!foldable, expanded: expandedTurns.has(turn.id), images: [], files: [], skills: []};
@@ -46,7 +49,7 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
       const row = normalized[position];
       if (!inserted && row.kind !== 'user') { rows.push(work); inserted = true; }
       if (foldable && !expandedTurns.has(turn.id) && row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key)) { position++; continue; }
-      if (row.kind !== 'activity') { rows.push(row); position++; continue; }
+      if (row.kind !== 'activity') { rows.push(row.kind === 'imageActivity' ? {...row, expanded: expandedImages.has(row.key)} : row); position++; continue; }
       const members = [];
       while (position < normalized.length && normalized[position].kind === 'activity') members.push(normalized[position++]);
       const key = `activity:${row.key}`, files = members.some(member => member.files.length), commands = members.some(member => member.command);

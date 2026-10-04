@@ -1,5 +1,5 @@
 <template>
-  <button ref="element" class="message-image-button lp-remote-image" :class="{ 'lp-image-thumbnail': thumbnail }" type="button" :aria-label="`查看${alt || '图片'}`" :aria-busy="loading" @click="open">
+  <button ref="element" class="message-image-button lp-remote-image" :class="{ 'lp-image-thumbnail': thumbnail, 'lp-image-activity': compact }" type="button" :aria-label="`查看${alt || '图片'}`" :aria-busy="loading" @click="open">
     <img v-if="url" class="message-image-preview" :class="imageClass" :src="url" :alt="alt || '图片'" loading="lazy" @error="failed" />
     <span v-else class="lp-image-placeholder" role="status"><progress v-if="loading" aria-label="正在读取图片" />{{ error || '正在读取图片…' }}</span>
   </button>
@@ -7,7 +7,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { resolveRemoteImage, observeRemoteImages, remoteImagePath, invalidateRemoteImage } from '../../lanpower/images'
-const props = withDefaults(defineProps<{source:string;threadId:string;cwd:string;alt?:string;imageClass?:string;thumbnail?:boolean}>(), {thumbnail:true})
+const props = withDefaults(defineProps<{source:string;threadId:string;cwd:string;alt?:string;imageClass?:string;thumbnail?:boolean;compact?:boolean}>(), {thumbnail:true,compact:false})
 const emit = defineEmits<{open:[url:string]}>()
 const element = ref<HTMLElement | null>(null), url = ref(''), error = ref(''), loading = ref(false)
 let generation = 0, observer: IntersectionObserver | undefined, visible = false, pending: Promise<void> | undefined
@@ -36,4 +36,7 @@ onBeforeUnmount(() => { generation++; observer?.disconnect(); unobserve() })
 .lp-image-placeholder { display: flex; align-items: center; justify-content: center; min-height: 80px; padding: 12px; color: var(--lp-muted,#737373); font-size: 12px; overflow-wrap: anywhere; }
 .lp-image-thumbnail .lp-image-placeholder { width: 100%; height: 100%; }
 @media (max-width:640px) { .lp-image-thumbnail { width: 88px; height: 88px; } }
+.lp-image-activity { width: 140px; max-width: 100%; height: 140px; flex-shrink: 0; }
+.lp-image-activity .message-image-preview { width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; }
+.lp-image-activity .lp-image-placeholder { width: 100%; height: 100%; min-height: 0; padding: 8px; box-sizing: border-box; }
 </style>

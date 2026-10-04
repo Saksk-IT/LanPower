@@ -193,10 +193,19 @@ Page({
   copy() { const row = this.controller.rows.filter(value => value.kind === 'assistant').pop(); if (row) this.copyText(row.text); this.closeSheet(); },
   copyText(text) { if (wx.setClipboardData) wx.setClipboardData({data: String(text || ''), success: () => this.controller.notify('已复制。'), fail: () => this.controller.notify('复制未完成，可以在完整内容中分段选取。')}); },
   openLink(event) { const target = dataOf(event).target; if (/^(https?:|codex:)/i.test(target)) this.copyText(target); else this.openFiles({currentTarget: {dataset: {path: target.replace(/:\d+(?::\d+)?$/, '')}}}); },
+  async loadImagePreview(key, index) {
+    const c = this.controller, context = c.key, epoch = c.epoch, row = c.rows.find(value => value.key === key); if (!row || !row.images[index] || !c.ready || !this.visible) return '';
+    try { const path = await this.images.resolve(row.images[index], c.threadId, c.current.cwd || ''); if (c !== this.controller || context !== c.key || epoch !== c.epoch || !c.ready || !this.visible) return ''; this.imagePaths.set(key + ':img:' + index, path); this.paint(); return path; }
+    catch (error) { if (c === this.controller && context === c.key && epoch === c.epoch) c.notify(error.message); return ''; }
+  },
+  async toggleImageRow(event) {
+    const {key} = dataOf(event), c = this.controller, context = c.key, row = c.rows.find(value => value.key === key); if (!row || row.kind !== 'imageActivity') return;
+    c.toggleImageRow(key); this.paint();
+    if (c.expandedImages.has(key)) for (let index = 0; index < row.images.length; index++) { if (c !== this.controller || context !== c.key || !c.expandedImages.has(key)) break; await this.loadImagePreview(key, index); }
+  },
   async viewImage(event) {
-    const {key, index} = dataOf(event), row = this.controller.rows.find(value => value.key === key), c = this.controller, context = c.key; if (!row) return;
-    try { const path = await this.images.resolve(row.images[Number(index)], c.threadId, c.current.cwd || ''); if (context !== c.key || !c.ready || !this.visible) return; this.imagePaths.set(key + ':img:' + index, path); this.paint(); if (wx.previewImage) wx.previewImage({current: path, urls: [path]}); }
-    catch (error) { if (context === c.key) this.controller.notify(error.message); }
+    const {key, index} = dataOf(event), path = await this.loadImagePreview(key, Number(index));
+    if (path && wx.previewImage) wx.previewImage({current: path, urls: [path]});
   },
   async addImages() {
     const c = this.controller, key = c.key; if (!c.canControl || c.busy || c.sendBlocked) return; const count = 4 - c.draft.images.length; if (count <= 0) return c.notify('一次最多添加 4 张图片。');

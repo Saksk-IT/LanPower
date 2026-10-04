@@ -209,6 +209,7 @@ export type UiMessage = {
   role: 'user' | 'assistant' | 'system'
   text: string
   images?: string[]
+  imageAction?: 'view' | 'generate'
   skills?: Array<{ name: string; path: string }>
   fileAttachments?: UiFileAttachment[]
   fileChanges?: UiFileChange[]

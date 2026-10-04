@@ -98,6 +98,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         window.crShowRunning=()=>{crShowChat();c.current.turns.push({id:'running',status:'inProgress',startedAt:Date.now()-38000,items:[]});c.activeTurns.set('a','running');c.overlay={label:'正在运行命令',plan:[],error:''};c.queue=[{id:'q1',input:[{type:'text',text:'完成后再检查深色模式'}]}];model.paint();};
         window.crShowCatalog=()=>{c.resources.catalog={kind:'skill',cwd:root,loading:false,error:'',rows:[{name:'项目检查',path:root+'/skills/check',description:'检查项目布局和会话控制逻辑',enabled:true,scope:'project'}]};model.setData({view:'catalog',catalogKind:'skill'});model.paint();};
         window.crShowFiles=()=>{c.resources.state={cwd:root,directory:'.',branch:'main',files:[{name:'README.md',path:'README.md',directory:false},{name:'mini_program',path:'mini_program',directory:true}],cursor:'',query:'',selected:null,loading:false,error:'',truncated:false};model.setData({view:'files'});model.paint();};
+        window.crShowImages=()=>{crShowChat();c.current.turns[0].items.splice(1,0,{id:'view-image',type:'imageView',path:root+'/portrait.png'},{id:'generate-image',type:'imageGeneration',result:'data:image/png;base64,fixture'});window.crImageReads=0;window.crImageOpened=[];model.images.resolve=async()=>{window.crImageReads++;return '/fixture/portrait.png';};wx.previewImage=value=>window.crImageOpened.push(value);model.paint();};
       }, {sources});
       async function geometry() {
         const measurements = await page.evaluate(() => ({overflow: document.documentElement.scrollWidth - innerWidth,
@@ -115,6 +116,13 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       assert.ok(await page.locator('.cr-project-group').count() >= 2); assert.ok((await page.locator('.cr-thread').allTextContents()).some(text=>text.includes('规划下一个想法')));
       await page.evaluate(() => crShowChat()); await geometry(); await page.screenshot({path: path.join(output, 'white-chat-' + width + '.png')});
       assert.equal(await page.locator('.cr-message-activity').count(),0); await page.locator('.cr-work-row').click(); assert.equal(await page.locator('.cr-activity-group').count(),1); await page.locator('.cr-activity-group').click(); assert.equal(await page.locator('.cr-message-activity').count(),2);
+      await page.evaluate(()=>crShowImages());assert.equal(await page.locator('.cr-image-toggle').count(),2);assert.equal(await page.locator('.cr-image-previews').count(),0);
+      assert.equal(await page.evaluate(()=>crImageReads),0);assert.ok((await page.locator('.cr-image-toggle').allTextContents()).some(text=>text.includes('已查看 1 张图像')));
+      await page.locator('.cr-image-toggle').first().click();await page.waitForFunction(()=>document.querySelector('.cr-image-previews wx-image')?.getAttribute('src')==='/fixture/portrait.png');
+      const imageBox=await page.locator('.cr-image-previews .cr-image-button').boundingBox();assert.ok(imageBox.width<=141&&imageBox.height<=141);assert.equal(await page.locator('.cr-image-previews wx-image').getAttribute('mode'),'aspectFit');
+      await geometry();await page.screenshot({path:path.join(output,'image-preview-'+width+'.png')});
+      await page.locator('.cr-image-previews .cr-image-button').click();assert.equal(await page.evaluate(()=>crImageOpened.length),1);
+      await page.evaluate(()=>crPage.paint());assert.equal(await page.locator('.cr-image-previews').count(),1);await page.locator('.cr-image-toggle').first().click();assert.equal(await page.locator('.cr-image-previews').count(),0);
       await page.evaluate(() => {crShowRunning();crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});});
       assert.equal(await page.locator('.cr-stop').count(), 1); await geometry(); await page.screenshot({path: path.join(output, 'dark-chat-' + width + '.png')});
       await page.evaluate(() => {crPage.changeTheme({currentTarget:{dataset:{value:'light'}}});crPage.controller.approvals.set(JSON.stringify('approval'),{id:'approval',method:'item/fileChange/requestApproval',params:{threadId:'a',turnId:'running',itemId:'file',reason:'修改小程序界面与输入区域'}});crPage.openApproval({currentTarget:{dataset:{key:JSON.stringify('approval')}}});});
@@ -128,6 +136,6 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       await page.evaluate(()=>{crPage.setData({view:'settings'});crPage.paint();});await geometry();await page.screenshot({path:path.join(output,'settings-'+width+'.png')});
       assert.deepEqual(errors, []); await context.close();
     }
-    console.log('微信编译页面：320/390/430px 项目与聊天、过程折叠、队列、审批、深色、键盘、技能、文件和设置检查通过');
+    console.log('微信编译页面：320/390/430px 图片折叠、140px 预览与点击大图，以及项目与聊天、过程折叠、队列、审批、深色、键盘、技能、文件和设置检查通过');
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});
