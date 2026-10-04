@@ -276,9 +276,17 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         ObserveWorkspace(native["cwd"]?.GetValue<string>());
         RequireWorkspace(native["cwd"]?.GetValue<string>());
         _threads[id] = native["cwd"]!.GetValue<string>();
-        if (_runtime.Shared && history)
+        if (_runtime.Desktop)
         {
-            // Joining a loaded native chat must preserve its permissions and active task.
+            // The original renderer already owns the event listeners. Read saved
+            // and cached settings without loading or resuming a viewed thread.
+            if (NativeSessionSnapshot.Read(id, native["path"]?.GetValue<string>(), native["cwd"]!.GetValue<string>())?["settings"] is JsonObject savedSettings)
+                ObserveSettings(id, savedSettings);
+            ObserveSettings(id, response["result"]!.AsObject());
+        }
+        if (_runtime.Shared && !_runtime.Desktop && history)
+        {
+            // A separate app-server connection needs its own event subscription.
             var joined = await _runtime.CallAsync("thread/resume", new JsonObject { ["threadId"] = id, ["excludeTurns"] = true }, token);
             if (joined["error"] is null) { _sharedThreads[id] = 0; if (joined["result"] is JsonObject joinedResult) ObserveSettings(id,joinedResult); }
             else if (_sharedThreads.ContainsKey(id) && !UnpersistedSharedChat(native, joined["error"], id))
@@ -461,7 +469,7 @@ public sealed class RemoteRuntime(Func<CodexHostSettings> settings, Func<Cancell
         {
             if (!_threads.ContainsKey(id)) await ReadThreadAsync(id, false, token);
             RequireWorkspace(_threads[id]); await RefreshSharedLoadedAsync(token); RequireControl(id);
-            if (!_sharedThreads.ContainsKey(id) && method is not "thread/archive" and not "thread/unarchive")
+            if (!_sharedThreads.ContainsKey(id) && method is not "thread/archive" and not "thread/unarchive" and not "thread/queue/list")
             {
                 var resumed = await _runtime!.CallAsync("thread/resume", new JsonObject { ["threadId"] = id, ["excludeTurns"] = true }, token);
                 if (resumed["error"] is not null) { resumed["id"] = requestId.DeepClone(); return resumed; }

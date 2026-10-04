@@ -27,6 +27,27 @@ function fixture() {
   return { context, manager, conversation, events, replies, listeners, emit, attach }
 }
 describe('original desktop renderer integration', () => {
+  it('views old history and queues without resuming or changing native recency', async () => {
+    const f = fixture(), updatedAt = 1700000100;
+    Object.assign(f.conversation, { updatedAt, latestModel:'gpt-6', latestReasoningEffort:'high', latestCollaborationMode:{mode:'plan',settings:{developer_instructions:'private'}} });
+    ;(f.manager as any).resumeConversation = () => { throw new Error('viewing must not resume') };
+    ;(f.manager as any).sendRequest = async (method:string,params:any) => {
+      f.replies.push({method,params});
+      if (method === 'thread/resume') throw new Error('viewing must not resume');
+      return method === 'thread/read' ? {thread:{id:'chat',updatedAt}} : {data:[],nextCursor:null};
+    };
+    const a = await f.attach('adapterA','eventA');
+    for (let repeat=0;repeat<3;repeat++) {
+      expect(await a.rpc('thread/read',{threadId:'chat',includeTurns:false})).toEqual({thread:{id:'chat',updatedAt},model:'gpt-6',reasoningEffort:'high',collaborationMode:{mode:'plan'}});
+      await a.rpc('codex-web/local/history/page',{threadId:'chat',limit:8});
+      await a.rpc('thread/queue/list',{threadId:'chat',limit:32});
+    }
+    expect((f.conversation as any).updatedAt).toBe(updatedAt);
+    expect(f.replies.map(r=>r.method)).not.toContain('thread/resume');
+    ;(f.manager as any).getConversation = () => null;
+    expect(await a.rpc('thread/read',{threadId:'unloaded',includeTurns:false})).toEqual({thread:{id:'chat',updatedAt}});
+    a.dispose();
+  });
   it('keeps two 17 MiB item references readable despite background cache pressure',async () => {
     const f = fixture(), text = 'x'.repeat(17 * 1024 * 1024)
     const turns = [{id:'huge',items:[{id:'one',type:'agentMessage',text},{id:'two',type:'agentMessage',text:text+'结尾'}]}]

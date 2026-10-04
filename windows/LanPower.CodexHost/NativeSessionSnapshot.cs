@@ -44,6 +44,7 @@ public static class NativeSessionSnapshot
             using var reader = new StreamReader(file, Encoding.UTF8, false, 4096, true);
             if (tail) ReadLine(reader); // A tail starts inside a UTF-8 line; discard that partial record.
             var turns = new List<JsonObject>();
+            var settings = new JsonObject();
             JsonObject? current = null;
             string? action = null;
             JsonObject Turn(string turnId)
@@ -71,7 +72,11 @@ public static class NativeSessionSnapshot
                 var kind = row["type"]?.GetValue<string>();
                 var type = payload["type"]?.GetValue<string>();
                 var turnId = payload["turn_id"]?.GetValue<string>();
-                if (kind == "turn_context" && turnId is not null) current = Turn(turnId);
+                if (kind == "turn_context")
+                {
+                    if (turnId is not null) current = Turn(turnId);
+                    ReadSettings(settings, payload);
+                }
                 if (kind == "event_msg")
                 {
                     if (type == "task_started" && turnId is not null)
@@ -121,6 +126,7 @@ public static class NativeSessionSnapshot
                 }
             }
             var last = turns.LastOrDefault();
+            if (tail && settings.Count == 0) settings = EarlierSettings(path);
             if (last is not null && (last["startedAt"] is null || last["status"]?.GetValue<string>() == "unknown") &&
                 Lifecycle(path, last["id"]!.GetValue<string>()) is { } lifecycle)
             {
@@ -139,7 +145,7 @@ public static class NativeSessionSnapshot
                 bounded.Insert(0, turn.DeepClone());
                 if (bounded.ToJsonString().Length > 240000) { bounded.RemoveAt(0); break; }
             }
-            var snapshot = new JsonObject { ["turns"] = bounded, ["live"] = live, ["historyTruncated"] = tail || turns.Count >= 8 };
+            var snapshot = new JsonObject { ["turns"] = bounded, ["live"] = live, ["settings"] = settings, ["historyTruncated"] = tail || turns.Count >= 8 };
             lock (Cache)
             {
                 if (Cache.Count >= 32) Cache.Remove(Cache.Keys.First());
@@ -176,6 +182,37 @@ public static class NativeSessionSnapshot
         // The writer may still be appending this line; incomplete records are retried on the next observation.
         return null;
     }
+    private static void ReadSettings(JsonObject settings, JsonObject payload)
+    {
+        if (payload["model"] is JsonValue model && model.TryGetValue<string>(out var name) && name.Length <= 256) settings["model"] = name;
+        var effort = payload["effort"] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+        if (payload.ContainsKey("effort") && (payload["effort"] is null || effort is "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max" or "ultra")) settings["reasoningEffort"] = effort;
+        if (payload["collaboration_mode"] is JsonObject collaboration && collaboration["mode"] is JsonValue modeValue && modeValue.TryGetValue<string>(out var mode) && mode is "default" or "plan")
+            settings["collaborationMode"] = new JsonObject { ["mode"] = mode };
+    }
+
+    private static JsonObject EarlierSettings(string path)
+    {
+        // A large tool result can push the last send settings outside the message tail.
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var position = file.Length; var suffix = ""; var buffer = new byte[256 * 1024];
+        while (position > 0)
+        {
+            var start = Math.Max(0, position - buffer.Length); file.Position = start;
+            var count = file.Read(buffer, 0, (int)(position - start));
+            var lines = (Encoding.UTF8.GetString(buffer, 0, count) + suffix).Split('\n');
+            for (var index = lines.Length - 2; index >= (start == 0 ? 0 : 1); index--)
+            {
+                var line = lines[index]; if (line.Length > LineBytes || !line.Contains("turn_context")) continue;
+                JsonObject? row; try { row = JsonNode.Parse(line) as JsonObject; } catch (JsonException) { continue; }
+                if (row?["type"]?.GetValue<string>() != "turn_context" || row["payload"] is not JsonObject payload) continue;
+                var settings = new JsonObject(); ReadSettings(settings, payload); if (settings.Count > 0) return settings;
+            }
+            suffix = lines[0].Length <= LineBytes ? lines[0] + "\n" : "\n"; position = start;
+        }
+        return new();
+    }
+
     private static JsonObject? Lifecycle(string path, string turnId)
     {
         // A long running turn can outgrow the bounded message tail. Search backward for its actual

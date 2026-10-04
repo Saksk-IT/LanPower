@@ -302,6 +302,16 @@
         }
         if (method === 'turn/start') return adapter.startTurn(params);
         if (method === 'turn/interrupt') { await adapter.interruptTurn(params); return {}; }
+        if (method === 'thread/read') {
+          const result = await manager.sendRequest(method, params ?? null, { priority: 'critical' });
+          const cached = manager.getConversation(params?.threadId);
+          // Reuse native send settings without resumeConversation or thread/resume.
+          const settings = {};
+          if (typeof cached?.latestModel === 'string' && cached.latestModel.length <= 256) settings.model = cached.latestModel;
+          if (cached?.latestReasoningEffort === null || ['none','minimal','low','medium','high','xhigh','max','ultra'].includes(cached?.latestReasoningEffort)) settings.reasoningEffort = cached.latestReasoningEffort;
+          if (['default','plan'].includes(cached?.latestCollaborationMode?.mode)) settings.collaborationMode = { mode: cached.latestCollaborationMode.mode };
+          return { ...result, ...settings };
+        }
         if (method === 'codex-web/local/history/action') {
           const ids = [], seen = new Set(); let cursor;
           do {

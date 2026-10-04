@@ -37,6 +37,30 @@ public class NativeSessionSnapshotTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void SavedSendSettingsRemainReadableWithoutWritingOrRelayingPrivateContext(bool largeTail)
+    {
+        WithSession((id,file,root) =>
+        {
+            Append(file,"turn_context",new() { ["turn_id"]="turn", ["model"]="gpt-6", ["effort"]="high",
+                ["developer_instructions"]="private instructions", ["collaboration_mode"]=new JsonObject { ["mode"]="plan", ["settings"]=new JsonObject { ["developer_instructions"]="private context" } } });
+            if (largeTail) File.AppendAllText(file,new string('x',5*1024*1024)+"\n");
+            Append(file,"event_msg",new() { ["type"]="task_complete", ["turn_id"]="turn" });
+            var length=new FileInfo(file).Length; var updated=File.GetLastWriteTimeUtc(file);
+            for (var repeat=0;repeat<3;repeat++)
+            {
+                var snapshot=NativeSessionSnapshot.Read(id,file,root)!;
+                Assert.AreEqual("gpt-6",snapshot["settings"]!["model"]!.GetValue<string>());
+                Assert.AreEqual("high",snapshot["settings"]!["reasoningEffort"]!.GetValue<string>());
+                Assert.AreEqual("plan",snapshot["settings"]!["collaborationMode"]!["mode"]!.GetValue<string>());
+                Assert.DoesNotContain("private",snapshot.ToJsonString());
+            }
+            Assert.AreEqual(length,new FileInfo(file).Length); Assert.AreEqual(updated,File.GetLastWriteTimeUtc(file));
+        });
+    }
+
+    [TestMethod]
     public void SnapshotRejectsWrongThreadWorkspaceAndOutsidePaths()
     {
         WithSession((id,file,root) =>

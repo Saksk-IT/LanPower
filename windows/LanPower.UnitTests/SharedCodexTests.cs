@@ -139,6 +139,30 @@ public sealed class SharedCodexTests
         finally { Directory.Delete(root, true); }
     }
 
+    [TestMethod]
+    public async Task ReadingQueueDoesNotLoadAnUnloadedSharedThread()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "LanPowerQueueReadTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var server = new SharedFixture(root) { Loaded = false };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15)); var token = timeout.Token;
+            await using var remote = new RemoteRuntime(() => new(true, [root], AutoDiscover:false, SharedControl:true), t => RuntimeClient.ConnectAsync(server.Endpoint, server.Bearer, t));
+            await remote.OpenAsync(token);
+            for (var repeat = 0; repeat < 3; repeat++)
+            {
+                var queue = (await remote.HandleAsync(Request("thread/queue/list", new() { ["threadId"] = "native-chat", ["limit"] = 32 }), token))!["result"]!["data"]!.AsArray();
+                Assert.AreEqual(0, queue.Count);
+            }
+            Assert.IsEmpty(server.ResumeParameters, "A read-only queue request must not resume the thread.");
+            Assert.AreEqual(0, server.Mutations);
+            await remote.HandleAsync(Request("turn/start", new() { ["threadId"] = "native-chat", ["input"] = Input("继续") }), token);
+            Assert.HasCount(1, server.ResumeParameters, "Sending still resumes an unloaded thread.");
+            Assert.IsTrue(server.Active);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private sealed class SharedFixture : IAsyncDisposable
     {
         private readonly HttpListener _listener = new(); private readonly CancellationTokenSource _stop = new();
@@ -150,6 +174,7 @@ public sealed class SharedCodexTests
         public int Mutations { get; private set; }
         public void Disconnect() { foreach (var peer in _peers) peer.Socket.Abort(); }
         public bool HideHistory { get; set; }
+        public bool Loaded { get; set; } = true;
         public bool NoRolloutUntilStart { get; set; }
         public string MissingHistory { get; set; } = "no rollout found for thread id native-chat";
         public ConcurrentBag<JsonObject> ResumeParameters { get; } = new();
@@ -184,7 +209,7 @@ public sealed class SharedCodexTests
                 if (!request.ContainsKey("id")) continue;
                 if (method == "account/read") result["account"] = new JsonObject { ["type"] = "fixture" };
                 if (method == "thread/list") result["data"] = HideHistory ? new JsonArray() : new JsonArray(Thread());
-                if (method == "thread/loaded/list") result["data"] = new JsonArray("native-chat");
+                if (method == "thread/loaded/list") result["data"] = Loaded ? new JsonArray("native-chat") : new JsonArray();
                 if (method == "thread/resume" && NoRolloutUntilStart)
                 {
                     await Send(peer, new() { ["id"] = request["id"]!.DeepClone(), ["error"] = new JsonObject { ["code"] = -32600, ["message"] = MissingHistory } });
