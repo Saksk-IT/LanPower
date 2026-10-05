@@ -10,6 +10,17 @@ namespace LanPower.UnitTests;
 public sealed class EnrollmentTests
 {
     [TestMethod]
+    public void LocalHttpOriginsAreAcceptedWhilePublicHttpIsRejected()
+    {
+        foreach (var address in new[] { "http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080",
+            "http://10.1.2.3:8080", "http://172.16.1.2:8080", "http://192.168.1.2:8080" })
+            Assert.AreEqual(address, CloudEnrollment.NormalizeOrigin(address));
+        foreach (var address in new[] { "http://8.8.8.8", "http://172.32.1.2", "http://169.254.1.2",
+            "http://localhost.evil.test", "http://localhost@evil.test", "http://[fc00::1]", "http://localhost/path" })
+            Assert.ThrowsExactly<ArgumentException>(() => CloudEnrollment.NormalizeOrigin(address));
+    }
+
+    [TestMethod]
     public async Task DeviceCodeStaysInServiceAndApprovedTokensAreSavedOnce()
     {
         var clock = new EnrollmentClock();

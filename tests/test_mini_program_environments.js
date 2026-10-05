@@ -79,6 +79,10 @@ async function main() {
   connected.controlRoute = 'local'; connected.setData({canControl: true, canWake: true, mac: 'old draft'});
   connected.wakeDrafts = {old: {mac: 'draft'}};
   connected.editCloudUrl({detail: {value: originB}}); connected.saveDevelopmentCloud();
+  assert.equal(connected.data.accountUrlDraft, originB, 'Saving an HTTP test address must also update account login');
+  connected.data.accountUrlDraft = originA;
+  connected.saveDevelopmentCloud();
+  assert.equal(connected.data.accountUrlDraft, originB, 'Saving the same test address must replace a stale HTTPS login draft');
   assert.equal(connected.data.connected, false);
   assert.equal(connected.data.canControl, false);
   assert.equal(connected.data.canWake, false);

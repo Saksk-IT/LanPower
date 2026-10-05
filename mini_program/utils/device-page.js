@@ -86,7 +86,7 @@ function createDevicePage(mode) {
     try {
       const result = await testDevelopmentCloud(wx, draft);
       if (serial !== this.connectionTestSerial || !environment(wx).development) return;
-      this.notify(`已连接 Cloud ${result.version}。请保存 ${result.url}，并在同一地址的网页生成手机授权二维码。`, 'success');
+      this.notify(`已连接 Cloud ${result.version}。请保存 ${result.url}，再登录同一 Cloud 的账号；也可在该地址的网页生成授权二维码。`, 'success');
     } catch (error) {
       if (serial === this.connectionTestSerial && environment(wx).development) this.notify(error.message, 'error');
     } finally {
@@ -99,7 +99,7 @@ function createDevicePage(mode) {
     if (!environment(wx).development || this.data.busy || this.data.updatingList || this.data.testingCloud) return;
     try {
       const previous = developmentCloud(wx), url = setDevelopmentCloud(wx, value);
-      this.setData({developmentCloud: url, cloudUrlDraft: url});
+      this.setData({developmentCloud: url, cloudUrlDraft: url, accountUrlDraft: url});
       if (url !== previous) {
         this.serial = (this.serial || 0) + 1;
         if (this.client) this.client.close();
@@ -107,7 +107,7 @@ function createDevicePage(mode) {
         this.loadConnection();
         if (this.client) this.syncConnection();
       }
-      this.notify(url ? (this.client ? '已恢复该测试 Cloud 的开发版授权。' : '测试地址已保存，请扫描该 Cloud 的手机授权二维码。') :
+      this.notify(url ? (this.client ? '已恢复该测试 Cloud 的开发版授权。' : '测试地址已保存，请在下方登录该 Cloud 的账号，也可扫描该地址的授权二维码。') :
         '已清空测试地址，下次扫码选择 Cloud。已有开发版授权会保留。', 'success');
     } catch (error) { this.notify(error.message, 'error'); }
   },

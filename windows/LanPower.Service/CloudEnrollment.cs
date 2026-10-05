@@ -21,9 +21,9 @@ public sealed class CloudEnrollment(HttpClient client,
     public static string NormalizeOrigin(string cloudUrl)
     {
         if (cloudUrl.Length > 250 || !Uri.TryCreate(cloudUrl, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length != 0 || uri.AbsolutePath != "/" ||
+            !CloudOrigin.IsAllowed(uri) || uri.AbsolutePath != "/" ||
             uri.Query.Length != 0 || uri.Fragment.Length != 0)
-            throw new ArgumentException("Cloud 地址必须是 HTTPS 地址");
+            throw new ArgumentException("Cloud 需使用 HTTPS；本机和私有局域网 IP 可使用 HTTP");
         return uri.GetLeftPart(UriPartial.Authority);
     }
 

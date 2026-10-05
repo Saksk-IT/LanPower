@@ -119,7 +119,6 @@ class CloudClient {
 
   static async accountLogin(wxApi, {url, username, password, register = false}) {
     url = cloudOrigin(String(url || '').trim().replace(/\/+$/, ''), wxApi);
-    if (!url.startsWith('https://')) throw new Error('账号登录需要 HTTPS 地址');
     assertReachableCloud(url, wxApi);
     username = String(username || '').trim().toLowerCase();
     if (!username || username.length > 80 || typeof password !== 'string' || !password || password.length > 256)

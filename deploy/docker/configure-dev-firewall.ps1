@@ -7,14 +7,14 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'dev-network.ps1')
 $network = Get-DevLanConfiguration -LanAddress $LanAddress
 $parameters = @{
-    Name = 'LanPower-Dev-HTTPS-LAN'
-    DisplayName = 'LanPower development HTTPS (LAN)'
-    Description = 'LAN deployment 1.0.0: HTTPS 8443 from the selected physical subnet only.'
+    Name = 'LanPower-Dev-HTTP-LAN'
+    DisplayName = 'LanPower development HTTP (LAN)'
+    Description = 'LAN deployment 1.1.0: HTTP 8080 from the selected physical subnet only.'
     Enabled = 'True'
     Direction = 'Inbound'
     Action = 'Allow'
     Protocol = 'TCP'
-    LocalPort = 8443
+    LocalPort = 8080
     LocalAddress = $network.Address
     RemoteAddress = $network.Subnet
     InterfaceAlias = $network.InterfaceAlias
@@ -22,9 +22,13 @@ $parameters = @{
     EdgeTraversalPolicy = 'Block'
 }
 if (Get-NetFirewallRule -Name $parameters.Name -ErrorAction SilentlyContinue) {
-    Set-NetFirewallRule @parameters | Out-Null
+    $updatedParameters = $parameters.Clone()
+    $updatedParameters.Remove('DisplayName')
+    $updatedParameters.NewDisplayName = $parameters.DisplayName
+    Set-NetFirewallRule @updatedParameters | Out-Null
 } else {
     New-NetFirewallRule @parameters | Out-Null
 }
 if (-not (Test-DevLanFirewall -Network $network)) { throw 'The scoped LAN firewall rule was not applied.' }
-Write-Output 'The development HTTPS firewall rule is ready for the selected LAN.'
+Get-NetFirewallRule -Name 'LanPower-Dev-HTTPS-LAN' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Write-Output 'The development HTTP firewall rule is ready for the selected LAN.'

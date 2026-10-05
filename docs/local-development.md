@@ -1,10 +1,33 @@
 # 本机 Docker 开发环境
 
-当前产品名称为 **CodexDock**，以 Codex Remote 远程开发与会话控制为主，电源管理和唤醒为配套能力。Windows / Cloud / Web `1.23.3`、小程序 `3.6.2`，本机镜像 `codexdock-cloud:1.23.3-dev.1`；名称与兼容标识见 [项目定位](project-identity.md)。历史功能与各轮真实验证见下方记录。
+Windows / Cloud / Web `1.24.1`，小程序 `3.6.6`，本机镜像 `codexdock-cloud:1.24.1-dev.1`。本机与局域网入口已改为 HTTP / WS，局域网配置 `1.1.0`。使用原 `lanpower-dev` 项目与数据卷，账号、设备身份和授权继续保留。
 
-默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
+```powershell
+./deploy/docker/start-dev.ps1
+Invoke-RestMethod http://localhost:8080/healthz
+```
 
-应用源码版本为 `1.23.3`，小程序 `3.6.2`，本地部署配置版本为 `1.23.3-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+电脑打开 **http://localhost:8080**，手机填写脚本输出的 **http://电脑局域网IP:8080**。开发者工具开启不校验合法域名选项，手机预览开启调试；无需安装开发证书。多网卡时使用 `-LanAddress`，仅本机访问使用 `-LocalOnly`，依赖改变时使用 `-Build`；原 `-WebOnly` 参数保留兼容，当前无需证书步骤。
+
+Windows 更新至 `1.24.0` 后，管理员运行 `./deploy/docker/switch-windows-dev-http.ps1`，只迁移本机旧 HTTPS 8443 连接到 HTTP 8080。脚本先用原授权验证目标 Cloud，再备份加密凭据并保存新地址；设备编号和长期授权保留。电脑新登录直接填写 `http://localhost:8080`。详细手机、扫码与防火墙步骤见 [局域网访问指南](local-lan-access.md)。
+
+登录密码继续使用 `deploy/docker/private/dev-login.txt`，哈希仍在 `.env.dev`；已存在文件不改写密码。每次启动通过 SQLite backup API 备份并校验原数据库，不删除数据或证书卷。`LANPOWER_ALLOW_LOCAL_HTTP=true` 仅在本机开发 Compose 中启用，HTTP 来源限制为明确配置的 localhost、回环与私有 IPv4；网页保留来源、CSRF、HttpOnly 和 SameSite 校验。
+
+## 本机 HTTP 1.24.0（2026-10-06）
+
+本轮将本机代理、Cloud 网页 Cookie 与授权地址、小程序开发版账号登录、Windows 地址校验和 Codex WS 同步切换为 HTTP / WS。原版网页资源保持原样，只更新发布版本标记。
+
+Cloud 93 项、Windows 64 项检查通过；小程序账号登录、开发环境隔离、网络错误、设备与 Codex 交互检查通过，补充覆盖真实页面的“保存 HTTP 测试地址 → 统一账号登录 → 自动发现电脑”和同一测试地址覆盖旧 HTTPS 登录草稿。微信 WCC/WCSC 编译与 320/390/430px 浅深色布局通过。公开文件与原版网页资源校验通过。本机导入包另外生成最小 `project.private.config.json`，只含 `setting.urlCheck=false`，不复制用户原私有文件；公开正式配置保持不变。
+
+本机 Cloud / Caddy 健康，只有回环与选定局域网地址的 HTTP 8080 映射，旧 HTTPS 8443 映射已撤下。本机及局域网地址分别完成实际账号登录、HTTP 会话 Cookie、授权二维码生成、设置页地址与主要页面访问检查，浏览器错误 0。SQLite backup API 升级前后备份完整性均为 `ok`，外键错误 0，24 张有主键表的既有标识保留；原数据卷、密码哈希、登录文件、网络配置和旧证书文件沿用。
+
+Windows 已在原目录就地更新到 `1.24.0.0`，安装器退出码 0，四组件与构建哈希一致。现有加密 Cloud 地址从 HTTPS 8443 改为 HTTP 8080，原设备编号、长期授权、账号连接密钥、LAN 配置及用户设置保留，后台服务恢复已连接状态；原 Codex 窗口与已有共享服务进程保留。
+
+使用小程序实际 CloudClient / CodexConnection 实现和原生网络适配器，经过局域网 HTTP 登录、自动发现电脑、手机 Bearer WS、安装版 Windows Agent 与原 Codex 窗口完成只读模型列表请求。临时手机授权已撤销，没有向真实 Codex 会话发送任务。该检查不等同于微信真机验收；手机调试、扫码、5G 和电源动作仍需实际测试。证据与升级备份位于忽略目录 `private/local-http-1.24.0`；导入包为 `windows/out/CodexDock-mini-program-3.6.5.zip`，安装包为 `windows/out/CodexDockSetup-1.24.0-local-http.exe`。本轮不推送仓库或部署远程 Cloud。
+
+## 历史部署与验证
+
+下方保留此前版本的真实 HTTPS 验证记录；当前启动与连接请使用上方 HTTP 步骤。
 
 ## 原版网页聊天恢复 1.23.3（2026-10-06）
 
@@ -202,11 +225,7 @@ Windows Setup 已就地安装 `1.17.0.0`，四组件哈希与本轮构建一致�
 ./deploy/docker/start-dev.ps1
 ```
 
-脚本启动 Docker、在缺少镜像时构建、首次生成随机开发密码，等待服务健康，将 Caddy 的本地根证书导入当前用户和本地计算机的受信任根证书存储，最后用正常证书校验检查 HTTPS。计算机证书导入会单独请求 Windows 管理员确认，Docker 和密码生成仍在当前用户下运行。它不需要公网域名。首次构建需要下载镜像和 Python 依赖；已有镜像时直接复用，不访问镜像仓库。
-
-打开 https://localhost:8443，使用 `admin` 登录。密码保存在本机 `deploy/docker/private/dev-login.txt`；哈希保存在 `deploy/docker/.env.dev`。文件只允许当前 Windows 用户和 SYSTEM 访问，并被 Git 与 Docker 构建上下文排除。后续启动复用原密码；还可以在“设置”中添加本地 Passkey。
-
-首次使用密码登录已完成开发账户初始化，因此 `/setup` 关闭。正式部署仍按原有 Passkey 初始化流程。原有 Passkey 请继续使用 `localhost` 地址；同一网段的其他设备使用启动脚本输出的局域网 IP 地址和开发密码登录。
+当前启动、连接和升级方式见本页开头；以下为历史版本验证记录。
 
 ## 连接本机 Windows 应用
 

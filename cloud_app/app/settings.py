@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import ipaddress
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from cloud_remote.server import Config
+
+
+def local_http_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or (address.version == 4 and any(address in network for network in (
+        ipaddress.ip_network("10.0.0.0/8"), ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"))))
 
 
 @dataclass(frozen=True)
@@ -18,13 +31,20 @@ class Settings:
     wx_app_secret: str = field(default="", repr=False)
     additional_origins: tuple[str, ...] = ()
     allow_registration: bool = False
+    allow_local_http: bool = False
 
     @property
     def browser_origins(self) -> frozenset[str]:
         return frozenset(value.rstrip("/") for value in (self.public_url, *self.additional_origins))
 
     def browser_url(self, origin: str) -> str:
-        return origin if origin in self.browser_origins else self.public_url
+        if origin in self.browser_origins:
+            return origin
+        # HTTPS proxies forward HTTP internally; only use HTTP for an explicit dev origin.
+        local_origin = origin.replace("https://", "http://", 1)
+        if self.allow_local_http and local_origin in self.browser_origins:
+            return local_origin
+        return self.public_url
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -38,7 +58,8 @@ class Settings:
                        wx_app_secret=os.environ.get("WX_APP_SECRET", ""),
                        additional_origins=tuple(value.strip().rstrip("/") for value in
                            os.environ.get("LANPOWER_ADDITIONAL_ORIGINS", "").split(",") if value.strip()),
-                       allow_registration=os.environ.get("LANPOWER_ALLOW_REGISTRATION", "false").lower() == "true")
+                       allow_registration=os.environ.get("LANPOWER_ALLOW_REGISTRATION", "false").lower() == "true",
+                       allow_local_http=os.environ.get("LANPOWER_ALLOW_LOCAL_HTTP", "false").lower() == "true")
         settings.validate()
         return settings
 
@@ -52,9 +73,11 @@ class Settings:
             raise ValueError("invalid admin password hash")
         for value in (self.public_url, *self.additional_origins):
             origin = urlsplit(value)
-            if (origin.scheme != "https" or not origin.hostname or origin.username or origin.password or
+            local_http = (self.allow_local_http and origin.scheme == "http" and
+                          origin.hostname is not None and local_http_host(origin.hostname))
+            if ((origin.scheme != "https" and not local_http) or not origin.hostname or origin.username or origin.password or
                     origin.path not in ("", "/") or origin.query or origin.fragment or
                     "*" in origin.netloc or any(char.isspace() for char in value)):
-                raise ValueError("public URL and additional origins must be explicit HTTPS origins")
+                raise ValueError("origins require HTTPS; explicit local development may use loopback/private IPv4 HTTP")
             # Reject malformed ports before accepting an origin into the allowlist.
             origin.port

@@ -2,9 +2,9 @@
 
 Docker 部署承载 Codex Remote 网页工作台与 HTTPS/WSS 授权中继，附带电脑状态、电源管理及可选 Wake Gateway。远程开发入口为 `/remote`，使用流程见 [Codex Remote 指南](../../docs/codex-remote.md)。沿用现有 `lanpower-dev` 项目与数据卷，名称变更不会新建空数据库；参见 [名称约定](../../docs/project-identity.md)。
 
-本机启动脚本支持同一网段访问，保留 `localhost` 并增加选定物理网卡的 HTTPS 入口；其他设备需信任公开开发 CA。局域网部署配置版本为 `1.0.0`，详见 [局域网访问指南](../../docs/local-lan-access.md)。
+本机启动脚本支持同一网段 HTTP / WS 访问，保留 `localhost` 并增加选定物理网卡的 HTTP 8080 入口，无需开发 CA。局域网部署配置版本为 `1.1.0`，详见 [局域网访问指南](../../docs/local-lan-access.md)。
 
-本机开发测试使用独立的 `compose.dev.yml`：在仓库根目录运行 `./deploy/docker/start-dev.ps1`，访问 **https://localhost:8443**。脚本准备浏览器与 Windows 后台服务所需的证书信任和随机开发密码，复用已有测试数据；首次导入计算机证书需管理员确认。详见 [本机开发指南](../../docs/local-development.md)。以下为正式 HTTPS 部署流程。
+本机开发测试使用独立的 `compose.dev.yml`：在仓库根目录运行 `./deploy/docker/start-dev.ps1`，访问 **http://localhost:8080**。脚本准备随机开发密码，复用已有测试数据；首次配置局域网防火墙需管理员确认。旧 HTTPS 8443 端口不再发布，已有证书卷保留。详见 [本机开发指南](../../docs/local-development.md)。以下为正式 HTTPS 部署流程。
 
 新部署默认由 Caddy 自动提供 HTTPS，Windows 和 Wake Gateway 只建立出站连接。
 

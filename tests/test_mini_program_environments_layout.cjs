@@ -81,9 +81,9 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 
       }, {sources});
       assert.equal(await page.locator('.development-settings').count(), 1);
       assert.equal(await page.locator('wx-button').filter({hasText: /^测试连接$/}).count(), 1);
-      await page.locator('#development-cloud input').fill('https://localhost:8443');
+      await page.locator('#development-cloud input').fill('http://localhost:8080');
       await page.locator('wx-button').filter({hasText: /^保存测试地址$/}).click();
-      assert.equal(await page.evaluate(() => connectionPage.data.developmentCloud), 'https://localhost:8443');
+      assert.equal(await page.evaluate(() => connectionPage.data.developmentCloud), 'http://localhost:8080');
       const geometry = await page.evaluate(() => {
         const card = document.querySelector('.development-settings'), input = document.querySelector('#development-cloud');
         const button = card.querySelector('.outline-button');

@@ -37,6 +37,22 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     assert.equal(JSON.stringify(state[CLIENT_KEY]), before);
   }
   await assert.rejects(CloudClient.accountLogin(api, {url: 'http://localhost', username: 'alice', password}), /Cloud 需要 HTTPS|账号登录需要 HTTPS/);
+  for (const localUrl of ['http://localhost:8080', 'http://192.168.1.100:8080']) {
+    const localState = {}, localCalls = [];
+    const localApi = runtime(localState, options => {localCalls.push(options); options.success({statusCode: 200, data: credentials});}, 'develop');
+    setDevelopmentCloud(localApi, localUrl);
+    const localClient = await CloudClient.accountLogin(localApi, {url: localUrl, username: 'alice', password});
+    assert.equal(localClient.session.url, localUrl);
+    assert.equal(localCalls[0].url, localUrl + '/api/v2/account/login');
+    assert.equal(localState[storageKey(localApi, CLIENT_KEY)].client_id, credentials.client_id);
+    assert(!JSON.stringify(localState).includes(password));
+  }
+  for (const env of ['develop', 'trial', 'release']) {
+    const blockedCalls = [], blockedApi = runtime({}, options => {blockedCalls.push(options);}, env);
+    await assert.rejects(CloudClient.accountLogin(blockedApi, {url: 'http://public.example.test', username: 'alice', password}), /HTTPS/);
+    if (env !== 'develop') await assert.rejects(CloudClient.accountLogin(blockedApi, {url: 'http://192.168.1.100:8080', username: 'alice', password}), /HTTPS/);
+    assert.equal(blockedCalls.length, 0);
+  }
   await assert.rejects(CloudClient.accountLogin(api, {url: origin, username: 'bob', password}), /先退出/);
 
   const renewedStorage = {[CLIENT_KEY]: {...client.session, access_expires_at: 1}};
@@ -106,5 +122,24 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   assert(pageCalls.includes(origin + '/api/v2/devices'));
   assert.equal(page.accountPassword, '');
   assert(!JSON.stringify(page.data).includes(password));
+  const httpPageState = {}, httpPageCalls = [];
+  global.wx = runtime(httpPageState, options => {
+    httpPageCalls.push(options.url);
+    options.success({statusCode: 200, data: options.url.endsWith('/account/login') ? credentials : [{device_id: 'pc-one', device_type: 'windows', name: 'My PC', state: 'online'}]});
+  }, 'develop');
+  global.wx.navigateTo = global.wx.reLaunch = global.wx.switchTab = () => {};
+  const httpDefinition = createDevicePage('settings');
+  const httpPage = {...httpDefinition, data: {...httpDefinition.data}, visible: true};
+  httpPage.setData = (values, callback) => {Object.assign(httpPage.data, values); if (callback) callback();};
+  httpPage.onLoad();
+  httpPage.data.accountUrlDraft = 'https://localhost:8443';
+  httpPage.editCloudUrl({detail: {value: 'http://192.168.1.100:8080'}});
+  httpPage.saveDevelopmentCloud();
+  assert.equal(httpPage.data.accountUrlDraft, 'http://192.168.1.100:8080');
+  httpPage.data.loginUsername = 'alice'; httpPage.accountPassword = password;
+  await httpPage.loginAccount();
+  assert.equal(httpPage.client.session.url, 'http://192.168.1.100:8080');
+  assert.equal(httpPage.data.devices.length, 1);
+  assert.deepEqual(httpPageCalls, ['http://192.168.1.100:8080/api/v2/account/login', 'http://192.168.1.100:8080/api/v2/devices']);
   console.log('mini program account login, legacy proof, safe retry, password storage, environment/account races and automatic computer listing: PASS');
 })().catch(error => {console.error(error); process.exitCode = 1;});

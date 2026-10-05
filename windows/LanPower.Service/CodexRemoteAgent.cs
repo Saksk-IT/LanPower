@@ -25,7 +25,7 @@ public sealed class CodexRemoteAgent(CloudTokenSession tokens, CodexHostBridge b
                 socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(30);
                 socket.Options.AddSubProtocol(CodexRemoteProtocol.WebSocketProtocol);
                 socket.Options.SetRequestHeader("Authorization", "Bearer " + access.Token);
-                var uri = new UriBuilder(origin) { Scheme = "wss", Path = "/api/v2/remote/agent" }.Uri;
+                var uri = new UriBuilder(origin) { Scheme = origin.Scheme == "http" ? "ws" : "wss", Path = "/api/v2/remote/agent" }.Uri;
                 await socket.ConnectAsync(uri, stoppingToken);
                 delay = 2;
                 State = "connected";

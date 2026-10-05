@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# LAN deployment configuration version: 1.0.0.
+# LAN deployment configuration version: 1.1.0.
 
 function Get-DevLanConfiguration {
     param([string]$LanAddress)
@@ -35,7 +35,7 @@ function Get-DevLanConfiguration {
 function Test-DevLanFirewall {
     param([Parameter(Mandatory)]$Network)
 
-    $rule = Get-NetFirewallRule -Name 'LanPower-Dev-HTTPS-LAN' -ErrorAction SilentlyContinue
+    $rule = Get-NetFirewallRule -Name 'LanPower-Dev-HTTP-LAN' -ErrorAction SilentlyContinue
     if (-not $rule) { return $false }
     $port = $rule | Get-NetFirewallPortFilter
     $address = $rule | Get-NetFirewallAddressFilter
@@ -49,7 +49,7 @@ function Test-DevLanFirewall {
     $windowsSubnet = $Network.Subnet.Split('/')[0] + '/' + ([Net.IPAddress]::new($maskBytes)).ToString()
     return $rule.Enabled -eq 'True' -and $rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow' -and
         $rule.Profile -eq 'Any' -and $rule.EdgeTraversalPolicy -eq 'Block' -and
-        $port.Protocol -eq 'TCP' -and @($port.LocalPort).Count -eq 1 -and $port.LocalPort -eq '8443' -and
+        $port.Protocol -eq 'TCP' -and @($port.LocalPort).Count -eq 1 -and $port.LocalPort -eq '8080' -and
         @($address.LocalAddress).Count -eq 1 -and $address.LocalAddress -eq $Network.Address -and
         @($address.RemoteAddress).Count -eq 1 -and $address.RemoteAddress -in @($Network.Subnet, $windowsSubnet) -and
         @($interface.InterfaceAlias).Count -eq 1 -and $interface.InterfaceAlias -eq $Network.InterfaceAlias

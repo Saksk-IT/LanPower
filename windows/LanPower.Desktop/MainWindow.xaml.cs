@@ -251,12 +251,12 @@ public partial class MainWindow : Window
     private void OpenCloud(object sender, RoutedEventArgs e)
     {
         var address = _cloudPairing?.VerificationUri ?? CloudUrlBox.Text.Trim().TrimEnd('/') + "/dashboard";
-        if (Uri.TryCreate(address, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.UserInfo.Length == 0)
+        if (Uri.TryCreate(address, UriKind.Absolute, out var uri) && CloudOrigin.IsAllowed(uri))
         {
             try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
             catch { CloudNotice.Text = "无法打开网页，请检查默认浏览器设置。"; }
         }
-        else CloudNotice.Text = "请先输入有效的 HTTPS Cloud 地址。";
+        else CloudNotice.Text = "请输入 HTTPS Cloud 地址；本机和私有局域网 IP 可使用 HTTP。";
     }
 
     protected override void OnClosed(EventArgs e)

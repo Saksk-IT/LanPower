@@ -65,6 +65,10 @@ async function main() {
   assert.equal(api.calls[0].header, undefined);
   assert.equal(api.calls[0].data, undefined);
   assert.equal(JSON.stringify(api.storage), before);
+  const httpLan = 'http://192.168.1.100:8080';
+  assert.deepEqual(await testDevelopmentCloud(api, httpLan), {url: httpLan, version: '1.22.1'});
+  assert.equal(api.calls[1].url, httpLan + '/healthz');
+  assert(!cloudConnectionError(api, httpLan, {errMsg: 'connect error'}).message.includes('证书'));
   for (const [errMsg, expected] of [['request:fail url not in domain list', 'CLOUD_DOMAIN'],
     ['request:fail ssl hand shake error', 'CLOUD_TLS'], ['request:fail timeout', 'CLOUD_TIMEOUT'],
     ['request:fail net::ERR_CERT_AUTHORITY_INVALID', 'CLOUD_TLS'],

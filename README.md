@@ -18,7 +18,7 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 3. 点击「连接原 Codex 窗口」，在 Cloud 的「Codex Remote」选择同一电脑和聊天。若本机连接接口尚未开启，按应用提示手动开启。
 4. 在小程序「我的 / 连接与设置」登录同一 Cloud 的同一账号，直接显示电脑并进入 Codex。已有 Passkey 用户先在网页「设置 → 统一账号」设置密码；原扫码方式继续兼容。
 
-电脑需要保持在线且 Windows 用户已经登录。局域网 HTTPS、手机证书信任与详细连接步骤见 [使用与验收指南](docs/codex-remote.md)。
+电脑需要保持在线且 Windows 用户已经登录。本机局域网 HTTP、微信开发调试与详细连接步骤见 [使用与验收指南](docs/codex-remote.md)。
 
 ## 文档导航
 
@@ -28,7 +28,7 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 | 远程开发与原窗口连接 | [Codex Remote 使用](docs/codex-remote.md) · [原窗口整合](docs/codex-original-window.md) |
 | 网页、小程序与功能范围 | [网页功能对齐](docs/codex-system-parity.md) · [小程序工作台](docs/codex-remote-mini-program.md) |
 | 架构与授权安全 | [整体架构](docs/architecture-v2.md) · [安全边界](docs/security-model.md) |
-| 本机部署与开发 | [本机开发](docs/local-development.md) · [局域网 HTTPS](docs/local-lan-access.md) · [Docker 部署](deploy/docker/README.md) |
+| 本机部署与开发 | [本机开发](docs/local-development.md) · [局域网 HTTP](docs/local-lan-access.md) · [Docker 部署](deploy/docker/README.md) |
 | 配套电源管理与远程唤醒 | [Cloud Direct](docs/cloud-direct.md) · [Wake Gateway](docs/wake-gateway.md) |
 | 升级、迁移与发布 | [数据保留](docs/migration-v1.md) · [构建与发布](docs/releasing.md) |
 
@@ -38,9 +38,11 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.23.4` |
-| 微信小程序 | `3.6.4` |
+| Windows 应用 / 安装器、Cloud、Web | `1.24.0` |
+| 微信小程序 | `3.6.5` |
 | Wake Gateway（配套组件） | `2.1.2` |
+
+本机 Cloud `1.24.0` 改用 **HTTP / WS**，电脑访问 **http://localhost:8080**，手机开发版填写 **http://电脑局域网IP:8080**。账号登录、授权二维码与 Codex 连接使用同一地址，无需开发证书。小程序 `3.6.5` 的测试与账号输入框均提示 HTTP，保存测试地址时同步登录地址；本机导入包带有最小 HTTP 开发设置，手机预览开启调试。Windows / Cloud / Web 同步 `1.24.0`，原数据、账号和设备授权继续使用，详见 [局域网访问指南](docs/local-lan-access.md)。
 
 小程序 `3.6.4` 直接参考云端聊天组件，修复上滑被拉回、历史窗口反向加载和悬浮按钮挤动正文；命令、文件、图片与公开思考摘要沿用原版折叠样式。Windows / Cloud / Web 同步为 `1.23.4`。见 [会话滚动与云端组件对齐](docs/codex-mini-chat-parity.md)。
 
@@ -93,7 +95,7 @@ Codex Remote `1.18.0` 已修复深度审查首批六项：大内容引用、旧�
 
 Codex Remote 已解除单控制页面限制：多个网页和小程序可同时连接同一电脑，任务与审批状态同步，关闭一个页面不影响其他页面。额度、上下文与能力目录也直接读取选中电脑的原生数据，缺少数据时显示原因并按 24 项分页；详见 [原生状态说明](docs/codex-native-status.md)。版本与验证见 [多页面控制](docs/codex-multiple-pages.md)。
 
-本机 Cloud 已支持局域网 HTTPS 访问，启动脚本会显示同一网段可用的地址并配置限定网段的防火墙规则。其他设备先信任公开开发证书，详见 [局域网访问指南](docs/local-lan-access.md)（部署配置 `1.0.0`）。
+本机 Cloud 使用局域网 HTTP，启动脚本显示同一网段可用的地址并配置限定网段的 8080 防火墙规则。手机无需安装开发证书，详见 [局域网访问指南](docs/local-lan-access.md)（部署配置 `1.1.0`）。
 
 微信小程序开发版与正式版独立保存授权和连接配置；开发版可在「连接 → 开发版 Cloud 地址」修改本机测试地址。使用步骤见 [开发版与正式版](docs/mini-program-environments.md)。
 
@@ -164,7 +166,7 @@ CodexDock 的主要用途是远程使用 Windows 电脑上的 Codex，电源管�
 
 ## 快速开始
 
-开发测试可直接在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **https://localhost:8443**。独立 Docker 环境支持源码自动重载、可信本地 HTTPS 和持久化测试数据；首次配置 Windows 后台服务的证书信任时需要管理员确认。账号与操作说明见 [本机开发指南](docs/local-development.md)。当前本地部署配置版本为 `1.20.0-dev.1`。
+开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.0-dev.1`。
 
 1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。

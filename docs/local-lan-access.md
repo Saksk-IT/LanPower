@@ -1,46 +1,52 @@
 # 本机 Cloud 的局域网访问
 
-局域网部署配置版本：`1.0.0`。在仓库根目录运行 `./deploy/docker/start-dev.ps1`，脚本自动选择有默认网关的物理网卡私有 IPv4 地址，同时保留 `https://localhost:8443` 本机入口。控制台输出的 `https://<本机局域网 IP>:8443` 可供同一网段的其他电脑和手机使用。
+局域网部署配置版本：`1.1.0`。本机 Cloud `1.24.0` 使用 **HTTP / WS**。在仓库根目录运行 `./deploy/docker/start-dev.ps1`，电脑访问 **http://localhost:8080**；脚本输出的 **http://电脑局域网IP:8080** 供同一网段手机和其他电脑使用。无需导入或信任开发证书。
 
-Docker 只增加所选局域网 IPv4 的 `8443` HTTPS 映射。Windows 防火墙规则 `LanPower-Dev-HTTPS-LAN` 限制为该网卡、本机地址与同一 IPv4 网段；首次配置或地址变更时会请求 Windows 管理员权限。即使网卡被 Windows 标记为公用网络，规则仍仅允许所选局域网网段。
-
-## 其他设备首次连接
-
-1. 将本机 `deploy/docker/private/dev-root.crt` 复制到要使用的设备并导入为受信任根证书。这是开发 CA 的公开证书；请只复制这个文件。
-2. 在浏览器打开启动脚本输出的局域网 HTTPS 地址，使用现有开发账号登录。账号仍为 `admin`，密码仍保存在本机 `deploy/docker/private/dev-login.txt`。
-3. 浏览器会为局域网地址建立独立登录会话。登录、Codex 浏览器 WSS、网页显示的 Cloud 地址及手机授权二维码均支持明确配置的局域网地址。
-
-iPhone/iPad 安装证书描述文件后，还需在“设置 → 通用 → 关于本机 → 证书信任设置”开启该开发 CA 的完全信任，见 [Apple 证书信任说明](https://support.apple.com/en-us/102390)。Windows 电脑可将此公开证书导入受信任根证书存储；后台服务需要计算机级信任。
-
-原有 Passkey 仍绑定 `localhost`，请在本机原入口使用；局域网 IP 入口使用开发密码。其他设备的 `localhost` 指向设备自身，不能用它访问这台电脑。微信开发版可在“我的 → 开发版 Cloud 地址”填写局域网 HTTPS 地址；手机真机微信是否接受此开发证书，需要按微信开发环境要求单独验收。
+Docker 只绑定回环和选定物理网卡的私有 IPv4，不监听所有网络地址。Windows 防火墙规则 `LanPower-Dev-HTTP-LAN` 仅允许该网卡、该地址与同一 IPv4 网段的 TCP 8080；首次配置或地址变更需 Windows 管理员权限。旧 HTTPS 8443 映射撤下，原数据库、账号、设备授权、登录密码及证书卷保留。
 
 ## 微信小程序连接本机 Docker
 
-小程序 `3.4.0` 的开发版我的页提供「测试连接」。这个操作只读取 Cloud `/healthz`，可以在扫码前检查手机是否能连接，不保存或切换授权，也不消耗授权二维码。
+1. 运行 `./deploy/docker/start-dev.ps1`，电脑和手机连接同一 Wi-Fi。手机使用脚本输出的 `http://<电脑局域网IP>:8080`；手机上的 `localhost`、`127.0.0.1` 和 `::1` 指向手机自身。
+2. 先在手机浏览器打开同一 HTTP 地址。无法打开时检查本地网络权限、VPN、访客 Wi-Fi、路由器客户端隔离与电脑防火墙。
+3. 微信开发者工具导入完整 `mini_program` 或本机 `windows/out/CodexDock-mini-program-3.6.5.zip`，在「详情 → 本地设置」确认已开启「不校验合法域名、web-view、TLS 版本及 HTTPS 证书」。新版本机导入包带有最小 URL 校验设置，不包含用户原私有配置；正式源码的公开配置继续开启校验。手机开发预览在右上角菜单开启调试，退出后重新进入；手机调试开关需单独开启。
+4. 小程序 `3.6.5` 的「我的 → 开发版 Cloud 地址」填写局域网 HTTP 地址，点击「测试连接」，再保存；保存会同步下方账号登录地址。此操作只读取 `/healthz`，不使用账号或授权码。统一账号输入框在开发版显示 HTTP 提示；仍显示旧 HTTPS 提示时，请检查导入目录、重新编译并确认「我的」页底部版本为 `3.6.5`。
+5. 在账号登录区域填写同一 HTTP 地址并登录电脑使用的同一账号，手机会自动发现已连接电脑。原扫码方式继续可用：在电脑浏览器打开**同一局域网 HTTP 地址**并登录，进入「已授权客户端」生成新的手机二维码；不要扫描 `localhost` 或旧 HTTPS 网页生成的码。
 
-开发者工具的模拟器使用电脑的网络与开发设置；手机使用自己的网络和证书校验。电脑能访问 `localhost` 或信任开发 CA，不代表手机或微信也可以。按以下顺序联调：
+开发版按完整 Cloud 地址隔离授权。改用 HTTP 后可重新登录原账号，原 HTTPS 地址对应的手机凭据和正式版状态继续保留。HTTP / WS 用于本机开发联调；体验版和正式版继续使用 HTTPS / WSS。微信网络和调试要求见 [微信网络说明](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)。手机真机连通、扫码与 Codex 控制需实际验收。
 
-1. 运行 `./deploy/docker/start-dev.ps1`，让电脑与手机位于同一局域网。手机填写脚本输出的 `https://<电脑局域网 IP>:8443`；手机不能填写 `localhost`、`127.0.0.1` 或 `::1`，这些地址指向手机自身。
-2. 在手机浏览器打开同一 HTTPS 地址。不能打开时，先检查 Wi-Fi、VPN、本地网络权限、路由器访客网络或客户端隔离，以及电脑是否仍使用脚本配置的 IP。开发 CA 的导入方法见上方；iOS 导入后还需开启完全信任。浏览器通过证书校验仍不代表微信一定接受该 CA。
-3. 使用微信开发版手机预览，在小程序右上角菜单打开调试，然后退出并重新进入。开发者工具「不校验合法域名、TLS 与 HTTPS 证书」的本地设置需要在手机上单独核查；该操作用于开发联调。正式版与体验版使用合法 HTTPS/WSS 域名和有效证书。
-4. 在「我的 → 开发版 Cloud 地址」填写局域网 HTTPS 地址，先点「测试连接」，再保存。检测区分域名拦截、TLS 证书、网络权限和超时；若微信仍拒绝开发 CA，请使用微信接受的有效证书与测试域名，不要改用 HTTP 绕过本项目的 HTTPS 授权要求。
-5. 在电脑浏览器也打开**相同的局域网 HTTPS 地址**并登录，在「已授权客户端」生成新的手机授权二维码。使用 `localhost` 网页生成的二维码携带 `localhost`，手机不能使用；只改手机输入框不能改写二维码。扫码成功后自动进入我的设备，点击设备详情中的 Codex 控制。
+## Windows 已有本机连接迁移
 
-开发版授权按 Cloud 地址隔离。由模拟器的 `localhost` 切换到局域网 IP 后，需要在该 IP 入口重新授权；原入口的开发授权与正式版授权保留。旧的 `localhost` 授权在手机上不会被发送到手机自身，仍可供模拟器使用。
+安装 `1.24.0` 或更新版本后，以管理员身份在仓库运行：
 
-网络校验与调试行为见 [微信网络说明](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html) 和 [腾讯小程序网络说明](https://intl.cloud.tencent.com/zh/document/product/1219/61745#%E8%B7%B3%E8%BF%87%E5%9F%9F%E5%90%8D%E6%A0%A1%E9%AA%8C)。正式发布的项目配置继续开启域名校验。以上是联调步骤，微信真机连通、WSS 和扫码需在手机实际验证。
+```powershell
+./deploy/docker/switch-windows-dev-http.ps1
+```
+
+脚本只迁移本机原来的 HTTPS 8443 地址到 HTTP 8080。它先用原长期授权检查新入口，备份加密凭据，再只更改 Cloud URL，保留设备编号、账号连接密钥和长期授权并重启后台服务。`-ValidateOnly` 只检查，不修改凭据或停止服务。新连接直接使用 `http://localhost:8080`；网页 Codex 和 Windows 中继均使用 WS。
+
+局域网 IP 的 HTTP 页面使用账号密码；Passkey 需要浏览器安全上下文，可在本机 localhost 使用受浏览器支持的功能。已有 Passkey 记录不删除。
 
 ## 地址变化与关闭局域网入口
 
-多块物理网卡同时联网时，明确指定目标地址：
+多块物理网卡同时联网时明确指定地址：
 
 ```powershell
-./deploy/docker/start-dev.ps1 -LanAddress <本机私有 IPv4>
+./deploy/docker/start-dev.ps1 -LanAddress <本机私有IPv4>
 ```
 
-更换网络或 DHCP 地址变化后重新运行启动脚本，会更新 IP 证书、端口映射、允许的浏览器来源和防火墙规则。运行 `./deploy/docker/start-dev.ps1 -LocalOnly` 恢复仅本机访问；外部端口映射撤下后，原防火墙规则不会继续暴露服务。没有合适的物理私有 IPv4 网络时，脚本自动保持仅本机入口。
+更换网络或 DHCP 地址变化后重新运行，会更新端口映射、允许的浏览器来源与防火墙规则。`./deploy/docker/start-dev.ps1 -LocalOnly` 恢复仅本机访问。没有可用物理私有 IPv4 时默认仅本机入口。
 
-局域网地址仅写入被忽略的 `deploy/docker/private/dev-network.env`，登录哈希仍使用原 `.env.dev`。Cloud 数据卷、证书卷、设备配对和 Windows 应用配置继续复用。每次启动仍先用 SQLite backup API 备份并检查现有数据库。日常操作与证书恢复见 [本机开发指南](local-development.md)。
+局域网地址仅写入被忽略的 `deploy/docker/private/dev-network.env`，密码哈希使用原 `.env.dev`。每次启动先通过 SQLite backup API 备份并检查数据库，保持原 `lanpower-dev` 数据卷。首次创建的登录说明使用新 HTTP 地址；已有登录文件中的旧 URL 仅为旧提示，原密码不变。日常操作见 [本机开发指南](local-development.md)。
+
+## 本机 HTTP 验证（2026-10-06）
+
+Cloud 93 项、Windows 64 项检查及小程序账号/环境/网络/设备/Codex 检查通过，微信编译和 320/390/430px 浅深色布局通过。本机与局域网 HTTP 均完成真实登录、Cookie、二维码生成及页面访问检查；原数据卷、24 张表的既有标识与登录配置保留。Windows `1.24.0.0` 已恢复 HTTP 连接，设备身份和长期授权保留。
+
+小程序实际连接逻辑经原生网络适配器完成 HTTP 登录、电脑发现、Bearer WS 以及原 Codex 窗口的只读模型列表请求，临时手机授权已撤销。此为本机链路检查，微信真机需按上方步骤实际验收。完整证据说明见 [本机更新记录](local-development.md#本机-http-1240-2026-10-06)。
+
+## 历史 HTTPS 验证记录
+
+以下保留此前 HTTPS 部署的实际检查记录；当前入口和联调步骤以上文 HTTP 为准。
 
 ## 本机验证（2026-10-04）
 

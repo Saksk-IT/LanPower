@@ -40,7 +40,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.23.4"
+VERSION = "1.24.0"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -167,7 +167,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data: blob:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if secure_cookies(request):
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -191,7 +192,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base.update(context)
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
 
-    def session_response(path: str, owner_id: str, *, payload: dict | None = None, auth_method: str = "") -> Response:
+    def secure_cookies(request: Request) -> bool:
+        return settings.browser_url("https://" + request.url.netloc).startswith("https://")
+
+    def session_response(request: Request, path: str, owner_id: str, *, payload: dict | None = None, auth_method: str = "") -> Response:
         with platform.sessions() as db:
             owner = db.get(User, owner_id)
             if owner is None or owner.revoked_at is not None:
@@ -199,9 +203,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             token, csrf = create_session(db, owner, auth_method)
         response = (JSONResponse({"redirect": path, **payload}) if payload is not None
                     else RedirectResponse(path, status_code=303))
-        response.set_cookie("lp_session", token, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
-        response.set_cookie("lp_csrf", csrf, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
-        response.delete_cookie("lp_auth", secure=True, httponly=True, samesite="strict")
+        secure = secure_cookies(request)
+        response.set_cookie("lp_session", token, max_age=SESSION_SECONDS, secure=secure, httponly=True, samesite="strict")
+        response.set_cookie("lp_csrf", csrf, max_age=SESSION_SECONDS, secure=secure, httponly=True, samesite="strict")
+        response.delete_cookie("lp_auth", secure=secure, httponly=True, samesite="strict")
         return response
 
     def json_csrf(request: Request, session) -> None:
@@ -282,7 +287,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = page(request, name, None, auth_token=token, error=error, status=status, message=message,
                         passkey_enabled=passkey_enabled, registration_enabled=settings.allow_registration,
                         password_enabled=accounts.has_password_accounts())
-        response.set_cookie("lp_auth", token, max_age=600, secure=True, httponly=True, samesite="strict")
+        response.set_cookie("lp_auth", token, max_age=600, secure=secure_cookies(request), httponly=True, samesite="strict")
         return response
 
     def auth_binding(request: Request, supplied: str | None = None) -> str:
@@ -479,7 +484,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except HTTPException as error:
             return auth_page(request, error=True, status=error.status_code, message=str(error.detail))
         platform.record(owner.id, "login")
-        return session_response("/dashboard", owner.id, auth_method="password")
+        return session_response(request, "/dashboard", owner.id, auth_method="password")
 
     @app.get("/register")
     def register_page(request: Request):
@@ -500,7 +505,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (ValueError, PermissionError) as error:
             limiter.fail(address)
             return auth_page(request, "register", error=True, status=400, message=str(error))
-        return session_response("/dashboard", owner.id, auth_method="password")
+        return session_response(request, "/dashboard", owner.id, auth_method="password")
 
     def native_origin(request: Request) -> None:
         # Native applications do not send browser cookies. Reject browser
@@ -564,7 +569,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, "Passkey 验证失败，请重新开始") from error
         limiter.clear(address)
         bootstrap.disable()
-        return session_response("/settings" if not setup else "/dashboard", owner_id,
+        return session_response(request, "/settings" if not setup else "/dashboard", owner_id,
                                 payload={"recovery_codes": codes}, auth_method="passkey")
 
     @app.post("/api/v2/auth/passkeys/login/options")
@@ -589,7 +594,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             failed_login(address)
             raise HTTPException(401, "Passkey 登录失败，请重试") from error
         limiter.clear(address)
-        return session_response("/dashboard", owner_id, payload={}, auth_method="passkey")
+        return session_response(request, "/dashboard", owner_id, payload={}, auth_method="passkey")
 
     @app.post("/api/v2/auth/recovery")
     async def recovery_login(request: Request):
@@ -602,7 +607,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             failed_login(address)
             raise HTTPException(401, "恢复码无效或已使用")
         limiter.clear(address)
-        return session_response("/settings", owner_id, payload={}, auth_method="recovery")
+        return session_response(request, "/settings", owner_id, payload={}, auth_method="recovery")
 
     @app.post("/logout")
     async def logout(request: Request):

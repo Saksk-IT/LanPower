@@ -5,6 +5,7 @@ function cloudConnectionError(wxApi, url, reason) {
   const development = environment(wxApi).development;
   const host = /^https?:\/\/([a-z0-9.-]+|\[::1\])/i.exec(url);
   const local = host && localHost(host[1].toLowerCase());
+  const localHttp = development && local && /^http:\/\//i.test(url);
   let code = 'CLOUD_NETWORK', hint;
   if (/domain list|not in.*domain|invalid.*domain|不在.*合法域名/.test(message)) {
     code = 'CLOUD_DOMAIN';
@@ -12,7 +13,7 @@ function cloudConnectionError(wxApi, url, reason) {
       '微信拦截了 Cloud 地址，请检查微信后台的 request 合法域名配置。';
   } else if (/ssl|tls|certificate|cert[_ -]|证书/.test(message)) {
     code = 'CLOUD_TLS';
-    hint = development && local ? '微信未接受本机 Cloud 的 HTTPS 证书。电脑已信任证书不代表手机或微信已信任；请检查手机开发证书和调试设置，或使用有效证书的测试域名。' :
+    hint = development && local ? '本机 Cloud 已改用 HTTP，请填写 http://电脑局域网IP:8080，开启微信开发调试后重试。' :
       '微信未接受 Cloud 的 HTTPS 证书，请检查证书信任、有效期和完整证书链。';
   } else if (/permission|access[ _-]denied|local network.*(denied|disabled)|无权限|权限.*拒绝/.test(message)) {
     code = 'CLOUD_NETWORK_PERMISSION';
@@ -21,7 +22,7 @@ function cloudConnectionError(wxApi, url, reason) {
     code = 'CLOUD_TIMEOUT';
     hint = '连接超时。请在手机浏览器打开同一 Cloud 地址，检查 Wi-Fi、VPN、路由器隔离和电脑防火墙。';
   } else {
-    hint = local ? '连接失败。请在手机浏览器打开同一 Cloud 地址；浏览器能打开时，再检查微信的开发证书、调试设置和本地网络权限。' :
+    hint = localHttp ? '连接失败。请在手机浏览器打开同一 HTTP 地址，再检查微信调试设置、本地网络权限和电脑防火墙。' : local ? '连接失败。请在手机浏览器打开同一 Cloud 地址，再检查微信调试设置和本地网络权限。' :
       '连接失败，请检查手机网络、Cloud 地址和 HTTPS 证书。';
   }
   const error = new Error(hint);

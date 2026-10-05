@@ -31,7 +31,7 @@ function assertReachableCloud(url, wxApi) {
   const host = /^https?:\/\/([a-z0-9.-]+|\[::1\])(?::[0-9]+)?$/i.exec(url);
   const hostname = host && host[1].toLowerCase();
   if (hostname && (hostname === 'localhost' || hostname === '[::1]' || /^127\./.test(hostname))) {
-    const error = new Error('手机上的 localhost / 127.0.0.1 指向手机自己。请填写电脑的局域网 HTTPS 地址，并在该地址的网页生成授权二维码。');
+    const error = new Error('手机上的 localhost / 127.0.0.1 指向手机自己。请填写电脑的局域网 Cloud 地址，并在该地址登录或生成授权二维码。');
     error.code = 'CLOUD_LOOPBACK';
     throw error;
   }

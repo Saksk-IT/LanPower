@@ -9,8 +9,8 @@
     <view wx:if="{{development}}" class="setting-card development-settings">
       <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">开发版 Cloud 地址</view><view class="setting-copy">填写本机或测试服务器地址。开发版授权与正式版独立保存。</view></view><view class="setting-state warning-text">开发版</view></view>
       <label class="field-label" for="development-cloud">测试 Cloud 地址</label>
-      <input id="development-cloud" value="{{cloudUrlDraft}}" bindinput="editCloudUrl" placeholder="https://电脑局域网IP:8443" maxlength="300" disabled="{{busy || updatingList || testingCloud}}" />
-      <view class="field-help">手机请填电脑的局域网 HTTPS 地址，并连接同一 Wi-Fi。模拟器可使用 localhost。</view>
+      <input id="development-cloud" value="{{cloudUrlDraft}}" bindinput="editCloudUrl" placeholder="http://电脑局域网IP:8080" maxlength="300" disabled="{{busy || updatingList || testingCloud}}" />
+      <view class="field-help">手机请填电脑的局域网 HTTP 地址，连接同一 Wi-Fi 并开启微信开发调试。模拟器可使用 localhost。</view>
       <button class="outline-button compact-button" bindtap="testCloudConnection" loading="{{testingCloud}}" disabled="{{busy || updatingList || testingCloud || !cloudUrlDraft}}">测试连接</button>
       <button class="outline-button compact-button" bindtap="saveDevelopmentCloud" disabled="{{busy || updatingList || testingCloud || !cloudUrlDraft}}">保存测试地址</button>
       <button wx:if="{{developmentCloud}}" class="text-button centered-button" bindtap="clearDevelopmentCloud" disabled="{{busy || updatingList || testingCloud}}">清空地址，下次扫码选择</button>
@@ -22,7 +22,8 @@
       <view wx:if="{{connected && !needsReauthorize}}" class="setting-copy">{{accountUsername ? '已登录。电脑登录同一账号后，会自动出现在“我的设备”。' : '原扫码授权继续有效，也可用下方表单登录同一账号，保留已有连接。'}}</view>
       <view wx:if="{{accountFormVisible && (!connected || needsReauthorize || !accountUsername)}}">
         <label class="field-label" for="account-cloud">Cloud 地址</label>
-        <input id="account-cloud" value="{{accountUrlDraft}}" bindinput="editAccountUrl" placeholder="https://你的Cloud地址" maxlength="300" disabled="{{busy}}" />
+        <input id="account-cloud" value="{{accountUrlDraft}}" bindinput="editAccountUrl" placeholder="{{development ? 'http://电脑局域网IP:8080' : '请输入 Cloud 地址'}}" maxlength="300" disabled="{{busy}}" />
+        <view wx:if="{{development}}" class="field-help">本机 Cloud 使用 HTTP。保存上方测试地址后，这里自动使用同一地址登录。</view>
         <label class="field-label" for="account-username">账号</label>
         <input id="account-username" value="{{loginUsername}}" bindinput="editAccountUsername" placeholder="与电脑相同的账号" maxlength="80" disabled="{{busy}}" />
         <label class="field-label" for="account-password">密码</label>

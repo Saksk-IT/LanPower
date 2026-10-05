@@ -4,11 +4,10 @@ param([switch]$Build, [switch]$WebOnly, [switch]$LocalOnly, [string]$LanAddress)
 
 $ErrorActionPreference = 'Stop'
 $composeArgs = @('compose', '-p', 'lanpower-dev', '-f', (Join-Path $PSScriptRoot 'compose.dev.yml'))
-$image = 'codexdock-cloud:1.23.4-dev.1'
+$image = 'codexdock-cloud:1.24.0-dev.1'
 $privateDir = Join-Path $PSScriptRoot 'private'
 $envFile = Join-Path $PSScriptRoot '.env.dev'
 $loginFile = Join-Path $privateDir 'dev-login.txt'
-$certificateFile = Join-Path $privateDir 'dev-root.crt'
 $utf8 = [Text.UTF8Encoding]::new($false)
 
 function Invoke-Docker {
@@ -67,7 +66,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
     if ($LASTEXITCODE -ne 0) { throw 'Could not generate the development login.' }
     $credentials = $credentialsJson | ConvertFrom-Json
     [IO.File]::WriteAllText($envFile, "LANPOWER_ADMIN_PASSWORD_HASH='$($credentials.hash)'`n", $utf8)
-    [IO.File]::WriteAllText($loginFile, "Local development only`r`nURL: https://localhost:8443`r`nUsername: admin`r`nPassword: $($credentials.password)`r`n", $utf8)
+    [IO.File]::WriteAllText($loginFile, "Local development only`r`nURL: http://localhost:8080`r`nUsername: admin`r`nPassword: $($credentials.password)`r`n", $utf8)
     # Restrict generated credentials to this Windows user and SYSTEM.
     foreach ($path in @($envFile, $loginFile)) {
         $acl = [Security.AccessControl.FileSecurity]::new()
@@ -83,15 +82,13 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 }
 
 Invoke-Docker @composeArgs up -d --no-build --wait --wait-timeout 120
-Invoke-Docker @composeArgs cp caddy:/data/caddy/pki/authorities/local/root.crt $certificateFile
-& (Join-Path $PSScriptRoot 'trust-dev-certificate.ps1') -WebOnly:$WebOnly
 if ($network -and -not (Test-DevLanFirewall -Network $network)) {
     $firewallScript = Join-Path $PSScriptRoot 'configure-dev-firewall.ps1'
     $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
     if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         & $firewallScript -LanAddress $network.Address
     } else {
-        Write-Output 'LAN HTTPS needs a scoped firewall rule. Confirm the Windows administrator prompt.'
+        Write-Output 'LAN HTTP needs a scoped firewall rule. Confirm the Windows administrator prompt.'
         $powershell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
         $process = Start-Process -FilePath $powershell -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $firewallScript + '"'), '-LanAddress', $network.Address)
@@ -100,16 +97,15 @@ if ($network -and -not (Test-DevLanFirewall -Network $network)) {
     }
     if (-not (Test-DevLanFirewall -Network $network)) { throw 'The scoped LAN firewall rule is missing.' }
 }
-$health = Invoke-RestMethod -Uri 'https://localhost:8443/healthz' -TimeoutSec 15
+$health = Invoke-RestMethod -Uri 'http://localhost:8080/healthz' -TimeoutSec 15
 if (-not $health.ok) { throw 'The Cloud health check failed.' }
-Write-Output ('CodexDock Cloud ' + $health.version + ' is ready: https://localhost:8443')
+Write-Output ('CodexDock Cloud ' + $health.version + ' is ready: http://localhost:8080')
 if ($network) {
-    $lanUrl = 'https://' + $network.Address + ':8443'
+    $lanUrl = 'http://' + $network.Address + ':8080'
     $lanHealth = Invoke-RestMethod -Uri ($lanUrl + '/healthz') -TimeoutSec 15
-    if (-not $lanHealth.ok) { throw 'The LAN HTTPS health check failed.' }
-    Write-Output ('LAN HTTPS is ready: ' + $lanUrl + ' (network configuration 1.0.0)')
-    Write-Output ('Other LAN devices must trust the public development CA: ' + $certificateFile)
+    if (-not $lanHealth.ok) { throw 'The LAN HTTP health check failed.' }
+    Write-Output ('LAN HTTP is ready: ' + $lanUrl + ' (network configuration 1.1.0)')
 } else {
-    Write-Output 'Local-only HTTPS: no physical private IPv4 network selected.'
+    Write-Output 'Local-only HTTP: no physical private IPv4 network selected.'
 }
 Write-Output ('Local login details: ' + $loginFile)

@@ -2,7 +2,11 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-当前小程序版本 **3.6.4**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.4.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+当前小程序版本 **3.6.6**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.6.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+
+`3.6.5` 支持开发版本机 HTTP 账号登录，测试地址与统一账号输入框均提示 `http://电脑局域网IP:8080`，保存测试地址时同步账号登录地址，Codex 自动使用 WS。本机导入包带有重新生成的最小开发设置，关闭开发者工具的 URL 校验，不复制用户原私有配置或真实 AppID。手机预览仍需开启调试，无需安装本机证书。详见 [局域网联调](../docs/local-lan-access.md)。
+
+在仓库根目录运行 `python scripts/package-mini-program-local.py` 可重新生成本机 HTTP 导入包。导入后在「我的」页底部确认版本 `3.6.5`；开发版统一账号地址应显示 HTTP 提示。
 
 `3.6.4` 直接沿用云端聊天页的命令/文件分组、图片与公开思考摘要折叠样式，修复上滑被拉回底部、历史换页反向触发和悬浮按钮挤动正文。原有内容在上滑后保留，慢网络返回按最新阅读位置补偿，流式更新仅更新变化的消息行。详见 [会话滚动与云端组件对齐](../docs/codex-mini-chat-parity.md)。
 
@@ -33,7 +37,7 @@ Codex 沿用已有的自定义顶部导航，避让状态栏和微信胶囊；�
 4. 点击目标电脑，进入 **设备详情**。需要电源操作时在本页操作；需要开发时打开 **Codex 控制**，选择项目或聊天。
 5. Codex 使用 Windows 当前用户已登录的原 Codex 窗口；电脑须在线、启用 Codex Remote 并授权项目。
 
-开发版测试地址位于 **我的 → 开发版 Cloud 地址**，填写后先测试连接，再保存并登录该 Cloud 的账号。手机使用电脑的局域网 HTTPS 地址；`localhost` 仅供电脑模拟器测试。步骤见 [局域网联调](../docs/local-lan-access.md#微信小程序连接本机-docker) 和 [环境隔离](../docs/mini-program-environments.md)。
+开发版测试地址位于 **我的 → 开发版 Cloud 地址**，填写后先测试连接，再保存并登录该 Cloud 的账号。手机开发版使用电脑的局域网 HTTP 地址（8080）；`localhost` 仅供电脑模拟器测试。步骤见 [局域网联调](../docs/local-lan-access.md#微信小程序连接本机-docker) 和 [环境隔离](../docs/mini-program-environments.md)。
 
 ## 电源与局域网
 
@@ -44,13 +48,13 @@ Codex 沿用已有的自定义顶部导航，避让状态栏和微信胶囊；�
 
 设备列表可下拉或点击刷新，可见时每 10 秒更新 Cloud 状态；设备详情可见时每 5 秒检查电源状态。网络错误显示状态未知，保留已保存的设备和局域网配对。后台页面停止轮询，回到同一台设备后重新同步，不重发指令或任务。
 
-无需 Cloud 的旧版局域网控制保留在 **我的 → 独立局域网 / 旧版连接**，继续读取原有 v1 配对与唤醒设置。该独立模式仅用于电源；Codex 控制仍经 Cloud HTTPS / WSS 连接。
+无需 Cloud 的旧版局域网控制保留在 **我的 → 独立局域网 / 旧版连接**，继续读取原有 v1 配对与唤醒设置。该独立模式仅用于电源；Codex 控制仍经 Cloud 连接；本机开发使用 HTTP / WS，公网使用 HTTPS / WSS。
 
 ## 导入与预览
 
 `app.json` 注册 7 个页面，每页均包含 `.js`、`.json`、`.wxml`、`.wxss`。公开 `project.config.json` 保留 `touristappid`；在本机微信开发者工具配置自己的 AppID，个人配置文件不会打包。项目不保存 AppSecret、真实授权二维码或 LAN / Cloud 凭据。
 
-真机须配置 Cloud 的 HTTPS `request` 合法域名与 WSS `socket` 合法域名。局域网开发证书需在手机单独信任，允许微信访问本地网络；模拟器的调试设置不会替代真机配置。详见 [连接说明](../docs/local-lan-access.md)。
+正式真机须配置 Cloud 的 HTTPS `request` 合法域名与 WSS `socket` 合法域名。本机开发版使用 HTTP / WS，手机开启调试并允许微信访问本地网络；模拟器的调试设置不会替代手机调试开关。详见 [连接说明](../docs/local-lan-access.md)。
 
 ## 开发检查
 

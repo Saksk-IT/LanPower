@@ -33,7 +33,7 @@ builder.Services.AddSingleton<WakeProfileService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<LanNetworkManager>());
 builder.Services.AddSingleton(new CloudCredentialStore(dataDirectory));
 builder.Services.AddSingleton(new ReplayStore(dataDirectory));
-// The LocalSystem agent uses direct HTTPS independently of a desktop user's proxy.
+// Cloud uses direct connections independently of a desktop user's proxy.
 builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
     { Timeout = TimeSpan.FromSeconds(35) });
 builder.Services.AddSingleton<CloudAgent>();
