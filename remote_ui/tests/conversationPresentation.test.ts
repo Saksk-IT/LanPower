@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeThreadMessagesV2 } from '../src/api/normalizers/v2'
-import { liveWorkStartId, presentConversation } from '../src/lanpower/conversationPresentation'
+import { conversationBlocks, liveWorkStartId, presentConversation } from '../src/lanpower/conversationPresentation'
 
 const user = {id: 'user', type: 'userMessage', content: [{type: 'text', text: '开始工作'}]}
 const commentary = {id: 'commentary', type: 'agentMessage', phase: 'commentary', text: '正在检查文件'}
@@ -13,6 +13,26 @@ function normalize(items: unknown[], status = 'completed', timing = {}, id = 'tu
 }
 
 describe('conversation process folding', () => {
+  it('groups web searches with commands in order and wraps their visible members in one scroll list', () => {
+    const source = normalize([command(), {id:'web',type:'webSearch',action:{type:'search',queries:['问题一','问题二']}}, command('after'), commentary,
+      {id:'open',type:'webSearch',action:{type:'openPage',url:'https://example.com/docs'}}], 'inProgress')
+    const before = JSON.stringify(source), collapsed = presentConversation(source)
+    expect(collapsed.messages.filter(message => message.activitySummary).map(message => message.text)).toEqual(['运行了命令，已搜索网页','已搜索网页'])
+    const expanded = presentConversation(source, new Set(), collapsed.activityIds)
+    const blocks = conversationBlocks(expanded.messages)
+    expect(blocks[0]?.messages.map(message => message.id)).toEqual([blocks[0]?.id, 'command', 'web', 'after'])
+    expect(expanded.messages.find(message => message.id === 'web')?.toolResult?.webSearch?.label).toBe('已搜索网页：问题一 | 问题二')
+    expect(expanded.messages.find(message => message.id === 'open')?.toolResult?.webSearch?.label).toBe('已搜索网页：https://example.com/docs')
+    expect(conversationBlocks(expanded.messages.slice(2))[0]?.activity).toBe(false)
+    expect(JSON.stringify(source)).toBe(before)
+  })
+
+  it('does not reuse live turn status for restored web searches and clears running searches when the turn ends', () => {
+    expect(normalize([{id:'web',type:'webSearch',query:'公开查询'}], 'inProgress')[0]?.toolResult?.status).toBe('completed')
+    expect(normalize([{id:'web',type:'webSearch',query:'公开查询',status:'inProgress'}], 'inProgress')[0]?.toolResult?.status).toBe('inProgress')
+    expect(normalize([{id:'web',type:'webSearch',query:'公开查询',status:'inProgress'}], 'completed')[0]?.toolResult?.status).toBe('completed')
+    expect(normalize([{id:'web',type:'webSearch',status:'failed',error:'公开错误'}], 'completed')[0]?.toolResult?.status).toBe('failed')
+  })
   it('anchors live timing after user messages and before the first running process record', () => {
     const previous = normalize([user, final], 'completed', {}, 'previous')
     const running = normalize([{...user,id:'running-user'}, {...user,id:'steer-user'}, commentary, command()], 'inProgress', {}, 'running')

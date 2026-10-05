@@ -38,9 +38,11 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.24.0` |
-| 微信小程序 | `3.6.5` |
+| Windows 应用 / 安装器、Cloud、Web | `1.24.1` |
+| 微信小程序 | `3.6.6` |
 | Wake Gateway（配套组件） | `2.1.2` |
+
+网页与小程序的搜索记录按原生 Codex 展示：地球图标、单行摘要、命令与网页共同折叠，展开后的列表内部滚动。完成的搜索不再沿用整轮运行状态，完整查询和网页详情保留；小程序正文两侧遮挡、长路径与代码换行一并修复。见 [网页搜索与活动折叠](docs/codex-web-search-ui.md)。
 
 本机 Cloud `1.24.0` 改用 **HTTP / WS**，电脑访问 **http://localhost:8080**，手机开发版填写 **http://电脑局域网IP:8080**。账号登录、授权二维码与 Codex 连接使用同一地址，无需开发证书。小程序 `3.6.5` 的测试与账号输入框均提示 HTTP，保存测试地址时同步登录地址；本机导入包带有最小 HTTP 开发设置，手机预览开启调试。Windows / Cloud / Web 同步 `1.24.0`，原数据、账号和设备授权继续使用，详见 [局域网访问指南](docs/local-lan-access.md)。
 
@@ -166,7 +168,7 @@ CodexDock 的主要用途是远程使用 Windows 电脑上的 Codex，电源管�
 
 ## 快速开始
 
-开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.0-dev.1`。
+开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.1-dev.1`。
 
 1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。

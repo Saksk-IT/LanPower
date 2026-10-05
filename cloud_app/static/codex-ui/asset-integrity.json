@@ -1,11 +1,10 @@
 {
   "format": 1,
-  "version": "1.24.0",
-  "restoredFrom": "352d580ab1d4540ff1de4c3832aa278f4135f020",
-  "builtVersion": "1.22.4",
+  "version": "1.24.1",
+  "builtVersion": "1.24.1",
   "files": {
     "assets/common-BeuopZEI.js": "e47706ed22d361c79163e29c36d369b3e3820bb739e220ef04bf7b2654997ded",
-    "codex.css": "2bbd48f049afacfefeb340f8f1ce27807f825e9db3ff2fc4c4bcd5231b1f02ce",
-    "codex.js": "fa8123fec05ac7f0ee4cecdf5909c7ab9b925dfb1f266f3899ac9674eceb8e3f"
+    "codex.css": "d74a4fec41565693d822d7e574be2f6597a0fcbf4df5882ca3a4136315876d60",
+    "codex.js": "b67482d6d2432c344afe1c631ed59143f073fdf334cea2f8ca7c9d2f3bb17d24"
   }
 }

@@ -13,6 +13,18 @@ Windows 更新至 `1.24.0` 后，管理员运行 `./deploy/docker/switch-windows
 
 登录密码继续使用 `deploy/docker/private/dev-login.txt`，哈希仍在 `.env.dev`；已存在文件不改写密码。每次启动通过 SQLite backup API 备份并校验原数据库，不删除数据或证书卷。`LANPOWER_ALLOW_LOCAL_HTTP=true` 仅在本机开发 Compose 中启用，HTTP 来源限制为明确配置的 localhost、回环与私有 IPv4；网页保留来源、CSRF、HttpOnly 和 SameSite 校验。
 
+## 原生网页搜索与正文宽度 1.24.1 / 3.6.6（2026-10-06）
+
+网页与小程序采用原生地球图标和单行网页摘要，命令、文件与网页共同折叠，展开后列表内部滚动。搜索状态按开始/完成事件更新，结束的历史记录不再套用整轮运行状态；小程序阅读容器、富文本长路径、代码与表格宽度一并修复，正文两侧不再因容器超宽被裁切。行为、验证范围与编译预览见 [网页搜索与阅读宽度](codex-web-search-ui.md)。
+
+95 项 Web 自动测试、32 项小程序相关行为检查、原生页面/传输检查及 9 项 Cloud 版本检查通过。受控 Web 回放覆盖 1440/390/320px 浅深色、搜索状态、刷新、活动组与整轮折叠、内部滚动及原有输入/命令/图片；WCC/WCSC 编译页面覆盖 320/390/430px 的搜索列表和长中文、路径、代码、表格、放大字体的左右边界。未发送真实 Codex 推理任务，微信真机的嵌套触摸滚动和富文本仍待人工验收。
+
+本机 Docker 更新为 `codexdock-cloud:1.24.1-dev.1`，HTTP 健康接口返回 `1.24.1`；脚本、样式与 18 个组件标识整套校验通过。升级前后 SQLite backup API 一致备份完整性为 `ok`，外键错误 0，24 张有主键表的原有标识保留。使用原数据卷、登录、HTTP / WS 与局域网配置，运行源码固定挂载本轮快照。
+
+Windows 在原目录从 `1.24.0.0` 就地更新到 `1.24.1.0`，安装器退出码 0，Service、Desktop、Host 和版本化备用服务四组件与构建哈希一致；配置、Cloud 地址、设备身份、用户设置、官方 Codex 及已有共享服务保留，Service 运行并恢复 Cloud 连接。安装包为 `windows/out/CodexDockSetup-1.24.1-web-search.exe`，小程序导入包为 `windows/out/CodexDock-mini-program-3.6.6.zip`。备份、构建及检查报告位于忽略目录 `private/codex-web-search-1.24.1`。
+
+本轮只提交搜索展示、聊天正文宽度、版本及相关文档，其他工作区修改保留；不推送仓库、不部署正式云端。
+
 ## 本机 HTTP 1.24.0（2026-10-06）
 
 本轮将本机代理、Cloud 网页 Cookie 与授权地址、小程序开发版账号登录、Windows 地址校验和 Codex WS 同步切换为 HTTP / WS。原版网页资源保持原样，只更新发布版本标记。

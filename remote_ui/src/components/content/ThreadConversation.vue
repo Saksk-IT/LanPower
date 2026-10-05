@@ -20,7 +20,9 @@
           {{ isLoadingMore || isLoadingPersistedAbove ? '正在加载…' : '加载更早的消息' }}
         </button>
       </li>
-      <template v-for="message in visibleMessages" :key="message.id">
+      <li v-for="block in visibleBlocks" :key="block.id" class="conversation-block" :class="{'native-activity-block': block.activity, 'is-expanded': block.expanded}">
+      <ul class="conversation-block-list">
+      <template v-for="message in block.messages" :key="message.id">
       <li v-if="showLiveElapsed && message.id === liveElapsedStartId" class="conversation-item conversation-item-elapsed">
         <div class="message-row"><div class="message-stack"><ThreadWorkElapsed :started-at-ms="liveOverlay?.startedAtMs" /></div></div>
       </li>
@@ -37,6 +39,9 @@
         </div>
         <div v-else-if="message.activitySummary" class="message-row" data-role="system">
           <ThreadActivitySummary :summary="message.activitySummary" @toggle="togglePresentation('activity', message.activitySummary!.id, $event)" />
+        </div>
+        <div v-else-if="message.toolResult?.webSearch" class="message-row" data-role="system">
+          <ThreadWebSearch :tool="message.toolResult" :payload="message.rawPayload" />
         </div>
         <div v-else-if="message.messageType === 'toolResult'" class="message-row lp-tool-result" data-role="system">
           <ThreadToolResult v-if="message.toolResult" :tool="message.toolResult" :payload="message.rawPayload" />
@@ -581,6 +586,8 @@
         </div>
       </li>
       </template>
+      </ul>
+      </li>
       <li v-if="showLiveElapsed && !liveElapsedStartId" class="conversation-item conversation-item-elapsed">
         <div class="message-row"><div class="message-stack"><ThreadWorkElapsed :started-at-ms="liveOverlay?.startedAtMs" /></div></div>
       </li>
@@ -767,6 +774,7 @@
 
 <script setup lang="ts">
 import ThreadToolResult from './ThreadToolResult.vue'
+import ThreadWebSearch from './ThreadWebSearch.vue'
 import { retainRemoteImage, imageDownloadName, observeRemoteImages } from '../../lanpower/images'
 import RemoteMessageImage from './RemoteMessageImage.vue'
 import ThreadCommand from './ThreadCommand.vue'
@@ -783,7 +791,7 @@ import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/
 import { localizeLiveActivityLabel, localizeLiveReasoningText } from '../../utils/liveActivityLocalization'
 import { routeLocalImageUrl } from '../../utils/localImageUrl'
 import { isPlanMessage } from '../../utils/planProgress'
-import { liveWorkStartId, presentConversation } from '../../lanpower/conversationPresentation'
+import { conversationBlocks, liveWorkStartId, presentConversation } from '../../lanpower/conversationPresentation'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerArrowUp from '../icons/IconTablerArrowUp.vue'
@@ -1046,6 +1054,7 @@ const isLoadingMore = ref(false)
 const presentation = computed(() => presentConversation(props.messages, expandedTurnProcessIds.value, expandedActivityIds.value))
 const presentedMessages = computed(() => presentation.value.messages)
 const visibleMessages = computed(() => presentedMessages.value.slice(renderWindowStart.value))
+const visibleBlocks = computed(() => conversationBlocks(visibleMessages.value))
 const liveElapsedStartId = computed(() => liveWorkStartId(visibleMessages.value))
 const showLiveElapsed = computed(() => Boolean(props.liveOverlay?.running) && props.liveOverlay?.startedAtMs !== undefined)
 const hasMoreAbove = computed(() => renderWindowStart.value > 0 || props.hasMorePersistedAbove === true)
@@ -4136,6 +4145,12 @@ onBeforeUnmount(() => {
 .conversation-item {
   @apply m-0 w-full min-w-0 flex;
 }
+
+.conversation-block { width:100%;min-width:0;list-style:none; }
+.conversation-block-list { display:flex;flex-direction:column;gap:4px;list-style:none;margin:0;padding:0;min-width:0; }
+.native-activity-block { width:100%;max-width:min(var(--chat-column-max,45rem),100%);margin:0 auto; }
+.native-activity-block.is-expanded .conversation-block-list { max-height:300px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin; }
+.native-activity-block.is-expanded [data-message-type='activityGroup'] { position:sticky;top:0;z-index:1;background:var(--lp-surface,#fff); }
 
 .conversation-item-request {
   @apply justify-center;

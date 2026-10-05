@@ -41,6 +41,7 @@ import ThreadComposer, { type ComposerDraftPayload, type SubmitPayload, type Thr
 import QueuedMessages from './components/content/QueuedMessages.vue'
 import ThreadPendingRequestPanel from './components/content/ThreadPendingRequestPanel.vue'
 import { normalizeThreadMessagesV2 } from './api/normalizers/v2'
+import { updateWebSearchStatus } from '../../mini_program/utils/codex/web-search.js'
 import LanPowerThreadTree from './components/sidebar/LanPowerThreadTree.vue'
 import ComposerDropdown from './components/content/ComposerDropdown.vue'
 import IconTablerLayoutSidebar from './components/icons/IconTablerLayoutSidebar.vue'
@@ -601,7 +602,7 @@ function onEvent(event: RpcEvent): void {
     if (!turn) { turn = { id: p.turnId, status: 'inProgress', items: [] }; turns.push(turn) }
     const itemId = p.item?.id || p.itemId
     let item = turn.items.find((i: any) => i.id === itemId)
-    if (p.item) { if (item) Object.assign(item, p.item); else turn.items.push(p.item) }
+    if (p.item) { if (item) Object.assign(item, p.item); else { item = {...p.item}; turn.items.push(item) } }
     else if (event.method === 'item/agentMessage/delta') {
       if (!item) { item = { id: itemId, type: 'agentMessage', text: '' }; turn.items.push(item) }
       item.text = `${item.text || ''}${p.delta || ''}`
@@ -612,6 +613,7 @@ function onEvent(event: RpcEvent): void {
       const index = Number.isSafeInteger(p.summaryIndex) && p.summaryIndex >= 0 ? p.summaryIndex : 0
       item.summary ||= []; item.summary[index] = `${item.summary[index] || ''}${p.delta || ''}`
     }
+    updateWebSearchStatus(item, event.method)
     const phase = event.method === 'item/completed' ? 'Thinking' : item?.type === 'agentMessage' ? 'Writing response' : item?.type === 'commandExecution' ? 'Running command' : 'Thinking'
     if (!p.turnId || p.turnId === activeTurn.value) overlay.value = {...overlay.value,activityLabel:phase}
   } else if (event.method === 'turn/plan/updated' && (!p.turnId || p.turnId === activeTurn.value)) overlay.value = { ...overlay.value, activityDetails: (p.plan || []).map((step: any) => `${step.status === 'completed' ? '✓' : '○'} ${step.step}`) }

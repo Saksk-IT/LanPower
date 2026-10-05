@@ -25,7 +25,7 @@ function inline(text) {
   while ((match = pattern.exec(text))) {
     if (match.index > offset) nodes.push(textNode(text.slice(offset, match.index)));
     if (match[1]) nodes.push({name: 'strong', children: [textNode(match[1])]});
-    else if (match[2]) nodes.push({name: 'code', attrs: {style: 'background:rgba(128,128,128,.12);padding:2px 4px;border-radius:4px;'}, children: [textNode(match[2])]});
+    else if (match[2]) nodes.push({name: 'code', attrs: {style: 'background:rgba(128,128,128,.12);padding:2px 4px;border-radius:4px;white-space:normal;word-break:break-all;overflow-wrap:anywhere;'}, children: [textNode(match[2])]});
     else if (match[3]) nodes.push(textNode(match[3] + ' (' + match[4] + ')'));
     else if (match[5]) nodes.push({name: 'em', children: [textNode(match[5])]});
     else nodes.push({name: 'del', children: [textNode(match[6])]});
@@ -68,6 +68,14 @@ function markdown(text) {
     nodes.push({name: 'div', attrs: {style: heading ? 'font-weight:600;margin:12px 0 6px;' : 'min-height:8px;margin:4px 0;'}, children: inline(heading ? heading[2] : line)});
   }
   endList(); if (code !== null) nodes.push({name: 'pre', attrs: {style: 'white-space:pre-wrap;word-break:break-all;font-family:monospace;'}, children: [textNode(code.join('\n'))]});
+  // Rich-text uses its own node tree; WXSS cannot style every internal element.
+  const constrain = node => {
+    if (node.type === 'text') return;
+    node.attrs = node.attrs || {};
+    node.attrs.style = 'box-sizing:border-box;max-width:100%;overflow-wrap:anywhere;word-break:break-word;' + (node.attrs.style || '');
+    (node.children || []).forEach(constrain);
+  };
+  nodes.forEach(constrain);
   return nodes;
 }
 function diffSummary(diff, changes = []) {

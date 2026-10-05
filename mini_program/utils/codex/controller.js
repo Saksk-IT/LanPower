@@ -1,6 +1,7 @@
 const {clone, defaultPreferences, buildLibrary, emptyDraft, newSettings, effectiveSettings, observeSettings, modelId, validEfforts, StateClock, timestamp} = require('./model');
 const {ReadScope, readThread, readPage, mergeHistory, advanceCursor, newBeginning, findBeginning, ContentReader, refreshTurn} = require('./history');
 const {projectConversation, conversationWindow, userContent} = require('./conversation');
+const {updateWebSearchStatus} = require('./web-search');
 const {approvalView, approvalResult} = require('./approvals');
 const {ResourceBrowser} = require('./resources');
 const {NativeUsage} = require('./native-status');
@@ -381,6 +382,7 @@ class CodexController {
         else if (item && event.method === 'item/commandExecution/outputDelta') item.aggregatedOutput = (item.aggregatedOutput || '') + (p.delta || '');
         else if (item && types[event.method]) item.text = (item.text || '') + (p.delta || '');
       }
+      updateWebSearchStatus(item, event.method);
       if (p.turnId === this.activeTurn) this.overlay.label = event.method === 'item/completed' ? '正在思考' : item && item.type === 'agentMessage' ? '正在撰写回复' : item && item.type === 'commandExecution' ? '正在运行命令' : '正在思考';
     } else if (event.method === 'turn/plan/updated' && (!p.turnId || p.turnId === this.activeTurn)) this.overlay.plan = (p.plan || []).map(step => ({step: step.step, status: step.status}));
     else if (event.method === 'turn/diff/updated') { const turn = turns.find(value => value.id === p.turnId); if (turn) turn.diff = p.diff || ''; }

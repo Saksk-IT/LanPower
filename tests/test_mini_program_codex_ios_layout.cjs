@@ -4,7 +4,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 const {execFileSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..'), mini = process.env.MINI_PROGRAM_SOURCE_DIR || path.join(root, 'mini_program');
 const compiler = process.env.WECHAT_COMPILER_DIR || 'D:/Soft/微信web开发者工具/resources/app.asar.unpacked/node_modules/wcc-exec';
-const output = path.join(root, 'private/mini-codex-ios'); fs.mkdirSync(output, {recursive: true});
+const output = process.env.MINI_PROGRAM_UI_OUTPUT || path.join(root, 'private/mini-codex-ios'); fs.mkdirSync(output, {recursive: true});
 for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pages/codex/codex.wxml']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'app-wxss.js'), 'app.wxss']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'codex-wxss.js'), 'pages/codex/codex.wxss']]]) execFileSync(path.join(compiler, file), args, {cwd: mini});
@@ -18,7 +18,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       const height = width === 320 ? 740 : width === 390 ? 844 : 932;
       const context = await browser.newContext({viewport: {width, height}, screen: {width, height}, deviceScaleFactor: 1});
       const page = await context.newPage(), errors = []; page.on('pageerror', error => errors.push(error.message));
-      await page.setContent('<style>html,body{margin:0;height:100%;overflow:hidden}wx-page,wx-view,wx-scroll-view,wx-rich-text{display:block}wx-text{white-space:inherit}wx-button{display:block;cursor:pointer;box-sizing:border-box;border:0;font-family:inherit;text-align:center}wx-button:not([size=mini]){margin-left:auto;margin-right:auto;width:184px}wx-input,wx-textarea{display:block}input,textarea{font-family:inherit;color:inherit;border:0;outline:0;background:transparent;font-size:inherit;width:100%;box-sizing:border-box;line-height:inherit}textarea{resize:none}wx-scroll-view{overflow-y:auto}wx-picker{display:block}</style><wx-page><div id="preview"></div></wx-page>');
+      await page.setContent('<style>html,body{margin:0;height:100%;overflow:hidden}wx-page,wx-view,wx-scroll-view,wx-rich-text{display:block}wx-text{white-space:inherit}wx-button{display:block;cursor:pointer;box-sizing:border-box;border:0;font-family:inherit;text-align:center}wx-button:not([size=mini]){margin-left:auto;margin-right:auto;width:184px}wx-input,wx-textarea{display:block}input,textarea{font-family:inherit;color:inherit;border:0;outline:0;background:transparent;font-size:inherit;width:100%;box-sizing:border-box;line-height:inherit}textarea{resize:none}wx-scroll-view{overflow-y:auto;width:100%}wx-picker{display:block}</style><wx-page><div id="preview"></div></wx-page>');
       await page.addScriptTag({content: fs.readFileSync(path.join(output, 'wxml.js'), 'utf8')});
       await page.evaluate(() => {window.__COMMON_STYLESHEETS__ = {}; window.__transformRpx__ = value => value * innerWidth / 750;});
       await page.addScriptTag({content: fs.readFileSync(path.join(output, 'app-wxss.js'), 'utf8')});
@@ -230,8 +230,36 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       assert.deepEqual(await page.locator('.cr-activity-group').allTextContents(),['编辑了文件，运行了命令','运行了命令','编辑了文件，运行了命令含失败命令','运行了命令','编辑了文件，运行了命令']);
       assert.equal(await page.locator('.cr-image-toggle').count(),3);assert.equal(await page.locator('.cr-native-images').count(),3);assert.equal(await page.locator('.cr-live-label').textContent(),'正在思考');
       assert.equal(await page.locator('.cr-work-summary').count(),0);assert.equal(await page.locator('.cr-activity-detail,.cr-image-previews').count(),0);
-      const chevrons=await page.locator('.cr-activity-group').evaluateAll(rows=>rows.map(row=>{const label=row.querySelector('.cr-row-label').getBoundingClientRect(),chevron=row.querySelector('.cr-native-chevron').getBoundingClientRect();return chevron.left-label.right;}));assert.ok(chevrons.filter((_,index)=>index!==2).every(gap=>gap>=7&&gap<=10),'折叠箭头应紧随摘要文字');
+      const chevrons=await page.locator('.cr-activity-group').evaluateAll(rows=>rows.map(row=>{const label=row.querySelector('.cr-row-label').getBoundingClientRect(),chevron=row.querySelector('.cr-native-chevron').getBoundingClientRect();return chevron.left-label.right;}));assert.ok(chevrons.filter((_,index)=>index!==2).every(gap=>gap>=7&&gap<=10),'折叠箭头应紧随摘要文字：'+JSON.stringify({width,chevrons}));
       await geometry('web-reference-collapsed');
+      await page.evaluate(()=>{
+        const c=crPage.controller;c.resetHistory();crPage.follow=false;
+        const command=id=>({id,type:'commandExecution',command:'check public-fixture',status:'completed',exitCode:0,aggregatedOutput:'完整输出末尾'});
+        c.current.turns=[{id:'web-native',status:'inProgress',items:[command('c0'),command('c1'),{id:'web',type:'webSearch',status:'completed',action:{type:'search',queries:['公开网页查询与本地开发问题 '.repeat(12),'site:example.com/docs']}},...Array.from({length:12},(_,i)=>command('c'+(i+2))),{id:'open',type:'webSearch',action:{type:'openPage',url:'https://example.com/docs/network/very-long-public-page'}}]}];crPage.paint();
+      });
+      assert.equal(await page.locator('.cr-activity-group').count(),1);assert.equal(await page.locator('.cr-activity-group').textContent(),'运行了命令，已搜索网页');
+      await page.locator('.cr-activity-group').click();assert.equal(await page.locator('.cr-native-globe').count(),2);
+      const webLayout=await page.evaluate(()=>{const list=document.querySelector('.cr-activity-list'),label=document.querySelector('.cr-web-search .cr-row-label');return {height:list.clientHeight,scrollHeight:list.scrollHeight,ellipsis:getComputedStyle(label).textOverflow,nowrap:getComputedStyle(label).whiteSpace,long:label.scrollWidth>label.clientWidth};});
+      assert.ok(webLayout.height<=272&&webLayout.scrollHeight>webLayout.height);assert.equal(webLayout.ellipsis,'ellipsis');assert.equal(webLayout.nowrap,'nowrap');assert.equal(webLayout.long,true);
+      const outerScroll=await page.locator('.cr-chat-scroll').evaluate(element=>element.scrollTop);await page.locator('.cr-activity-list').evaluate(element=>element.scrollTop=element.scrollHeight);assert.equal(await page.locator('.cr-chat-scroll').evaluate(element=>element.scrollTop),outerScroll);
+      await page.locator('.cr-activity-list').evaluate(element=>element.scrollTop=0);await geometry('native-web-search');
+      await page.locator('.cr-web-search .cr-activity-toggle').first().click();assert.ok((await page.locator('.cr-web-search .cr-output').first().textContent()).includes('site:example.com/docs'));
+      await page.evaluate(()=>crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}}));await geometry('native-web-search-dark');
+      await page.evaluate(()=>{
+        const c=crPage.controller;c.resetHistory();c.activeTurns.clear();crPage.follow=false;
+        const text='【GPT-6】已完成聊天阅读修复，小程序升级到 **3.6.6**。\n\n- 修复上滑与历史换页跳动，展开详情时保持阅读位置。'.repeat(3)+'\n- 命令、文件、思考和图片沿用原生分组，默认收起，完整详情保留。\n\n重新编译现有目录，或导入小程序包（D:/Projects/Example/windows/out/Example-mini-program-3.6.6.zip）。改动说明与预览（D:/Projects/Example/docs/very-long-public-conversation-layout-and-text-wrapping-document.md）已更新。\n\n完整标识：`'+ 'abcdef0123456789'.repeat(8)+'`\n\n| 项目 | 结果 |\n| --- | --- |\n| 长网址 | https://example.com/docs/'+ 'long-public-path-'.repeat(10)+' |\n\n```\n'+ '完整代码输出'.repeat(35)+'\n```';
+        c.current.turns=[{id:'reading',status:'completed',items:[{id:'answer',type:'agentMessage',phase:'final_answer',text}]}];crPage.changeTheme({currentTarget:{dataset:{value:'light'}}});crPage.paint();
+      });
+      const assertReader = async () => {
+        const bounds=await page.evaluate(()=>{
+          const scroll=document.querySelector('.cr-chat-scroll').getBoundingClientRect(),reader=document.querySelector('.cr-markdown'),box=reader.getBoundingClientRect(),walker=document.createTreeWalker(reader,NodeFilter.SHOW_TEXT),bad=[];
+          while(walker.nextNode()){if(!walker.currentNode.textContent.trim())continue;const range=document.createRange();range.selectNodeContents(walker.currentNode);for(const r of range.getClientRects())if(r.width>0&&(r.left<box.left-1||r.right>box.right+1))bad.push({text:walker.currentNode.textContent.slice(0,25),left:r.left,right:r.right});}
+          return {scrollLeft:scroll.left,scrollRight:scroll.right,left:box.left,right:box.right,overflow:reader.scrollWidth-reader.clientWidth,bad};
+        });
+        assert.ok(bounds.scrollLeft>=-1&&bounds.scrollRight<=width+1,JSON.stringify(bounds));assert.ok(bounds.left>=15&&bounds.right<=width-15,JSON.stringify(bounds));assert.ok(bounds.overflow<=1,JSON.stringify(bounds));assert.deepEqual(bounds.bad,[],JSON.stringify(bounds));
+      };
+      await assertReader();await geometry('reading-wrap');
+      await page.addStyleTag({content:'.cr-markdown {font-size:20px !important}'});await assertReader();await page.evaluate(()=>crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}}));await geometry('reading-wrap-large-dark');
       await page.evaluate(()=>{crResetConversation();crPage.follow=false;});
       for(const sheet of ['options','permissions','attachments','menu','files']){await page.evaluate(sheet=>{crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.setData({sheet});},sheet);await geometry('dark-'+sheet);}
       assert.deepEqual(errors,[]);await context.close();

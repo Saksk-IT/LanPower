@@ -73,17 +73,22 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.locator('[data-thread-id="chat-0"] .lp-thread-title').click();
     await page.locator('[data-message-id="answer-180"]').waitFor();
     await page.waitForFunction(()=>!document.querySelector('.thread-composer-input')?.disabled);
-    const composer=page.locator('.thread-composer-input'), invalid='中'.repeat(16001);
-    await composer.fill(invalid);await composer.press('Enter');await page.waitForTimeout(80);
-    assert.equal(await composer.inputValue(),invalid); assert.equal(calls.filter(c=>c.method==='turn/start').length,0);
+    const composer=page.locator('.thread-composer-input'), longText='中'.repeat(16001);
+    await composer.fill(longText);await composer.press('Enter');
+    await page.waitForFunction(()=>document.querySelector('.lp-send-receipt')?.textContent.includes('发送失败'));
+    assert.equal(await composer.inputValue(),longText); assert.equal(calls.filter(c=>c.method==='turn/start').length,1);
+    assert.equal(calls.find(c=>c.method==='turn/start').params.input[0].text,longText);
     await composer.fill('Cloud 明确未发送的草稿');await composer.press('Enter');
     await page.waitForFunction(()=>document.querySelector('.thread-composer-input')?.value==='Cloud 明确未发送的草稿' && document.querySelector('.lp-send-receipt')?.textContent.includes('发送失败'));
     assert.ok((await page.locator('.lp-feedback').textContent()).includes('未发送'));
-    assert.equal(calls.filter(c=>c.method==='turn/start').length,1);
+    assert.equal(calls.filter(c=>c.method==='turn/start').length,2);
     assert.ok(!(await page.locator('.lp-send-receipt').textContent()).includes('待确认'));
     await composer.fill('');
     await page.locator('[data-message-id="worked:turn-180"] .turn-process-toggle').click();
-    for(const [kind,status] of [['MCP 工具','completed'],['网页搜索','inProgress'],['动态工具','failed'],['协作任务','interrupted'],['上下文整理','completed'],['会话条目（futureFixtureTool）','completed']]) {
+    await page.locator('.native-activity-toggle').click();
+    assert.equal(await page.locator('.native-web-search').getAttribute('data-status'),'completed');
+    assert.ok((await page.locator('.native-web-search-toggle').textContent()).includes('已搜索网页：公开搜索'));
+    for(const [kind,status] of [['MCP 工具','completed'],['动态工具','failed'],['协作任务','interrupted'],['上下文整理','completed'],['会话条目（futureFixtureTool）','completed']]) {
       const card=page.locator(`.lp-native-tool[data-tool-kind="${kind}"]`);await card.waitFor();assert.equal(await card.getAttribute('data-status'),status);
     }
     assert.ok((await page.locator('.lp-native-tool[data-tool-kind="MCP 工具"]').textContent()).includes('fixture-server / lookup'));

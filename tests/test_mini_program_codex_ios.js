@@ -52,7 +52,7 @@ test('单条命令和思考摘要默认折叠，全文保留且长命令不会�
 });
 test('命令按原生活动提示区分读取、目录、搜索；精简上下文独立显示',()=>{
   const thread={turns:[{id:'t',status:'inProgress',items:[{id:'read',type:'commandExecution',command:'read',commandActions:[{type:'read',name:'README.md'}],status:'completed'},{id:'list',type:'commandExecution',commandActions:[{type:'listFiles',path:'docs'}]},{id:'search',type:'webSearch',query:'布局'},{id:'compact',type:'contextCompaction'}]}]};
-  const rows=projectConversation(thread,new Set(),new Set(['activity:t:read']));assert.equal(rows.find(row=>row.kind==='activityGroup').label,'正在运行命令');assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='read'));assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='list'));assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='search'));assert.equal(rows.find(row=>row.kind==='compaction').label,'已精简上下文');
+  const rows=projectConversation(thread,new Set(),new Set(['activity:t:read']));assert.equal(rows.find(row=>row.kind==='activityGroup').label,'正在运行命令，已搜索网页');assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='read'));assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='list'));assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='search'));assert.equal(rows.find(row=>row.kind==='compaction').label,'已精简上下文');
 });
 test('更改摘要按最后一次有更改的任务读取，原生 diff 不重复累计',()=>{
   const thread={turns:[{id:'old',items:[{type:'fileChange',changes:[{path:'old.js',diff:'+ old'}]}]},{id:'current',diff:'--- a/new.js\n+++ b/new.js\n-old\n+new\n+next',items:[{type:'fileChange',changes:[{path:'new.js',diff:'-old\n+new\n+next'}]}]}]};

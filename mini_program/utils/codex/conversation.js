@@ -1,16 +1,23 @@
 const {markdown, utf8Length, elapsed} = require('../codex-format');
 const {timestamp} = require('./model');
 const {diffSummary} = require('../codex-format');
+const {webSearchView} = require('./web-search');
 const isRunning = status => ['inProgress', 'in_progress', 'running'].includes(status);
 function activitySummary(members) {
   // Match remote_ui/src/lanpower/conversationPresentation.ts, including single commands.
   const commands = members.filter(member => member.activityType === 'command');
   const hasFiles = members.some(member => member.activityType === 'file');
+  const searches = members.filter(member => member.activityType === 'web');
   const running = commands.some(member => isRunning(member.status));
   const failed = commands.some(member => member.status === 'failed' || member.status === 'completed' && typeof member.exitCode === 'number' && member.exitCode !== 0);
   const stopped = commands.some(member => ['interrupted', 'declined'].includes(member.status));
-  return {label: running ? '正在运行命令' : hasFiles ? commands.length ? '编辑了文件，运行了命令' : '编辑了文件' : '运行了命令',
-    icon: hasFiles ? 'file-pencil' : 'terminal', failed, notice: failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : ''};
+  const commandLabel = running ? '正在运行命令' : hasFiles ? commands.length ? '编辑了文件，运行了命令' : '编辑了文件' : commands.length ? '运行了命令' : '';
+  const searchLabel = !searches.length ? '' : searches.some(member => isRunning(member.status)) ? '正在搜索网页'
+    : searches.every(member => member.status === 'failed') ? '网页搜索失败'
+    : searches.every(member => member.status === 'interrupted') ? '网页搜索已停止' : '已搜索网页';
+  const searchNotice = searches.some(member => member.status === 'failed') ? '含失败搜索' : searches.some(member => member.status === 'interrupted') ? '含停止的搜索' : '';
+  return {label: [commandLabel, searchLabel].filter(Boolean).join('，'), icon: hasFiles ? 'file-pencil' : commands.length ? 'terminal' : 'globe',
+    failed: failed || searches.some(member => member.status === 'failed'), notice: [failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : '', searchNotice].filter(Boolean).join('，')};
 }
 function commandAction(item) {
   const actions = item.commandActions || [], action = actions.length === 1 ? actions[0] : null;
@@ -80,7 +87,8 @@ function itemRow(item, turn, index) {
   }
   const labels = {mcpToolCall:'MCP 工具',dynamicToolCall:'动态工具',collabAgentToolCall:'协作任务',webSearch:'网页搜索',contextCompaction:'上下文整理',enteredReviewMode:'开始审查',exitedReviewMode:'审查结果'};
   if (item.type === 'contextCompaction') return {...row, kind: 'compaction', label: '已精简上下文', text: ''};
-  if (item.type === 'webSearch') return {...row, action: 'search', icon: 'search', label: `${isRunning(row.status) ? '正在搜索' : '已搜索'} ${previewText(item.query || item.action && item.action.query || '网页', 100)}`, text: JSON.stringify(item.action || {query: item.query}, null, 2)};
+  if (item.type === 'webSearch') return {...row, ...webSearchView(item, turn.status), activityType: 'web', action: 'search', icon: 'globe',
+    text: JSON.stringify(item, function(key, value) { return ['encryptedContent', 'encrypted_content', 'reasoningContent', 'reasoning_content'].includes(key) ? undefined : value; }, 2)};
   const status = item.error || item.success === false || ['failed','error'].includes(item.status) ? '失败' : ['inProgress','in_progress'].includes(row.status) ? '进行中' : '已完成';
   const title = [labels[item.type] || `新条目（${item.type}）`,item.server,item.tool || item.name,status].filter(Boolean).join(' · ');
   const safe = JSON.stringify(item,function(key,value) { return ['encryptedContent','encrypted_content','reasoningContent','reasoning_content'].includes(key) || this.type === 'reasoning' && key === 'content' ? undefined : value; },2);
@@ -109,8 +117,8 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
       const members = [];
       while (position < normalized.length && normalized[position].activityType && (normalized[position].activityType !== 'file' || normalized[position].files.length)) members.push(normalized[position++]);
       const key = `activity:${row.key}`, summary = activitySummary(members);
-      rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', ...summary, text: '', count: members.length, expanded: expandedActivities.has(key)});
-      if (expandedActivities.has(key)) rows.push(...members.map(member => ({...member, expanded: expandedActivities.has(member.key), failed: member.status === 'failed' || typeof member.exitCode === 'number' && member.exitCode !== 0})));
+      rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', ...summary, text: '', activityType: '', count: members.length, expanded: expandedActivities.has(key)});
+      if (expandedActivities.has(key)) rows.push(...members.map(member => ({...member, activityGroupKey: key, expanded: expandedActivities.has(member.key), failed: member.status === 'failed' || typeof member.exitCode === 'number' && member.exitCode !== 0})));
     }
     if (!inserted) rows.push(work);
     if (turn.error) rows.push({key: `error:${turn.id}`, kind: 'error', turnId: turn.id, text: turn.error.message || '任务出错', images: [], files: [], skills: []});
@@ -140,6 +148,12 @@ function conversationWindow(rows, offset = null, imageView = () => '', limit = 3
     bytes += size; selected.push(value);
   }
   if (latest) { selected.reverse(); start = rows.length - selected.length; }
+  const groups = new Set(selected.filter(row => row.kind === 'activityGroup').map(row => row.key));
+  selected.forEach(row => { row.nestedActivity = !!row.activityGroupKey && groups.has(row.activityGroupKey); });
+  selected.filter(row => row.kind === 'activityGroup').forEach(group => {
+    const members = selected.filter(row => row.activityGroupKey === group.key);
+    group.activityListHeight = Math.min(272, members.some(row => row.expanded) ? 272 : members.length * 30);
+  });
   return {messages: selected, windowStart: start, windowEnd: start + selected.length, totalMessages: rows.length, hasWindowBefore: start > 0, hasWindowAfter: start + selected.length < rows.length};
 }
 module.exports = {userContent, itemRow, projectConversation, conversationWindow, previewText, changesSummary};

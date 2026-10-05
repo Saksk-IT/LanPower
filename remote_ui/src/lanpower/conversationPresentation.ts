@@ -6,12 +6,14 @@ export type ActivitySummary = {
   id: string
   label: string
   hasFiles: boolean
+  hasCommands: boolean
   notice: string
   expanded: boolean
 }
 
 export type ConversationMessage = UiMessage & {
   activitySummary?: ActivitySummary
+  activityGroupId?: string
   turnProcess?: { id: string; expanded: boolean }
 }
 
@@ -22,6 +24,7 @@ function turnKey(message: UiMessage): string {
 function isActivity(message: UiMessage): boolean {
   return (message.messageType === 'commandExecution' && !!message.commandExecution)
     || (message.messageType === 'fileChange' && (message.fileChanges?.length ?? 0) > 0)
+    || !!message.toolResult?.webSearch
 }
 
 /** Place live timing after this turn's leading user messages, even in a clipped display window. */
@@ -79,7 +82,7 @@ export function presentConversation(
       process.forEach(message => processMessageIds.add(message.id))
     }
 
-    // Group across command/file events, but never across commentary or a turn boundary.
+    // Keep native commands, files and web searches together, preserving their order.
     const grouped: ConversationMessage[] = []
     for (let index = 0; index < turn.length;) {
       const message = turn[index]!
@@ -91,20 +94,26 @@ export function presentConversation(
       members.forEach(member => activityMemberIds.add(member.id))
       const commands = members.flatMap(member => member.commandExecution ? [member.commandExecution] : [])
       const hasFiles = members.some(member => member.messageType === 'fileChange')
+      const searches = members.flatMap(member => member.toolResult?.webSearch ? [member.toolResult] : [])
       const running = commands.some(command => command.status === 'inProgress')
       const failed = commands.some(command => command.status === 'failed'
         || (command.status === 'completed' && command.exitCode !== null && command.exitCode !== 0))
       const stopped = commands.some(command => command.status === 'interrupted' || command.status === 'declined')
-      const label = running ? '正在运行命令' : hasFiles
+      const commandLabel = running ? '正在运行命令' : hasFiles
         ? commands.length ? '编辑了文件，运行了命令' : '编辑了文件'
-        : '运行了命令'
+        : commands.length ? '运行了命令' : ''
+      const searchLabel = !searches.length ? '' : searches.some(search => search.status === 'inProgress') ? '正在搜索网页'
+        : searches.every(search => search.status === 'failed') ? '网页搜索失败'
+        : searches.every(search => search.status === 'interrupted') ? '网页搜索已停止' : '已搜索网页'
+      const label = [commandLabel, searchLabel].filter(Boolean).join('，')
+      const searchNotice = searches.some(search => search.status === 'failed') ? '含失败搜索' : searches.some(search => search.status === 'interrupted') ? '含停止的搜索' : ''
       const expanded = expandedActivities.has(id)
       grouped.push({
         ...message, id, role: 'system', messageType: 'activityGroup', text: label,
-        commandExecution: undefined, fileChanges: undefined,
-        activitySummary: {id, label, hasFiles, expanded, notice: failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : ''},
+        commandExecution: undefined, fileChanges: undefined, toolResult: undefined, rawPayload: undefined,
+        activitySummary: {id, label, hasFiles, hasCommands: commands.length > 0, expanded, notice: [failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : '', searchNotice].filter(Boolean).join('，')},
       })
-      if (expanded) grouped.push(...members)
+      if (expanded) grouped.push(...members.map(member => ({...member, activityGroupId: id})))
     }
 
     if (!canFold) {
@@ -127,4 +136,15 @@ export function presentConversation(
     }
   }
   return {messages, activityIds, activityMemberIds, processIds, finalMessageIds, processMessageIds}
+}
+
+/** Wrap visible members in one bounded list; a clipped member remains readable on its own. */
+export function conversationBlocks(messages: ConversationMessage[]) {
+  const blocks: {id: string; activity: boolean; expanded: boolean; messages: ConversationMessage[]}[] = []
+  for (const message of messages) {
+    const previous = blocks.at(-1)
+    if (message.activityGroupId && previous?.id === message.activityGroupId) previous.messages.push(message)
+    else blocks.push({id: message.id, activity: !!message.activitySummary, expanded: !!message.activitySummary?.expanded, messages: [message]})
+  }
+  return blocks
 }
