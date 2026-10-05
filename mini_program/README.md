@@ -2,7 +2,9 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-当前小程序版本 **3.6.1**，协议版本 **2**，配套 Windows / Cloud / Web **1.23.2**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.1.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+当前小程序版本 **3.6.2**，协议版本 **2**，配套 Windows / Cloud / Web **1.23.2**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.2.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+
+`3.6.2` 缩小 Codex 首页菜单与聊天更多菜单，收紧宽度、字号、图标和间距；菜单项保持至少 36px 高，长聊天标题单行省略，小屏幕可滚动查看全部操作。重新编译已导入的目录，或导入新版包即可使用。
 
 ## 页面与入口
 
