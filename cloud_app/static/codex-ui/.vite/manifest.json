@@ -1,9 +1,12 @@
 {
   "../../../../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js": {
-    "file": "assets/common-BeuopZEI.js",
+    "file": "assets/common-DzqqoZlq.js",
     "name": "common",
     "src": "../../../../../codex-remote-bridge/node_modules/.pnpm/highlight.js@11.11.1/node_modules/highlight.js/es/common.js",
-    "isDynamicEntry": true
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
   },
   "index.html": {
     "file": "codex.js",

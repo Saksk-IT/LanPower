@@ -1,10 +1,10 @@
 {
   "format": 1,
-  "version": "1.24.4",
-  "builtVersion": "1.24.4",
+  "version": "1.24.5",
+  "builtVersion": "1.24.5",
   "files": {
-    "assets/common-BeuopZEI.js": "e47706ed22d361c79163e29c36d369b3e3820bb739e220ef04bf7b2654997ded",
-    "codex.css": "5b4afb98d85e7d30bca9e97416265fc5a8b42ee6bd8a5877238d6898eac7cf62",
-    "codex.js": "68ae5183f0b62843a9519b44df980572c9a475b42cecf22f5e1763ca580aa6fc"
+    "assets/common-DzqqoZlq.js": "8cd35e1dd4e33791f6019ce37bf97b77c49177021953be8146344d4c744412f9",
+    "codex.css": "80383fa48635a40319216a5374114b65f2bef32fd2b8ea28277c0ea6fe7f78a2",
+    "codex.js": "c0f75e096ae8ab727be17e109057bcab359e4e6db29da0776448169caec29bb0"
   }
 }

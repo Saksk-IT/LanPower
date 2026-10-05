@@ -2,6 +2,8 @@ const {markdown, utf8Length, elapsed} = require('../codex-format');
 const {timestamp} = require('./model');
 const {diffSummary} = require('../codex-format');
 const {webSearchView} = require('./web-search');
+const {fileChangeSummary, fileChangeView} = require('./file-changes');
+const {parseUserEnvelope, attachmentSourceKey, mergeAttachmentImages} = require('./user-content');
 const isRunning = status => ['inProgress', 'in_progress', 'running'].includes(status);
 function activitySummary(members) {
   // Match remote_ui/src/lanpower/conversationPresentation.ts, including single commands.
@@ -16,7 +18,7 @@ function activitySummary(members) {
     : searches.every(member => member.status === 'failed') ? '网页搜索失败'
     : searches.every(member => member.status === 'interrupted') ? '网页搜索已停止' : '已搜索网页';
   const searchNotice = searches.some(member => member.status === 'failed') ? '含失败搜索' : searches.some(member => member.status === 'interrupted') ? '含停止的搜索' : '';
-  return {label: [commandLabel, searchLabel].filter(Boolean).join('，'), icon: hasFiles ? 'file-pencil' : commands.length ? 'terminal' : 'globe',
+  return {label: [commandLabel, searchLabel].filter(Boolean).join('，') || '思考过程', icon: hasFiles ? 'file-pencil' : commands.length ? 'terminal' : searches.length ? 'globe' : 'reasoning',
     failed: failed || searches.some(member => member.status === 'failed'), notice: [failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : '', searchNotice].filter(Boolean).join('，')};
 }
 function commandAction(item) {
@@ -25,7 +27,7 @@ function commandAction(item) {
   if (type === 'read') return {action: 'read', icon: 'book', label: `${isRunning(item.status) ? '正在读取' : '已读取'} ${name || '文件'}`};
   if (['listFiles', 'list_files'].includes(type)) return {action: 'list', icon: 'folder', label: `${isRunning(item.status) ? '正在列出' : '已列出'} ${name || '目录'}`};
   if (type === 'search') return {action: 'search', icon: 'search', label: `${isRunning(item.status) ? '正在搜索' : '已搜索'} ${name || '项目内容'}`};
-  return {action: 'command', icon: 'terminal', label: isRunning(item.status) ? '正在运行命令' : '已运行命令'};
+  return {action: 'command', icon: 'terminal', label: isRunning(item.status) ? '正在运行命令' : item.status === 'failed' || item.status === 'completed' && typeof item.exitCode === 'number' && item.exitCode !== 0 ? '命令运行失败' : item.status === 'declined' ? '命令已拒绝' : item.status === 'interrupted' ? '命令已停止' : '已运行命令'};
 }
 function changesSummary(thread) {
   const turn = (thread && thread.turns || []).slice().reverse().find(value => value.diff || (value.items || []).some(item => item.type === 'fileChange' && (item.changes || []).length));
@@ -33,8 +35,8 @@ function changesSummary(thread) {
   const files = new Map();
   for (const item of turn.items || []) if (item.type === 'fileChange') for (const file of item.changes || []) {
     if (!file.path) continue;
-    const diff = file.diff || '', counts = diffSummary(diff), previous = files.get(file.path);
-    files.set(file.path, {path: file.path, kind: typeof file.kind === 'string' ? file.kind : file.kind && file.kind.type || '', diff: (previous ? previous.diff + '\n' : '') + diff,
+    const view = fileChangeView(file), diff = view.diff, counts = view, previous = files.get(file.path);
+    files.set(file.path, {...view, diff: (previous ? previous.diff + '\n' : '') + diff,
       added: (previous ? previous.added : 0) + counts.added, removed: (previous ? previous.removed : 0) + counts.removed});
   }
   // A turn diff is authoritative; avoid double-counting its file-change events.
@@ -46,24 +48,12 @@ function changesSummary(thread) {
 }
 function userContent(content) {
   const blocks = Array.isArray(content) ? content : [], raw = blocks.filter(b => ['text', 'input_text', 'Text'].includes(b.type)).map(b => b.text || '').join('\n');
-  const normalized = raw.replace(/\r\n?/g, '\n');
-  const match = /^# Files mentioned by the user:[ \t]*\n([\s\S]*?)\n## My request(?: for Codex)?:[ \t]*\n([\s\S]*)$/.exec(normalized);
-  const attachments = match ? match[1].split(/^## /m).slice(1).map(part => {
-    const lines = part.split('\n'), heading = /^(.+?):[ \t]*(.*)$/.exec(lines.shift());
-    if (!heading) return null;
-    const path = heading[2].trim() || (lines.find(line => line.trim()) || '').trim();
-    return path ? {label: heading[1], path, image: /^Image attachment:[ \t]*true[ \t]*$/m.test(lines.join('\n'))} : null;
-  }).filter(Boolean) : [];
-  const images = [...blocks.filter(b => ['image', 'localImage', 'input_image', 'image_url'].includes(b.type)).map(b => b.url || b.path || (typeof b.image_url === 'string' ? b.image_url : b.image_url && b.image_url.url)),
-    ...attachments.filter(file => file.image).map(file => file.path)].filter(source => typeof source === 'string' && source.trim());
-  const sourceKey = source => {
-    let path = source; if (/^file:/i.test(path)) { try { path = decodeURIComponent(path.replace(/^file:\/\//i, '').replace(/^\/([A-Za-z]:)/, '$1')); } catch (_) {} }
-    path = path.replace(/\\/g, '/'); return /^[A-Za-z]:/.test(path) ? path.toLowerCase() : path;
-  };
-  const unique = new Map(images.map(source => [sourceKey(source), source]));
-  return {text: match ? match[2] : raw,
-    files: attachments.filter(file => !file.image && !unique.has(sourceKey(file.path))).map(({label, path}) => ({label, path})),
-    skills: blocks.filter(b => b.type === 'skill').map(b => ({name: b.name, path: b.path})), images: Array.from(unique.values())};
+  const {text, attachments} = parseUserEnvelope(raw);
+  const images = mergeAttachmentImages(blocks.filter(b => ['image', 'localImage', 'input_image', 'image_url'].includes(b.type)).map(b => b.url || b.path || (typeof b.image_url === 'string' ? b.image_url : b.image_url && b.image_url.url)), attachments);
+  const imageKeys = new Set(images.map(attachmentSourceKey));
+  return {text,
+    files: attachments.filter(file => !file.image && !imageKeys.has(attachmentSourceKey(file.path))).map(({label, path}) => ({label, path})),
+    skills: blocks.filter(b => b.type === 'skill').map(b => ({name: b.name, path: b.path})), images};
 }
 function itemRow(item, turn, index) {
   const row = {key: `${turn.id}:${item.id}`, turnId: turn.id, turnIndex: index, itemId: item.id, status: item.status || turn.status || '', text: '', kind: 'activity', label: '', images: [], files: [], skills: []};
@@ -71,11 +61,15 @@ function itemRow(item, turn, index) {
   if (item.type === 'agentMessage') return {...row, kind: 'assistant', text: item.text || '', phase: item.phase || '', images: Array.from(String(item.text || '').matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)).map(match => match[1])};
   if (item.type === 'reasoning') {
     const text = (item.summary || []).map(part => typeof part === 'string' ? part : part && part.text || '').filter(Boolean).join('\n\n');
-    return text ? {...row, kind: 'reasoning', label: '思考过程', text} : null;
+    return text ? {...row, kind: 'reasoning', activityType: 'reasoning', icon: 'reasoning', label: '思考过程', text} : null;
   }
   if (item.type === 'plan') return {...row, kind: 'plan', label: '计划', text: item.text || ''};
   if (item.type === 'commandExecution') return {...row, activityType: 'command', ...commandAction({...item, status: row.status}), command: item.command || '', text: item.aggregatedOutput || '', exitCode: item.exitCode, cwd: item.cwd || ''};
-  if (item.type === 'fileChange') return {...row, activityType: 'file', action: 'file', icon: 'file', label: `${isRunning(row.status) ? '正在修改' : '已修改'} ${(item.changes || []).length} 个文件`, files: (item.changes || []).map(c => ({path: c.path, label: c.path, kind: typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type || '', diff: c.diff || ''})), text: (item.changes || []).map(c => `${c.path}\n${c.diff || ''}`).join('\n\n')};
+  if (item.type === 'fileChange') {
+    const summary = fileChangeSummary(item.changes, row.status);
+    return {...row, activityType: 'file', action: 'file', icon: 'file-diff', label: summary.label, fileKinds: summary.kinds,
+      added: summary.added, removed: summary.removed, files: summary.files, text: summary.files.map(file => `${file.path}\n${file.diff}`).join('\n\n')};
+  }
   if (item.type === 'lanpowerLargeItem') return {...row, kind: 'large', reference: item.reference, characters: item.characters, label: item.wholeTurn ? '读取完整这一轮' : '读取完整内容', text: `${item.characters || 0} 字符，点击继续读取`};
   if (['imageGeneration', 'image_generation'].includes(item.type)) {
     const result = typeof item.result === 'string' ? item.result.trim() : '', source = !result ? '' : /^(data:|https?:|file:|[A-Za-z]:[\\/]|\/)/.test(result) ? result : `data:image/png;base64,${result.replace(/\s/g, '')}`;
@@ -136,13 +130,15 @@ function conversationWindow(rows, offset = null, imageView = () => '', limit = 3
   const candidates = rows.slice(from, from + limit);
   for (const row of (latest ? candidates.slice().reverse() : candidates)) {
     const visibleText = !['activity', 'reasoning', 'plan'].includes(row.kind) || row.expanded;
-    const text = visibleText ? previewText(row.text) : '', value = {...row, text, hasMoreText: visibleText && text.length < String(row.text || '').length,
+    const text = visibleText && row.activityType !== 'file' ? previewText(row.text) : '', value = {...row, text, hasMoreText: visibleText && row.activityType !== 'file' && text.length < String(row.text || '').length,
       label: previewText(row.label, 180), summary: previewText(row.summary, 220),
       command: previewText(row.command, 800),
       domId: 'row-' + encodeURIComponent(row.key).replace(/%/g, '-'),
       images: (row.images || []).map((source, index) => ({key: row.key + ':img:' + index, src: imageView(row.key, index), label: '查看图片'})),
-      files: (row.files || []).map(file => ({path: file.path, label: file.label || file.path, kind: file.kind || ''})),
-      links: Array.from(String(row.text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]}))};
+      files: (row.activityType === 'file' && !row.expanded ? [] : row.files || []).map((file, index) => ({path: file.path, label: file.label || file.path, kind: file.kind || '',
+        kindLabel: file.kindLabel || '', movedToPath: file.movedToPath || '', added: file.added || 0, removed: file.removed || 0, index})),
+      fileListHeight: row.activityType === 'file' ? Math.min(320, (row.files || []).length * 36) : 0,
+      links: ['assistant', 'user'].includes(row.kind) ? Array.from(String(row.text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]})) : []};
     if (row.kind === 'assistant' || ['reasoning', 'plan'].includes(row.kind) && row.expanded) value.nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
     const size = utf8Length(JSON.stringify(value)); if (bytes + size > 380000) break;
     bytes += size; selected.push(value);
@@ -152,7 +148,7 @@ function conversationWindow(rows, offset = null, imageView = () => '', limit = 3
   selected.forEach(row => { row.nestedActivity = !!row.activityGroupKey && groups.has(row.activityGroupKey); });
   selected.filter(row => row.kind === 'activityGroup').forEach(group => {
     const members = selected.filter(row => row.activityGroupKey === group.key);
-    group.activityListHeight = Math.min(272, members.some(row => row.expanded) ? 272 : members.length * 30);
+    group.activityListHeight = Math.min(272, members.some(row => row.expanded) ? 272 : members.reduce((height, row) => height + (row.activityType === 'file' ? 54 : 30), 0));
   });
   return {messages: selected, windowStart: start, windowEnd: start + selected.length, totalMessages: rows.length, hasWindowBefore: start > 0, hasWindowAfter: start + selected.length < rows.length};
 }

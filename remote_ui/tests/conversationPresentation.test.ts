@@ -13,6 +13,19 @@ function normalize(items: unknown[], status = 'completed', timing = {}, id = 'tu
 }
 
 describe('conversation process folding', () => {
+  it.each(['inProgress', 'completed'])('keeps interleaved thinking, commands and files in one %s drawer', status => {
+    const source = normalize([command('first'), reasoning, file, {...reasoning,id:'r2'}, command('second',1), {...reasoning,id:'r3'}],status)
+    const before = JSON.stringify(source), collapsed = presentConversation(source)
+    expect(collapsed.activityIds.size).toBe(1)
+    expect(collapsed.messages.filter(message => message.activitySummary)).toHaveLength(1)
+    expect(collapsed.messages.some(message => message.messageType === 'reasoning')).toBe(false)
+    const expanded = presentConversation(source,new Set(),collapsed.activityIds)
+    expect(conversationBlocks(expanded.messages)).toHaveLength(1)
+    expect(expanded.messages.filter(message => message.messageType === 'reasoning').map(message => message.id)).toEqual(['reasoning','r2','r3'])
+    expect(expanded.messages.find(message => message.activitySummary)?.activitySummary?.notice).toBe('含失败命令')
+    expect(JSON.stringify(source)).toBe(before)
+    expect(expanded.messages.some(message => message.text.includes('不公开的内容'))).toBe(false)
+  })
   it('groups web searches with commands in order and wraps their visible members in one scroll list', () => {
     const source = normalize([command(), {id:'web',type:'webSearch',action:{type:'search',queries:['问题一','问题二']}}, command('after'), commentary,
       {id:'open',type:'webSearch',action:{type:'openPage',url:'https://example.com/docs'}}], 'inProgress')
@@ -97,7 +110,7 @@ describe('conversation process folding', () => {
     const processId = [...collapsed.processIds][0]!
     const activityId = [...collapsed.activityIds][0]!
     const process = presentConversation(source, new Set([processId]))
-    expect(process.messages.some(message => message.id === 'reasoning')).toBe(true)
+    expect(process.messages.some(message => message.id === 'reasoning')).toBe(false)
     expect(process.messages.some(message => message.id === 'command')).toBe(false)
     const all = presentConversation(source, new Set([processId]), new Set([activityId]))
     expect(all.messages.some(message => message.id === 'command')).toBe(true)

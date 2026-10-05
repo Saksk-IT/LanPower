@@ -54,7 +54,7 @@ import { mergeHistory, readPage, readThread, newBeginning, findBeginning, Histor
 import { newSettings, observeSettings, effectiveSettings, modelId, validEfforts, type ModelCapability, type ThreadSettings, type SendSettings } from './lanpower/settings'
 import { permissionMode, permissionLabels, type PermissionPreset } from './lanpower/permissions'
 import { StateClock } from './lanpower/state'
-import { reasoningSummary, timestampMs } from './lanpower/turnPresentation'
+import { timestampMs } from './lanpower/turnPresentation'
 import { defaultLibraryPreferences, type LibraryPreferences } from './lanpower/library'
 import { prepareSubmissionInput } from './lanpower/input'
 import { resetRemoteImages } from './lanpower/images'
@@ -186,10 +186,9 @@ const liveOverlay = computed<UiLiveOverlay | null>(() => {
   const turn = current.value?.turns?.find((t:any) => t.id === activeTurn.value)
   const items:any[] = turn?.items || []
   const runningCommand = items.some(item => item.type === 'commandExecution' && item.status === 'inProgress')
-  const summary = reasoningSummary(items.slice().reverse().find(item => item.type === 'reasoning') || {})
   return {...overlay.value,running:!selectedApprovals.value.length && !interrupting.value,
     activityLabel:selectedApprovals.value.length ? '等待你的回复' : interrupting.value ? '正在停止' : runningCommand ? 'Running command' : overlay.value.activityLabel || 'Thinking',
-    reasoningText:overlay.value.reasoningText || summary,
+    reasoningText:'',
     startedAtMs:timestampMs(turn?.startedAt) ?? timestampMs(current.value?.live?.startedAt) ?? turnTimings.get(timingKey(threadId.value,activeTurn.value))?.startedAt}
 })
 const queueRows = computed(() => queue.value.map(entry => ({ id: entry.id, text: (entry.input || []).filter((i: any) => i.type === 'text').map((i: any) => i.text).join('\n'), imageUrls: (entry.input || []).filter((i: any) => i.type === 'image').map((i: any) => i.url) })))

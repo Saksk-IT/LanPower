@@ -6,6 +6,7 @@ const {CodexController} = require('../../utils/codex/controller');
 const {modelId, effectiveSettings, validEfforts} = require('../../utils/codex/model');
 const {orderedEfforts, effortGauge, contextIndicator} = require('../../utils/codex/composer-status');
 const {previewText, changesSummary} = require('../../utils/codex/conversation');
+const {fileDiffLines} = require('../../utils/codex/file-changes');
 const {permissionOptions, permissionLabels, permissionMode} = require('../../utils/codex/permissions');
 const {ImageCache} = require('../../utils/codex/resources');
 const {capabilityStatus} = require('../../utils/codex/native-status');
@@ -17,6 +18,15 @@ const {openPage, returnToDevice} = require('../../utils/navigation');
 const HOME_KEY = 'lanpower_codex_home';
 const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2';
 const dataOf = event => event.currentTarget.dataset;
+const activityData = event => {
+  const mark = event && event.mark || {}, data = {...(event && event.target && event.target.dataset), ...(event && event.currentTarget && event.currentTarget.dataset)};
+  return {...data, key: data.key || mark.activitykey, turn: data.turn || mark.activityturn,
+    index: data.index === undefined ? mark.activityindex : data.index, activityAction: data.activityAction || mark.activityaction};
+};
+const settleLayout = (promise, fallback, delay = 200) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => resolve(fallback), delay);
+  Promise.resolve(promise).then(value => {clearTimeout(timer);resolve(value);}, failure => {clearTimeout(timer);reject(failure);});
+});
 const modal = options => new Promise(resolve => wx.showModal({...options, success: result => resolve(!!result.confirm), fail: () => resolve(false)}));
 const effortNames = {none: '关闭', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '超高', max: 'Max', ultra: 'Ultra'};
 const modelName = row => (row && (row.displayName || modelId(row)) || '').replace(/^gpt-/i, '').replace(/-(sol|astra|luna)$/i, (_, name) => ' ' + name[0].toUpperCase() + name.slice(1));
@@ -265,7 +275,27 @@ Page({
   copyThreadId() { this.copyText(this.controller.threadId); this.closeSheet(); },
   openChanges() { this.changeOffset = 0; this.setData({sheet: 'changes'}); this.paint(); },
   changesPage(event) { this.changeOffset = Math.max(0, (this.changeOffset || 0) + Number(dataOf(event).direction) * 40); this.paint(); },
-  showChange(event) { const file = changesSummary(this.controller.current).files[Number(dataOf(event).index)]; if (file) this.showDetail(file.path, file.diff || '此文件未提供差异内容。', 'code'); },
+  showChange(event) { const file = changesSummary(this.controller.current).files[Number(dataOf(event).index)]; if (file) this.showFileDiff(file); },
+  openFileChange(event) {
+    const {key, index} = activityData(event), row = this.controller.rows.find(value => value.key === key);
+    const file = row && row.files[Number(index)];
+    if (file) this.showFileDiff(file);
+  },
+  showFileDiff(file) {
+    this.diffPages = []; let page = [], size = 0;
+    for (const line of fileDiffLines(file.diff, file.kind)) {
+      // Bound each rendered page without dropping any line or the original diff.
+      for (let offset = 0; offset < Math.max(1, line.text.length);) {
+        let end = Math.min(offset + 2000, line.text.length);
+        if (/[\uD800-\uDBFF]/.test(line.text[end - 1] || '') && /[\uDC00-\uDFFF]/.test(line.text[end] || '')) end--;
+        const fragment = {...line, key: `${line.key}:${offset}`, text: line.text.slice(offset, end), continuation: offset > 0};
+        if (page.length && (size + fragment.text.length > 6000 || page.length >= 80)) { this.diffPages.push(page); page = []; size = 0; }
+        page.push(fragment); size += fragment.text.length; offset = Math.max(offset + 1, end);
+      }
+    }
+    if (page.length) this.diffPages.push(page);
+    this.showDetail(file.movedToPath ? `${file.path} → ${file.movedToPath}` : file.path, file.diff || '', 'diff');
+  },
   async openMenu(event) { const id = event && dataOf(event).id; if (id && id !== this.controller.threadId) await this.controller.selectThread(id); if (!this.controller.current) return; this.setData({sheet: 'menu', threadMenuPinned: this.controller.library.preferences.pinned.includes(this.controller.threadId)}); this.paint(); },
   openProjectMenu(event) { const group = this.controller.libraryView('').projects.find(row => row.id === dataOf(event).id); if (group) this.setData({sheet: 'project', projectMenu: {id: group.id, name: group.name, path: group.path}}); },
   projectAction(event) { const {action} = dataOf(event), project = this.data.projectMenu; if (!project) return; if (action === 'new') return this.createThread({currentTarget: {dataset: {path: project.path}}}); if (action === 'files') return this.openFiles({currentTarget: {dataset: {cwd: project.path}}}); if (action === 'rename') { this.renameTarget = {kind: 'project', id: project.id}; this.setData({sheet: 'rename', renameTitle: '项目显示名', renameDraft: project.name}); return; } this.controller.changeLibrary(action === 'up' || action === 'down' ? 'move' : 'hidden', project.id, action === 'up' ? -1 : 1); this.closeSheet(); },
@@ -295,13 +325,20 @@ Page({
   noop() {},
   dismissFeedback() { this.controller.notify(''); },
   toggleProgress() { this.setData({progressOpen: !this.data.progressOpen}); },
-  toggleRow(event) { const {key, turn} = dataOf(event); return this.updateChat(() => this.controller.toggleRow(key, turn), key); },
+  activityTap(event) {
+    const {key, activityAction} = activityData(event);
+    if (!key) return;
+    const handler = {toggle:'toggleRow', command:'openCommandDetail', file:'openFileChange'}[activityAction];
+    if (handler) return this[handler](event);
+  },
+  toggleRow(event) { const {key, turn} = activityData(event); if (!key) return; return this.updateChat(() => this.controller.toggleRow(key, turn), key, true); },
   pauseFollow() {
     if (this.follow) { this.follow = false; this.controller.holdWindow(); }
     if (this.data.scrollTarget || !this.data.showJump) this.setData({scrollTarget: '', showJump: true});
   },
-  chatTouchStart(event) { this.touchY = event.touches && event.touches[0] && event.touches[0].clientY; this.scrollIntent = ''; this.expectedScrollTop = undefined; this.pauseFollow(); },
+  chatTouchStart(event) { if (event.mark && event.mark.workdrawer) return; this.touchY = event.touches && event.touches[0] && event.touches[0].clientY; this.scrollIntent = ''; this.expectedScrollTop = undefined; this.pauseFollow(); },
   chatTouchMove(event) {
+    if (event.mark && event.mark.workdrawer) return;
     const y = event.touches && event.touches[0] && event.touches[0].clientY;
     if (y === undefined || this.touchY === undefined || Math.abs(y - this.touchY) < 2) return;
     this.scrollIntent = y > this.touchY ? 'earlier' : 'later'; this.touchY = y; this.expectedScrollTop = undefined; this.pauseFollow();
@@ -338,17 +375,17 @@ Page({
       });
     });
   },
-  async restoreChatAnchor(anchor) {
+  async restoreChatAnchor(anchor, token) {
     if (!anchor || !anchor.id || !this.data.messages.some(row => row.domId === anchor.id)) return;
     if (typeof wx === 'undefined' || !wx.createSelectorQuery || anchor.top === undefined) { this.setData({scrollTarget: ''}); this.setData({scrollTarget: anchor.id}); return; }
     const c = this.controller, context = c.key, epoch = c.epoch, selection = c.selection;
     if (wx.nextTick) await new Promise(resolve => wx.nextTick(resolve));
-    if (c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
+    if (c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible || token && this.chatUpdating !== token) return;
     await new Promise(resolve => {
       const query = wx.createSelectorQuery().in(this);
       query.select('.cr-chat-scroll').boundingClientRect(); query.select('.cr-chat-scroll').scrollOffset(); query.select('#' + anchor.id).boundingClientRect();
       query.exec(([viewport, offset, row]) => {
-        if (viewport && row && c === this.controller && context === c.key && epoch === c.epoch && selection === c.selection && this.visible) {
+        if (viewport && row && c === this.controller && context === c.key && epoch === c.epoch && selection === c.selection && this.visible && (!token || this.chatUpdating === token)) {
           const top = Math.max(0, (offset && offset.scrollTop || 0) + row.top - viewport.top - anchor.top);
           if (Math.abs(top - (offset && offset.scrollTop || 0)) > 0.5) {
             this.expectedScrollTop = top; this.lastScrollTop = top;
@@ -361,27 +398,40 @@ Page({
       });
     });
   },
-  async updateChat(action, key) {
-    if (this.chatUpdating || this.data.view !== 'chat') return;
+  async updateChat(action, key, interactive = false) {
+    if (this.chatUpdating && !interactive || this.data.view !== 'chat') return;
     const c = this.controller, context = c.key, epoch = c.epoch, selection = c.selection, token = {controller: c, context, epoch, selection}; this.chatUpdating = token; this.follow = false;
     clearTimeout(this.paintTimer); this.paintTimer = null;
     try {
       this.setData({scrollTarget: '', showJump: true}); await action();
       if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
       // The user may keep scrolling during the request. Measure immediately before rendering, not before fetching.
-      const anchor = await this.chatAnchor(key);
+      const anchor = await settleLayout(this.chatAnchor(key));
       if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
-      token.rendering = true; await this.paint();
+      token.rendering = true; await settleLayout(this.paint());
       if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
-      await this.restoreChatAnchor(anchor);
+      await settleLayout(this.restoreChatAnchor(anchor, token));
     } finally { if (this.chatUpdating === token) { this.chatUpdating = null; if (this.chatPaintPending) { this.chatPaintPending = false; this.schedulePaint(); } } }
   },
   cancelHistory() { this.controller.cancelHistory(); },
   resumeHistory() { return this.controller.jumpToBeginning(); },
   retryContent() { return this.controller.retryContent(); },
-  openDetail(event) { const row = this.controller.rows.find(value => value.key === dataOf(event).key); if (row) this.showDetail(row.label || (row.kind === 'assistant' ? '完整回复' : '消息详情'), (row.command ? row.command + '\n\n' : '') + row.text, row.kind); },
+  openDetail(event) { const row = this.controller.rows.find(value => value.key === activityData(event).key); if (row) this.showDetail(row.label || (row.kind === 'assistant' ? '完整回复' : '消息详情'), (row.command ? row.command + '\n\n' : '') + row.text, row.kind); },
+  openCommandDetail(event) {
+    const row = this.controller.rows.find(value => value.key === activityData(event).key && value.activityType === 'command');
+    if (!row) return;
+    const state = ['inProgress', 'in_progress', 'running'].includes(row.status) ? '正在运行' : row.status === 'failed' || typeof row.exitCode === 'number' && row.exitCode !== 0 ? '运行失败' : row.status === 'interrupted' ? '已停止' : row.status === 'declined' ? '已拒绝' : '已完成';
+    this.showDetail('命令详情', [state, row.cwd ? `工作目录：${row.cwd}` : '', typeof row.exitCode === 'number' ? `退出码：${row.exitCode}` : '',
+      `\n命令\n${row.command || '命令内容不可用'}`, `\n输出\n${row.text || (state === '正在运行' ? '等待命令输出…' : '没有命令输出')}`].filter(Boolean).join('\n'), 'code');
+  },
   showDetail(title, text, kind = '') { this.detailText = String(text || ''); this.detailIndex = 0; this.setData({sheet: 'detail', detailTitle: title, detailKind: kind}); this.paintDetail(); },
-  paintDetail() { const pages = Math.max(1, Math.ceil(this.detailText.length / 6000)); this.detailIndex = Math.max(0, Math.min(this.detailIndex, pages - 1)); let start = this.detailIndex * 6000, end = (this.detailIndex + 1) * 6000; if (/[\uDC00-\uDFFF]/.test(this.detailText[start] || '')) start--; if (/[\uDC00-\uDFFF]/.test(this.detailText[end] || '')) end--; this.setData({detailText: this.detailText.slice(start, end), detailPage: this.detailIndex + 1, detailPages: pages}); },
+  paintDetail() {
+    if (this.data.detailKind === 'diff') {
+      const pages = Math.max(1, this.diffPages.length); this.detailIndex = Math.max(0, Math.min(this.detailIndex, pages - 1));
+      this.setData({detailText: '', detailDiffLines: this.diffPages[this.detailIndex] || [], detailPage: this.detailIndex + 1, detailPages: pages}); return;
+    }
+    const pages = Math.max(1, Math.ceil(this.detailText.length / 6000)); this.detailIndex = Math.max(0, Math.min(this.detailIndex, pages - 1)); let start = this.detailIndex * 6000, end = (this.detailIndex + 1) * 6000; if (/[\uDC00-\uDFFF]/.test(this.detailText[start] || '')) start--; if (/[\uDC00-\uDFFF]/.test(this.detailText[end] || '')) end--; this.setData({detailText: this.detailText.slice(start, end), detailDiffLines: [], detailPage: this.detailIndex + 1, detailPages: pages});
+  },
   detailPage(event) { this.detailIndex += Number(dataOf(event).direction); this.paintDetail(); },
   copyDetail() { this.copyText(this.detailText); },
   copyRow(event) { const row = this.controller.rows.find(value => value.key === dataOf(event).key); if (row) this.copyText(row.text); },

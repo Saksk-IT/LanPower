@@ -20,6 +20,8 @@ import type {
 import { normalizePathForComparison, normalizePathForUi, toProjectName } from '../../pathUtils.js'
 import { formatWorkDuration, reasoningSummary, turnDurationMs } from '../../lanpower/turnPresentation'
 import { nativeToolView, publicToolPayload } from '../../lanpower/tools'
+import userContent from '../../../../mini_program/utils/codex/user-content.js'
+const { parseUserEnvelope, attachmentSourceKey, mergeAttachmentImages } = userContent
 
 function toIso(seconds: number): string {
   return new Date(seconds * 1000).toISOString()
@@ -38,44 +40,7 @@ function readTurnErrorText(turn: Turn): string {
   return typeof error?.message === 'string' ? error.message.trim() : ''
 }
 
-const FILE_ATTACHMENT_LINE = /^##\s+(.+?):\s+(.+?)\s*$/
-const FILES_MENTIONED_MARKER = /^#\s*files mentioned by the user\s*:?\s*$/i
 const ASSISTANT_FILE_CHANGE_HEADING = /^(?:#{1,6}\s*)?(?:本次修改文件(?:和操作)?(?:如下)?|修改文件和操作)\s*[:：]?\s*$/u
-
-function extractFileAttachments(value: string): UiFileAttachment[] {
-  const markerIdx = value.split('\n').findIndex((line) => FILES_MENTIONED_MARKER.test(line.trim()))
-  if (markerIdx < 0) return []
-  const lines = value.split('\n').slice(markerIdx + 1)
-  const attachments: UiFileAttachment[] = []
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const m = trimmed.match(FILE_ATTACHMENT_LINE)
-    if (/^#{1,6}\s+my request(?: for codex)?\s*:/i.test(trimmed)) break
-    if (!m) continue
-    const label = m[1]?.trim()
-    const path = m[2]?.trim().replace(/\s+\((?:lines?\s+\d+(?:-\d+)?)\)\s*$/, '')
-    if (label && path) attachments.push({ label, path })
-  }
-  return attachments
-}
-
-function extractCodexUserRequestText(value: string): string {
-  if (!value.split('\n').some(line => FILES_MENTIONED_MARKER.test(line.trim()))) return value.trim()
-  const markerRegex = /(?:^|\n)[ \t]{0,3}#{1,6}[ \t]+my request(?: for codex)?[ \t]*:[ \t]*(?:\r?\n|$)/giu
-  const matches = Array.from(value.matchAll(markerRegex))
-  if (matches.length === 0) {
-    return value.trim()
-  }
-
-  const lastMatch = matches.at(-1)
-  if (!lastMatch || typeof lastMatch.index !== 'number') {
-    return value.trim()
-  }
-
-  const markerOffset = lastMatch.index + lastMatch[0].length
-  return value.slice(markerOffset).trim()
-}
 
 function toLocalImageUrl(path: string): string {
   return `/codex-local-image?path=${encodeURIComponent(path)}&source=desktop`
@@ -174,13 +139,19 @@ function parseUserMessageContent(
   }
 
   const fullText = textChunks.join('\n')
-  const imagePaths = new Set(images.filter(image => image.startsWith('/codex-local-image?')).map(image => normalizePathForComparison(new URL(image,'https://localhost').searchParams.get('path') || '')))
-  const fileAttachments = extractFileAttachments(fullText).filter(file => !imagePaths.has(normalizePathForComparison(file.path)))
+  const envelope = parseUserEnvelope(fullText)
+  const sourceKey = (image: string) => attachmentSourceKey(image.startsWith('/codex-local-image?')
+    ? new URL(image, 'https://localhost').searchParams.get('path') || '' : image)
+  const mergedImages = mergeAttachmentImages(images, envelope.attachments, sourceKey)
+    .map(image => images.includes(image) ? image : toLocalImageUrl(image))
+  const imagePaths = new Set(mergedImages.map(sourceKey))
+  const fileAttachments = envelope.attachments.filter(file => !file.image && !imagePaths.has(attachmentSourceKey(file.path)))
+    .map(({ label, path }) => ({ label, path }))
   const heartbeat = parseHeartbeatEnvelope(fullText)
 
   return {
-    text: heartbeat?.instructions ?? extractCodexUserRequestText(fullText),
-    images,
+    text: heartbeat?.instructions ?? envelope.text.trim(),
+    images: mergedImages,
     skills,
     fileAttachments,
     rawBlocks,
@@ -650,7 +621,6 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
     let insertedDuration = false
     for (const item of items) {
       for (const msg of toUiMessages(item,turn.status)) {
-        if (turn.status === 'inProgress' && msg.messageType === 'reasoning') continue
         if (!insertedDuration && msg.role !== 'user' && duration !== undefined) {
           messages.push({id:`${turnId ?? turnIndex}:worked`,role:'system',text:`已处理 ${formatWorkDuration(duration)}`,messageType:'worked',turnId,turnIndex,turnStatus:turn.status,turnDurationMs:duration})
           insertedDuration = true

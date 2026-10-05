@@ -68,28 +68,8 @@
           <div class="message-stack" :data-role="message.role">
             <article class="message-body" :data-role="message.role">
               <section v-if="readStandaloneFileChangeSummary(message)" class="file-change-summary-block">
-                <button
-                  type="button"
-                  class="cmd-row cmd-row-group cmd-compact file-change-summary-row"
-                  :class="{ 'cmd-expanded': isFileChangeSummaryExpanded(message) }"
-                  @click="toggleFileChangeSummary(message)"
-                >
-                  <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isFileChangeSummaryExpanded(message) }">▶</span>
-                  <span class="file-change-summary-label">
-                    {{ fileChangeSummaryLabel(readStandaloneFileChangeSummary(message)) }}
-                  </span>
-                  <span class="file-change-summary-status">
-                    <span
-                      v-for="part in fileChangeSummaryStatusParts(readStandaloneFileChangeSummary(message))"
-                      :key="`summary-status:${message.id}:${part.tone}:${part.label}`"
-                      class="file-change-signed-count"
-                      :data-tone="part.tone"
-                    >
-                      {{ part.label }}
-                    </span>
-                  </span>
-                </button>
-                <div class="cmd-group-wrap" :class="{ 'cmd-group-visible': isFileChangeSummaryExpanded(message) }">
+                <ThreadFileChangeToggle :changes="readStandaloneFileChangeSummary(message)!.changes" :expanded="isFileChangeSummaryExpanded(message)" @toggle="toggleFileChangeSummary(message)" />
+                <div v-if="isFileChangeSummaryExpanded(message)" class="file-change-panel">
                   <div class="file-change-panel-inner">
                     <ul class="file-change-list">
                       <li
@@ -456,28 +436,8 @@
               </article>
 
               <section v-if="readAnchoredFileChangeSummary(message)" class="file-change-summary-block file-change-summary-block-inline">
-                <button
-                  type="button"
-                  class="cmd-row cmd-row-group cmd-compact file-change-summary-row"
-                  :class="{ 'cmd-expanded': isFileChangeSummaryExpanded(message) }"
-                  @click="toggleFileChangeSummary(message)"
-                >
-                  <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isFileChangeSummaryExpanded(message) }">▶</span>
-                  <span class="file-change-summary-label">
-                    {{ fileChangeSummaryLabel(readAnchoredFileChangeSummary(message)) }}
-                  </span>
-                  <span class="file-change-summary-status">
-                    <span
-                      v-for="part in fileChangeSummaryStatusParts(readAnchoredFileChangeSummary(message))"
-                      :key="`summary-status:${message.id}:${part.tone}:${part.label}`"
-                      class="file-change-signed-count"
-                      :data-tone="part.tone"
-                    >
-                      {{ part.label }}
-                    </span>
-                  </span>
-                </button>
-                <div class="cmd-group-wrap" :class="{ 'cmd-group-visible': isFileChangeSummaryExpanded(message) }">
+                <ThreadFileChangeToggle :changes="readAnchoredFileChangeSummary(message)!.changes" :expanded="isFileChangeSummaryExpanded(message)" @toggle="toggleFileChangeSummary(message)" />
+                <div v-if="isFileChangeSummaryExpanded(message)" class="file-change-panel">
                   <div class="file-change-panel-inner">
                     <ul class="file-change-list">
                       <li
@@ -778,6 +738,8 @@ import ThreadWebSearch from './ThreadWebSearch.vue'
 import { retainRemoteImage, imageDownloadName, observeRemoteImages } from '../../lanpower/images'
 import RemoteMessageImage from './RemoteMessageImage.vue'
 import ThreadCommand from './ThreadCommand.vue'
+import ThreadFileChangeToggle from './ThreadFileChangeToggle.vue'
+import { fileChangeSummary, fileChangeView } from '../../../../mini_program/utils/codex/file-changes.js'
 import ThreadImageActivity from './ThreadImageActivity.vue'
 import ThreadActivitySummary from './ThreadActivitySummary.vue'
 import ThreadWorkIndicator from './ThreadWorkIndicator.vue'
@@ -1714,12 +1676,7 @@ async function runFileChangeAction(summary: TurnFileChangeSummary | null, action
 }
 
 function fileChangeOperationLabel(change: UiFileChange): string {
-  if (change.operation === 'update' && change.movedToPath) {
-    return change.addedLineCount > 0 || change.removedLineCount > 0 ? 'Moved + edited' : 'Moved'
-  }
-  if (change.operation === 'add') return 'Added'
-  if (change.operation === 'delete') return 'Deleted'
-  return 'Edited'
+  return fileChangeView(change).kindLabel
 }
 
 function fileChangeOperationTone(change: UiFileChange): 'add' | 'delete' | 'update' | 'move' {
@@ -1757,50 +1714,9 @@ function formatFileChangeCountLabel(count: number): string {
   return count === 1 ? '1 file changed' : `${count} files changed`
 }
 
-function summarizeFileChangeKinds(summary: TurnFileChangeSummary | null): string {
-  if (!summary || summary.changes.length === 0) return ''
-  let added = 0
-  let deleted = 0
-  let edited = 0
-  let moved = 0
-
-  for (const change of summary.changes) {
-    if (change.operation === 'add') {
-      added += 1
-      continue
-    }
-    if (change.operation === 'delete') {
-      deleted += 1
-      continue
-    }
-    if (change.movedToPath) {
-      moved += 1
-      continue
-    }
-    edited += 1
-  }
-
-  const parts: string[] = []
-  if (edited > 0) parts.push(`${edited} edited`)
-  if (added > 0) parts.push(`${added} added`)
-  if (deleted > 0) parts.push(`${deleted} deleted`)
-  if (moved > 0) parts.push(`${moved} moved`)
-  return parts.join(', ')
-}
-
 function fileChangeSummaryLabel(summary: TurnFileChangeSummary | null): string {
-  if (!summary || summary.changes.length === 0) return 'Modified files'
-  const countLabel = formatFileChangeCountLabel(summary.changes.length)
-  const kindSummary = summarizeFileChangeKinds(summary)
-  return kindSummary ? `${countLabel} · ${kindSummary}` : countLabel
-}
-
-function fileChangeSummaryStatusParts(summary: TurnFileChangeSummary | null): FileChangeDeltaPart[] {
-  if (!summary || summary.changes.length === 0) return []
-  const totalAdded = summary.changes.reduce((sum, change) => sum + change.addedLineCount, 0)
-  const totalRemoved = summary.changes.reduce((sum, change) => sum + change.removedLineCount, 0)
-  const fallbackLabel = summary.changes.some((change) => change.movedToPath) ? 'Moved' : 'Ready'
-  return buildFileChangeDeltaParts(totalAdded, totalRemoved, fallbackLabel)
+  const value = fileChangeSummary(summary?.changes ?? [])
+  return value.kinds ? `${value.label} · ${value.kinds}` : value.label
 }
 
 function displayFileChangePath(pathValue: string): string {
@@ -4782,55 +4698,47 @@ onBeforeUnmount(() => {
 }
 
 .file-change-summary-block {
-  @apply mt-3 flex flex-col gap-0;
+  display:flex;flex-direction:column;min-width:0;width:100%;color:var(--lp-muted,#737373);font-size:14px;
 }
 
 .file-change-summary-block-inline {
   @apply mt-4;
 }
 
-.file-change-summary-row {
-  @apply border-dashed;
-}
-
-.file-change-summary-label {
-  @apply flex-1 min-w-0 truncate text-xs font-medium text-zinc-700;
-}
-
-.file-change-summary-status {
-  @apply inline-flex max-w-28 items-center justify-end gap-1.5 text-right text-[11px] font-semibold text-zinc-500 flex-shrink-0;
+.file-change-panel {
+  min-width:0;margin:8px 0 10px 25px;padding:12px 14px;border:1px solid var(--lp-border,#e5e5e5);border-radius:10px;background:var(--lp-sidebar,#fafafa);color:var(--lp-text,#262626);
 }
 
 .file-change-panel-inner {
-  @apply mb-1 min-h-0 overflow-hidden pl-2;
+  min-width:0;
 }
 
 .file-change-list {
-  @apply m-0 flex list-none flex-col gap-0.5 rounded-xl border border-zinc-200 bg-white/80 p-1.5;
+  display:flex;flex-direction:column;gap:4px;max-height:320px;overflow:auto;overscroll-behavior:contain;list-style:none;margin:0;padding:0;
 }
 
 .file-change-item {
-  @apply flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-700;
+  display:flex;align-items:center;gap:8px;min-width:0;padding:6px 0;font-size:12px;
 }
 
 .file-change-badge {
-  @apply inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em];
+  display:inline-flex;flex-shrink:0;border-radius:4px;padding:2px 5px;font-size:11px;
 }
 
 .file-change-badge[data-operation='add'] {
-  @apply bg-emerald-50 text-emerald-700;
+  color:#13845b;background:rgba(19,132,91,.08);
 }
 
 .file-change-badge[data-operation='update'] {
-  @apply bg-sky-50 text-sky-700;
+  color:var(--lp-muted,#737373);background:var(--lp-hover,#eee);
 }
 
 .file-change-badge[data-operation='delete'] {
-  @apply bg-rose-50 text-rose-700;
+  color:#c44d56;background:rgba(196,77,86,.08);
 }
 
 .file-change-badge[data-operation='move'] {
-  @apply bg-amber-50 text-amber-700;
+  color:#9a6700;background:rgba(154,103,0,.08);
 }
 
 .file-change-path {
@@ -4838,7 +4746,7 @@ onBeforeUnmount(() => {
 }
 
 .file-change-path-button {
-  @apply min-w-0 border-0 bg-transparent p-0 text-left font-mono text-[13px] text-[#0969da] hover:text-[#1f6feb] hover:underline underline-offset-2;
+  min-width:0;flex:1;border:0;background:transparent;padding:0;color:inherit;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;cursor:pointer;
 }
 
 .file-change-arrow {
@@ -4846,7 +4754,7 @@ onBeforeUnmount(() => {
 }
 
 .file-change-delta {
-  @apply ml-auto inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold text-zinc-600;
+  display:inline-flex;flex-shrink:0;gap:6px;margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;
 }
 
 .file-change-actions {
@@ -5089,6 +4997,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 767px) {
+  .file-change-panel { margin-left:0; }
   .diff-viewer-backdrop {
     @apply p-0 items-stretch;
   }

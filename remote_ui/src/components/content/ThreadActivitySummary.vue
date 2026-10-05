@@ -2,7 +2,8 @@
   <button type="button" class="native-activity-toggle" :aria-expanded="summary.expanded" @click="$emit('toggle', $event)">
     <IconTablerFilePencil v-if="summary.hasFiles" class="native-activity-icon" />
     <IconTablerTerminal v-else-if="summary.hasCommands" class="native-activity-icon terminal-icon" />
-    <IconTablerGlobe v-else class="native-activity-icon" />
+    <IconTablerGlobe v-else-if="summary.hasSearches" class="native-activity-icon" />
+    <IconReasoning v-else class="native-activity-icon" />
     <span>{{ summary.label }}</span>
     <span v-if="summary.notice" class="native-activity-notice">{{ summary.notice }}</span>
     <IconTablerChevronDown class="native-activity-chevron" :class="{'is-open': summary.expanded}" />
@@ -13,6 +14,7 @@ import type { ActivitySummary } from '../../lanpower/conversationPresentation'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerTerminal from '../icons/IconTablerTerminal.vue'
 import IconTablerGlobe from '../icons/IconTablerGlobe.vue'
+import IconReasoning from '../icons/IconReasoning.vue'
 import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
 defineProps<{summary: ActivitySummary}>()
 defineEmits<{toggle: [event: MouseEvent]}>()

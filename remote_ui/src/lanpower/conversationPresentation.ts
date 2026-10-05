@@ -7,6 +7,7 @@ export type ActivitySummary = {
   label: string
   hasFiles: boolean
   hasCommands: boolean
+  hasSearches: boolean
   notice: string
   expanded: boolean
 }
@@ -25,6 +26,7 @@ function isActivity(message: UiMessage): boolean {
   return (message.messageType === 'commandExecution' && !!message.commandExecution)
     || (message.messageType === 'fileChange' && (message.fileChanges?.length ?? 0) > 0)
     || !!message.toolResult?.webSearch
+    || (message.messageType === 'reasoning' && !!message.text.trim())
 }
 
 /** Place live timing after this turn's leading user messages, even in a clipped display window. */
@@ -82,7 +84,7 @@ export function presentConversation(
       process.forEach(message => processMessageIds.add(message.id))
     }
 
-    // Keep native commands, files and web searches together, preserving their order.
+    // Keep commands, files, web searches and public reasoning together in their original order.
     const grouped: ConversationMessage[] = []
     for (let index = 0; index < turn.length;) {
       const message = turn[index]!
@@ -105,13 +107,13 @@ export function presentConversation(
       const searchLabel = !searches.length ? '' : searches.some(search => search.status === 'inProgress') ? '正在搜索网页'
         : searches.every(search => search.status === 'failed') ? '网页搜索失败'
         : searches.every(search => search.status === 'interrupted') ? '网页搜索已停止' : '已搜索网页'
-      const label = [commandLabel, searchLabel].filter(Boolean).join('，')
+      const label = [commandLabel, searchLabel].filter(Boolean).join('，') || '思考过程'
       const searchNotice = searches.some(search => search.status === 'failed') ? '含失败搜索' : searches.some(search => search.status === 'interrupted') ? '含停止的搜索' : ''
       const expanded = expandedActivities.has(id)
       grouped.push({
         ...message, id, role: 'system', messageType: 'activityGroup', text: label,
         commandExecution: undefined, fileChanges: undefined, toolResult: undefined, rawPayload: undefined,
-        activitySummary: {id, label, hasFiles, hasCommands: commands.length > 0, expanded, notice: [failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : '', searchNotice].filter(Boolean).join('，')},
+        activitySummary: {id, label, hasFiles, hasCommands: commands.length > 0, hasSearches: searches.length > 0, expanded, notice: [failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : '', searchNotice].filter(Boolean).join('，')},
       })
       if (expanded) grouped.push(...members.map(member => ({...member, activityGroupId: id})))
     }
