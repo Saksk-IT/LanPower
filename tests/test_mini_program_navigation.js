@@ -21,32 +21,40 @@ function page(mode, runtime, options = {}) {
   return model;
 }
 
-test('启动进入 Codex，辅助功能有独立路径且旧入口只做兼容跳转', () => {
+test('启动进入我的设备，原生底部只包含我的设备与我的，旧链接保留目标设备', () => {
   const root = path.resolve(__dirname, '../mini_program');
   const app = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
-  assert.equal(app.pages[0], ROUTES.codex.slice(1));
+  assert.equal(app.pages[0], ROUTES.devices.slice(1));
+  assert.deepEqual(app.tabBar.list.map(tab => [tab.text, tab.pagePath]), [['我的设备', ROUTES.devices.slice(1)], ['我的', ROUTES.settings.slice(1)]]);
+  for (const tab of app.tabBar.list) for (const icon of [tab.iconPath, tab.selectedIconPath]) assert.ok(fs.existsSync(path.join(root, icon)));
   for (const route of Object.values(ROUTES)) assert.ok(app.pages.includes(route.slice(1)));
   let legacy;
   global.Page = definition => {legacy = definition;};
   require('../mini_program/pages/cloud/cloud');
-  global.wx = {redirectTo: options => {global.destination = options.url;}};
-  for (const [tab, name] of [['home', 'power'], ['connect', 'settings'], ['help', 'help'], ['', 'codex']]) {
+  const calls = [];
+  global.wx = {redirectTo: options => calls.push(['redirect', options.url]), switchTab: options => calls.push(['tab', options.url])};
+  for (const [tab, name, kind] of [['home', 'power', 'redirect'], ['devices', 'power', 'redirect'], ['connect', 'settings', 'tab'], ['help', 'help', 'redirect'], ['codex', 'codex', 'redirect'], ['', 'power', 'redirect']]) {
     legacy.onLoad({tab, computer: 'pc/a'});
-    assert.equal(global.destination, ROUTES[name] + '?computer=pc%2Fa');
+    assert.deepEqual(calls.pop(), [kind, ROUTES[name] + (['power', 'codex'].includes(name) ? '?computer=pc%2Fa' : '')]);
   }
+  legacy.onLoad(); assert.deepEqual(calls.pop(), ['tab', ROUTES.devices]);
+  legacy.onLoad({tab: 'codex'}); assert.deepEqual(calls.pop(), ['tab', ROUTES.devices]);
 });
 
-test('打开辅助页面保留首页，返回复用原页面并防止重复堆叠', () => {
-  const calls = [], runtime = {navigateTo: options => calls.push(['open', options]), navigateBack: options => calls.push(['back', options]), reLaunch: options => calls.push(['root', options])};
-  global.getCurrentPages = () => [{route: ROUTES.codex.slice(1)}];
+test('设备详情和 Codex 使用页面栈，原生页签不能带查询参数或复用另一台电脑', () => {
+  const calls = [], runtime = {navigateTo: options => calls.push(['open', options]), navigateBack: options => calls.push(['back', options]), switchTab: options => calls.push(['tab', options])};
+  global.getCurrentPages = () => [{route: ROUTES.devices.slice(1)}];
   openPage(runtime, 'power', '电脑/a');
   assert.deepEqual(calls.pop(), ['open', {url: ROUTES.power + '?computer=' + encodeURIComponent('电脑/a')}]);
-  global.getCurrentPages = () => [{route: ROUTES.codex.slice(1)}, {route: ROUTES.power.slice(1)}, {route: ROUTES.settings.slice(1)}, {route: ROUTES.help.slice(1)}];
-  openPage(runtime, 'power'); assert.deepEqual(calls.pop(), ['back', {delta: 2}]);
-  openPage(runtime, 'codex'); assert.deepEqual(calls.pop(), ['back', {delta: 3}]);
+  global.getCurrentPages = () => [{route: ROUTES.devices.slice(1)}, {route: ROUTES.power.slice(1), targetDevice: 'a'}, {route: ROUTES.codex.slice(1), targetDevice: 'a'}, {route: ROUTES.help.slice(1)}];
+  openPage(runtime, 'power', 'a'); assert.deepEqual(calls.pop(), ['back', {delta: 2}]);
+  openPage(runtime, 'codex', 'a'); assert.deepEqual(calls.pop(), ['back', {delta: 1}]);
+  openPage(runtime, 'power', 'b'); assert.deepEqual(calls.pop(), ['open', {url: ROUTES.power + '?computer=b'}]);
+  openPage(runtime, 'settings', 'a'); assert.deepEqual(calls.pop(), ['tab', {url: ROUTES.settings}]);
+  openPage(runtime, 'devices', 'b'); assert.deepEqual(calls.pop(), ['tab', {url: ROUTES.devices}]);
   openPage(runtime, 'help'); openPage(runtime, 'unknown'); assert.deepEqual(calls, []);
   global.getCurrentPages = () => [{route: ROUTES.lan.slice(1)}];
-  openPage(runtime, 'codex'); assert.deepEqual(calls.pop(), ['root', {url: ROUTES.codex}]);
+  openPage(runtime, 'codex'); assert.deepEqual(calls.pop(), ['tab', {url: ROUTES.devices}]);
   delete global.getCurrentPages;
 });
 
@@ -111,15 +119,72 @@ test('异步网络信息不会丢弃设置页正在读取的电脑列表', async
   model.onUnload();
 });
 
-test('扫码授权后直接返回 Codex 首页且不自动发送任何任务或电源指令', async () => {
+test('我的页扫码授权后切到我的设备且不自动发送任务或电源指令', async () => {
   const storage = {}, runtime = api(storage), calls = [], navigation = [];
   runtime.scanCode = options => options.success({result: session.url + '/#lanpower-client=' + 'c'.repeat(43)});
   runtime.showModal = options => options.success({confirm: true});
-  runtime.navigateBack = options => navigation.push(options);
+  runtime.switchTab = options => navigation.push(options);
   runtime.request = options => {calls.push(options); options.success({statusCode: 200, data: options.url.endsWith('/enroll') ? session : devices});};
-  global.getCurrentPages = () => [{route: 'pages/codex/codex'}, {route: 'pages/settings/settings'}];
+  global.getCurrentPages = () => [{route: 'pages/settings/settings'}];
   const settings = page('settings', runtime); settings.visible = true; settings.scanCloud(); await tick(); await tick();
-  assert.deepEqual(navigation, [{delta: 1}]); assert.equal(settings.data.selectedId, 'a');
+  assert.deepEqual(navigation, [{url: ROUTES.devices}]); assert.equal(settings.data.selectedId, 'a');
   assert.deepEqual(calls.filter(call => call.method === 'POST').map(call => call.url), [session.url + '/api/v2/clients/enroll']);
   settings.onUnload(); delete global.getCurrentPages;
+});
+
+test('点击设备卡片把同一台电脑传给设备详情与 Codex，失去设备后不会切换控制目标', async () => {
+  const storage = {[CLIENT_KEY]: {...session}}, runtime = api(storage), navigation = [], calls = [];
+  runtime.navigateTo = options => navigation.push(options.url);
+  runtime.request = options => {calls.push(options); options.success({statusCode: 200, data: devices});};
+  const list = page('devices', runtime); list.visible = true;
+  await list.reloadDevices();
+  assert.deepEqual(list.data.devices.map(device => device.stateText), ['在线', '在线']);
+  list.openDevice({currentTarget: {dataset: {id: 'b'}}});
+  assert.equal(navigation.pop(), ROUTES.power + '?computer=b');
+  const detail = page('power', runtime, {computer: 'b'}); detail.visible = true;
+  await detail.refresh(); assert.equal(detail.data.selectedId, 'b'); assert.equal(detail.data.canControl, true);
+  detail.selectDevice({detail: {value: 0}}); assert.equal(detail.data.selectedId, 'b');
+  detail.openCodex(); assert.equal(navigation.pop(), ROUTES.codex + '?computer=b');
+  runtime.request = options => {calls.push(options); options.success({statusCode: 200, data: [devices[0]]});};
+  await detail.reloadDevices();
+  assert.equal(detail.data.selectedId, ''); assert.equal(detail.data.deviceMissing, true);
+  assert.equal(detail.data.canControl, false); assert.equal(detail.data.canWake, false);
+  detail.openCodex(); detail.action({currentTarget: {dataset: {action: 'shutdown'}}});
+  assert.deepEqual(navigation, []); assert.ok(calls.every(call => call.method === 'GET'));
+  list.onUnload(); detail.onUnload();
+});
+
+test('设备列表连接失败将状态改为未知，后台与旧 Cloud 的迟到响应不会覆盖当前列表', async () => {
+  const storage = {[CLIENT_KEY]: {...session}}, runtime = api(storage), pending = [];
+  const list = page('devices', runtime); list.visible = true;
+  await list.reloadDevices();
+  runtime.request = options => options.fail({errMsg: 'request:fail timeout'});
+  await list.reloadDevices();
+  assert.equal(list.data.devices.length, 2); assert.ok(list.data.devices.every(device => device.stateText === '状态未知'));
+  runtime.request = options => pending.push(options);
+  list.onShow(); await tick(); list.onHide(); list.onShow(); await tick();
+  pending[1].success({statusCode: 200, data: [devices[1]]}); await tick();
+  pending[0].success({statusCode: 200, data: [devices[0]]}); await tick();
+  assert.deepEqual(list.data.devices.map(device => device.device_id), ['b']);
+  list.onUnload();
+});
+
+test('从设备详情进入的 Codex 固定目标，目标删除后关闭连接，不使用缓存中的另一台电脑', async () => {
+  const storage = {[CLIENT_KEY]: {...session}}, runtime = api(storage), targets = [];
+  global.wx = runtime;
+  let definition;
+  global.Page = value => {definition = value;};
+  require('../mini_program/pages/codex/codex');
+  const model = {...definition, data: structuredClone(definition.data)};
+  model.setData = changes => Object.assign(model.data, changes);
+  model.onLoad({computer: 'b'}); model.visible = true;
+  model.connection.connect = id => targets.push(id);
+  saveDeviceSelection(runtime, model.client, devices, 'a');
+  await model.loadDevices(); assert.equal(model.data.deviceId, 'b'); assert.equal(model.data.deviceLocked, true);
+  model.selectDevice({detail: {value: 0}}); assert.equal(model.data.deviceId, 'b');
+  runtime.request = options => options.success({statusCode: 200, data: [devices[0]]});
+  await model.loadDevices(false);
+  assert.equal(model.data.deviceId, ''); assert.equal(model.data.deviceUnavailable, true);
+  assert.equal(model.controller.deviceId, ''); assert.equal(model.controller.ready, false);
+  assert.ok(targets.filter(Boolean).every(id => id === 'b')); model.onUnload();
 });

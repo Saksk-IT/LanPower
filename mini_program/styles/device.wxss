@@ -1,4 +1,4 @@
-page { background: #f5f6f7; color: #1f252b; }
+page { --surface:#fff;--line:#e1e6e9;--text:#1f252b;--muted:#69747e;--primary:#078650;--primary-soft:#e8f7ef;--warning:#a36a15;background: #f5f6f7; color: #1f252b; }
 button { font-weight: normal; }
 button::after { border: none; }
 .app-shell { min-height: 100vh; box-sizing: border-box; padding-bottom: calc(24rpx + env(safe-area-inset-bottom)); }
@@ -112,3 +112,14 @@ button::after { border: none; }
 .feedback-close { margin: 0; padding: 0; width: 68rpx; min-height: 68rpx; flex-shrink: 0; background: transparent; color: inherit; font-size: 38rpx; line-height: 68rpx; }
 .development-settings { border-color: #eddfc5; }
 .development-settings input { height: auto; min-height: 88rpx; line-height: 1.5; }
+
+@media (prefers-color-scheme: dark) {
+  page { --surface:#18262e;--line:#2c3c45;--text:#e4edf0;--muted:#a0afb8;--primary:#63d7a3;--primary-soft:#17392e;--warning:#edbe70;background:#101a20;color:var(--text); }
+  .onboarding-card,.empty-card,.setting-card,.list-card,.status-card,.topic-tabs,.help-card,.faq-card,.device-picker { background:var(--surface);border-color:var(--line); }
+  .page-subtitle,.onboarding-copy,.setting-copy,.setting-value,.list-copy,.status-detail,.connection-line,.section-caption,.route-caption,.action-tip,.field-help,.about-copy,.step-copy,.faq-answer { color:var(--muted); }
+  .setting-title,.list-title,.status-title,.help-card-title,.faq-title,.faq-row,.picker-title,.field-label,.step-title { color:var(--text); }
+  .outline-button,.power-button { background:var(--surface);border-color:var(--line);color:var(--text); }
+  .outline-button,.text-button,.success-text { color:var(--primary); }
+  .setting-row,.topic-tab + .topic-tab,.faq-item + .faq-item { border-color:var(--line); }
+  input,.prerequisite { background:#101a20;border-color:var(--line);color:var(--text); }
+}

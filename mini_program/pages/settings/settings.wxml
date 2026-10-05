@@ -5,7 +5,7 @@
   </view>
 
   <view class="page-content">
-    <view class="page-heading"><view class="page-title">连接与设置</view><view class="page-subtitle">{{environmentLabel}} · 连接 Codex，管理手机授权</view></view>
+    <view class="page-heading me-heading"><view class="me-avatar"><view class="me-avatar-head"></view><view class="me-avatar-body"></view></view><view><view class="page-title">我的</view><view class="page-subtitle">{{environmentLabel}} · 授权与连接设置</view></view></view>
     <view wx:if="{{development}}" class="setting-card development-settings">
       <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">开发版 Cloud 地址</view><view class="setting-copy">填写本机或测试服务器地址。开发版授权与正式版独立保存。</view></view><view class="setting-state warning-text">开发版</view></view>
       <label class="field-label" for="development-cloud">测试 Cloud 地址</label>
@@ -18,20 +18,12 @@
       <view class="setting-copy">保存后请扫描该测试 Cloud 生成的手机授权码。换地址会切换授权和电脑列表。</view>
     </view>
     <view class="setting-card">
-      <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">Codex Remote 手机授权</view><view class="setting-copy">授权后，在 Wi-Fi 或蜂窝网络下继续电脑上的项目与聊天。</view></view><view class="setting-state {{cloudState == 'online' ? 'success-text' : needsReauthorize ? 'warning-text' : 'muted-text'}}">{{cloudStatusText}}</view></view>
+      <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">手机授权</view><view class="setting-copy">连接 Cloud 后，在“我的设备”查看和控制已授权的电脑。</view></view><view class="setting-state {{cloudState == 'online' ? 'success-text' : needsReauthorize ? 'warning-text' : 'muted-text'}}">{{cloudStatusText}}</view></view>
       <view wx:if="{{connected}}" class="setting-row"><text>Cloud 地址</text><text class="setting-value">{{cloudHost}}</text></view>
       <button class="{{connected && !needsReauthorize ? 'outline-button' : 'primary-button'}} compact-button" bindtap="scanCloud" loading="{{busy}}" disabled="{{busy}}">{{connected ? '重新扫描授权码' : '扫描 Cloud 授权码'}}</button>
       <view class="setting-copy">在 Cloud 网页 → 已授权客户端生成二维码，并为这部手机开启 Codex Remote 权限。电源权限单独授权。</view>
     </view>
-    <view wx:if="{{connected}}" class="setting-card">
-      <view class="setting-title">开发电脑</view>
-      <view class="setting-copy">Codex 与电源页使用同一台电脑，切换后会重新读取该电脑的状态。</view>
-      <picker wx:if="{{devices.length}}" range="{{devices}}" range-key="name" value="{{selectedIndex}}" bindchange="selectDevice" disabled="{{busy || updatingList}}"><view class="device-picker"><view class="picker-copy"><view class="picker-title">{{device}}</view><view class="picker-sub">点击切换开发电脑</view></view><text class="chevron">›</text></view></picker>
-      <view wx:else class="setting-copy">{{devicesLoaded ? '还没有开发电脑。在 Windows 版 CodexDock 连接同一个 Cloud，并连接原 Codex 窗口。' : '正在读取已授权的电脑。'}}</view>
-      <button class="outline-button compact-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">刷新电脑列表</button>
-      <button class="primary-button compact-button" bindtap="openCodex" disabled="{{busy || updatingList}}">返回 Codex 工作台</button>
-    </view>
-    <button class="list-card list-button" bindtap="openPower"><view class="list-content"><view class="list-title">电脑与电源</view><view class="list-copy">电脑状态、开机与电源操作、局域网关联</view></view><text class="chevron">›</text></button>
+    <button class="list-card list-button" bindtap="openDevices"><view class="list-content"><view class="list-title">我的设备</view><view class="list-copy">查看已连接的设备，进入设备详情</view></view><text class="chevron">›</text></button>
     <button class="list-card list-button" bindtap="openHelp"><view class="list-content"><view class="list-title">使用帮助</view><view class="list-copy">Codex 接入、手机授权与电脑唤醒指引</view></view><text class="chevron">›</text></button>
     <button class="list-card list-button legacy-card" bindtap="openLocal"><view class="list-content"><view class="list-title">独立局域网 / 旧版连接</view><view class="list-copy">无需 Cloud 的直连模式，也兼容已有 v1 远程配对</view></view><text class="chevron">›</text></button>
     <view class="about-copy">CodexDock · {{environmentLabel}} · 小程序 v{{version}}</view>

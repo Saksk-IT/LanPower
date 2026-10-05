@@ -1,1 +1,5 @@
 @import "../../styles/device.wxss";
+
+.device-detail-heading { min-width:0;flex:1; }
+.device-detail-heading .page-title { overflow-wrap:anywhere; }
+.codex-entry { margin:22rpx 0 32rpx;border-color:#bcded0; }

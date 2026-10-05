@@ -34,7 +34,7 @@ $expected = @(
     'Desktop/LanPower.Desktop.exe', 'Desktop/D3DCompiler_47_cor3.dll', 'Desktop/PenImc_cor3.dll',
     'Desktop/PresentationNative_cor3.dll', 'Desktop/vcruntime140_cor3.dll', 'Desktop/wpfgfx_cor3.dll',
     'CodexHost/LanPower.CodexHost.exe',
-    'CodexServer/1.22.4/LanPower.CodexServer.exe',
+    'CodexServer/1.23.1/LanPower.CodexServer.exe',
     'install-service.ps1', 'network-selection.ps1', 'install-diagnostics.ps1', 'codex-startup.ps1', 'uninstall-service.ps1'
 )
 $seen = @()

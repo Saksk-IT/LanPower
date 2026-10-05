@@ -6,41 +6,39 @@
 
   <view class="page-content">
     <view class="page-heading heading-row">
-      <view><view class="page-title">电脑与电源</view><view class="page-subtitle">为 Codex 开发电脑提供状态与电源管理</view></view>
+      <view class="device-detail-heading"><view class="page-title">{{selectedId ? device : '设备详情'}}</view><view class="page-subtitle">设备状态、电源操作与 Codex 控制</view></view>
       <button wx:if="{{connected}}" class="text-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">刷新</button>
     </view>
 
     <block wx:if="{{!connected}}">
       <view class="onboarding-card">
         <view class="onboarding-title">先连接你的开发电脑</view>
-        <view class="onboarding-copy">使用 Codex 的同一份手机授权与电脑选择，按需要管理电源。</view>
-        <button class="primary-button" bindtap="openSettings">前往连接与设置</button>
+        <view class="onboarding-copy">在“我的”完成手机授权，再从“我的设备”打开要控制的设备。</view>
+        <button class="primary-button" bindtap="openSettings">前往我的，管理授权</button>
       </view>
       <button class="list-card list-button" bindtap="openLocal"><view class="list-content"><view class="list-title">只在家中使用？</view><view class="list-copy">通过局域网直接配对，无需 Cloud</view></view><text class="chevron">›</text></button>
     </block>
 
     <view wx:if="{{connected && needsReauthorize}}" class="notice-card">
-      <view class="notice-title">手机授权需要更新</view><view class="notice-copy">在 Cloud 网页重新生成手机授权码。已关联电脑的局域网直连仍可尝试使用。</view>
+      <view class="notice-title">请重新登录或授权</view><view class="notice-copy">在“我的”重新登录账号，也可使用原扫码方式。已关联电脑的局域网直连仍可尝试使用。</view>
       <button class="outline-button compact-button" bindtap="openSettings" disabled="{{busy}}">更新手机授权</button>
     </view>
 
-    <view wx:if="{{connected && !devices.length}}" class="empty-card">
+    <view wx:if="{{connected && !selectedId}}" class="empty-card">
       <view class="empty-symbol"><view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view></view>
-      <view class="onboarding-title">{{cloudState == 'unavailable' || needsReauthorize ? '暂时无法读取电脑列表' : devicesLoaded ? '还没有添加电脑' : '正在读取电脑列表'}}</view>
-      <view class="onboarding-copy">{{cloudState == 'unavailable' || needsReauthorize ? '请检查手机网络和 Cloud 服务，或按提示重新授权。' : devicesLoaded ? '手机已授权。接下来在 Windows 版 CodexDock 连接同一个 Cloud，电脑就会显示在这里。' : '正在连接 Cloud，请稍候。'}}</view>
+      <view class="onboarding-title">{{deviceMissing ? '无法访问这台设备' : cloudState == 'unavailable' || needsReauthorize ? '暂时无法读取设备' : devicesLoaded ? '还没有连接设备' : '正在读取设备'}}</view>
+      <view class="onboarding-copy">{{deviceMissing ? '设备已被移除或不在当前授权范围内。请返回“我的设备”重新选择。' : cloudState == 'unavailable' || needsReauthorize ? '请检查手机网络和 Cloud 服务，或按提示重新授权。' : devicesLoaded ? '请先在 Windows 版 CodexDock 连接同一个 Cloud。' : '正在连接 Cloud，请稍候。'}}</view>
       <button class="outline-button compact-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">更新电脑列表</button>
-      <button class="text-button centered-button" bindtap="openHelp">查看连接步骤</button>
+      <button class="text-button centered-button" bindtap="openDevices">返回我的设备</button>
     </view>
 
-    <block wx:if="{{connected && devices.length}}">
-      <picker range="{{devices}}" range-key="name" value="{{selectedIndex}}" bindchange="selectDevice" disabled="{{busy || updatingList}}" aria-label="选择要控制的电脑">
-        <view class="device-picker"><view class="picker-copy"><view class="picker-title">{{device}}</view><view class="picker-sub">共 {{devices.length}} 台电脑 · 点击切换</view></view><text class="chevron">›</text></view>
-      </picker>
+    <block wx:if="{{connected && selectedId}}">
       <view class="status-card status-{{statusClass}}">
         <view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view>
         <view class="status-copy"><view class="status-title">{{stateText}}</view><view class="status-detail">{{detail}}</view><view class="connection-line">{{modeText}} · {{networkText}}</view></view>
       </view>
       <view class="route-caption">{{routeHint}}</view>
+      <button class="list-card list-button codex-entry" bindtap="openCodex" disabled="{{busy || needsReauthorize}}"><view class="list-content"><view class="list-title">Codex 控制</view><view class="list-copy">进入这台设备的项目与聊天</view></view><text class="chevron">›</text></button>
       <view class="section-title-row"><view class="section-title">电源控制</view><view class="section-caption">{{controlHint}}</view></view>
       <button class="power-button wake" data-action="wake" bindtap="action" disabled="{{!canWake || busy}}"><view class="power-symbol">↟</view><view class="power-copy"><view class="power-title">开机 / 唤醒</view><view class="power-sub">{{wakeHint}}</view></view></button>
       <view class="power-grid">
@@ -50,12 +48,10 @@
         <button class="power-button danger" data-action="shutdown" bindtap="action" disabled="{{!canControl || busy}}"><view class="power-symbol">⏻</view><view class="power-copy"><view class="power-title">关机</view><view class="power-sub">请先保存文件</view></view></button>
       </view>
       <view class="action-tip">点击操作后会在手机上再次确认。指令送达后，请等待电脑状态更新。</view>
-      <button class="primary-button compact-button" bindtap="openCodex" disabled="{{busy}}">返回 Codex 工作台</button>
     </block>
-    <view wx:if="{{connected && devices.length}}" class="setting-card">
+    <view wx:if="{{connected && selectedId}}" class="setting-card">
       <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">电脑局域网直连</view><view class="setting-copy">手机连接与电脑同一局域网的 Wi-Fi 时，优先直接控制。</view></view><view class="setting-state {{paired ? 'success-text' : 'muted-text'}}">{{paired ? '已关联' : '可选'}}</view></view>
       <view wx:if="{{selectedId}}" class="setting-row"><text>当前电脑</text><text class="setting-value">{{device}}</text></view>
-      <view wx:else class="setting-copy prerequisite">先完成手机授权，并在 Codex 首页或本页选择一台电脑。</view>
       <button class="outline-button compact-button" bindtap="scanLocal" disabled="{{busy || updatingList || !selectedId}}">{{paired ? '重新扫描电脑配对码' : '扫描电脑配对码'}}</button>
       <view wx:if="{{selectedId}}" class="setting-copy">在这台电脑的 Windows 版 CodexDock → 手机配对，点击“显示配对二维码”。</view>
       <button wx:if="{{paired}}" class="setting-row row-button" bindtap="toggleLan"><text>局域网唤醒设置</text><text class="row-end"><text wx:if="{{wakeDirty}}" class="draft-label">未保存</text><text class="chevron">{{lanOpen ? '−' : '+'}}</text></text></button>

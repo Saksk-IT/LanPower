@@ -7,8 +7,8 @@ Page({
   onLoad() { this.setData({environmentLabel: environment(wx).label}); },
   selectHelpTopic(event) { const topic = event.currentTarget.dataset.topic; if (['remote', 'lan', 'wake'].includes(topic)) this.setData({helpTopic: topic}); },
   toggleFaq(event) { const faq = event.currentTarget.dataset.faq; this.setData({faqOpen: this.data.faqOpen === faq ? '' : faq}); },
-  openCodex() { openPage(wx, 'codex'); },
+  openCodex() { openPage(wx, 'devices'); },
   openSettings() { openPage(wx, 'settings'); },
-  openPower() { openPage(wx, 'power'); },
+  openPower() { openPage(wx, 'devices'); },
   openLocal() { openPage(wx, 'lan'); }
 });

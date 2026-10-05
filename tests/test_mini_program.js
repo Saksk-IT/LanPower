@@ -166,12 +166,11 @@ async function main() {
     const reopened = createPage(setupStorage, opts => opts.fail({}));
     assert.equal(reopened.data.mac, configuredPairing.mac);
     let navigation;
-    global.getCurrentPages = () => [{route: 'pages/codex/codex'}, {route: 'pages/index/index'}];
-    global.wx.navigateBack = () => {navigation = 'back';};
-    reopened.goCloud(); assert.equal(navigation, 'back');
+    global.getCurrentPages = () => [{route: 'pages/settings/settings'}, {route: 'pages/index/index'}];
+    global.wx.switchTab = opts => {navigation = opts.url;};
+    reopened.goCloud(); assert.equal(navigation, '/pages/settings/settings');
     global.getCurrentPages = () => [{route: 'pages/index/index'}];
-    global.wx.reLaunch = opts => {navigation = opts.url;};
-    reopened.goCloud(); assert.equal(navigation, '/pages/codex/codex');
+    reopened.goCloud(); assert.equal(navigation, '/pages/settings/settings');
     delete global.getCurrentPages;
   } finally {
     global.setTimeout = originalTimeout;

@@ -6,7 +6,7 @@ const {environment, developmentCloud, setDevelopmentCloud, storageKey} = require
 const {testDevelopmentCloud} = require('./cloud-connectivity');
 
 const LOCAL_KEY = 'lanpower_device_lan_v2';
-const {deviceCache, selectedDevice, saveDeviceSelection} = require('./device-selection');
+const {deviceCache, selectedDevice, saveDeviceSelection, deviceSummary} = require('./device-selection');
 const {openPage} = require('./navigation');
 const ACTIONS = {sleep: '睡眠', hibernate: '休眠', restart: '重启', shutdown: '关机', wake: '开机'};
 const ACTION_HINTS = {
@@ -22,7 +22,7 @@ function createDevicePage(mode) {
   return {
   data: {connected: false, devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', stateText: '尚未连接',
     detail: '先授权这部手机，再选择电脑', modeText: '未连接', routeHint: '等待连接', controlHint: '连接后可查看电脑状态并执行电源操作',
-    paired: false, lanOpen: false, pageMode: mode, cloudHost: '',
+    paired: false, lanOpen: false, pageMode: mode, cloudHost: '', deviceMissing: false,
     cloudState: 'idle', cloudStatusText: '未授权', needsReauthorize: false, devicesLoaded: false, updatingList: false,
     networkType: 'unknown', networkText: '检测网络', statusClass: 'idle', wakeHint: '先连接并选择电脑',
     canControl: false, canWake: false, busy: false, feedback: '', feedbackKind: 'info', wakeDirty: false,
@@ -32,6 +32,7 @@ function createDevicePage(mode) {
   onLoad(options = {}) {
     this.wakeDrafts = {};
     this.preferredDevice = options.computer || '';
+    this.targetDevice = mode === 'power' ? this.preferredDevice : '';
     this.loadConnection();
     this.networkChanged = info => {
       this.networkType = info.networkType || (info.isConnected === false ? 'none' : 'unknown');
@@ -54,16 +55,17 @@ function createDevicePage(mode) {
     this.setData({environmentLabel: current.label, development: current.development, developmentCloud: url, cloudUrlDraft: url, testingCloud: false,
       connected: !!this.client, cloudHost: this.client ? this.client.session.url.replace(/^https?:\/\//, '') : '',
       cloudStatusText: this.client ? '已保存授权' : '未授权', cloudState: 'idle', needsReauthorize: false,
-      devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', devicesLoaded: false,
+      devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', devicesLoaded: false, deviceMissing: false,
       paired: false, lanOpen: false, mac: '', broadcast: '255.255.255.255', wakeDirty: false,
       canControl: false, canWake: false, statusClass: 'idle', stateText: '尚未连接', modeText: '未连接',
       detail: '先授权这部手机，再选择电脑', routeHint: '等待连接', controlHint: '连接后可查看电脑状态并执行电源操作',
       wakeHint: '先连接并选择电脑', feedback: '', feedbackKind: 'info'});
     const cache = deviceCache(wx, this.client);
     if (this.client && cache && cache.url === this.client.session.url && cache.client_id === this.client.session.client_id && Array.isArray(cache.devices)) {
-      const device = cache.devices.find(d => d.device_id === (this.preferredDevice || cache.selectedId));
-      if (device) this.setData({devices: cache.devices, selectedId: device.device_id, device: device.name,
-        selectedIndex: cache.devices.indexOf(device)});
+      const devices = cache.devices.map(deviceSummary);
+      const device = devices.find(d => d.device_id === (this.targetDevice || this.preferredDevice || cache.selectedId));
+      this.setData({devices, selectedId: device ? device.device_id : '', device: device ? device.name : '正在读取设备',
+        selectedIndex: Math.max(0, devices.indexOf(device))});
       this.syncPairing();
     }
   },
@@ -115,18 +117,19 @@ function createDevicePage(mode) {
       this.loadConnection();
     } else this.client.session = latest.session;
     this.local = wx.getStorageSync(this.lanStorageKey) || {};
-    const id = this.preferredDevice || selectedDevice(wx, this.client);
+    const id = this.targetDevice || this.preferredDevice || selectedDevice(wx, this.client);
     if (id && id !== this.data.selectedId) {
       this.serial = (this.serial || 0) + 1;
       this.route = ''; this.wakeRoute = '';
-      const cache = deviceCache(wx, this.client), devices = cache ? cache.devices : this.data.devices;
+      const cache = deviceCache(wx, this.client), devices = cache ? cache.devices.map(deviceSummary) : this.data.devices;
       const device = devices.find(row => row.device_id === id);
-      this.setData({selectedId: id, devices, device: device ? device.name : '正在读取电脑', selectedIndex: Math.max(0, devices.indexOf(device)), canControl: false, canWake: false});
+      this.setData({selectedId: device ? id : '', devices, device: device ? device.name : '正在读取设备', selectedIndex: Math.max(0, devices.indexOf(device)), canControl: false, canWake: false});
     }
     this.syncPairing();
     if (wx.getNetworkType) wx.getNetworkType({success: this.networkChanged});
     this.syncConnection();
     if (mode === 'power') this.timer = setInterval(() => this.refresh(), 5000);
+    if (mode === 'devices') this.timer = setInterval(() => this.reloadDevices(), 10000);
   },
   syncConnection() { if (this.visible === false) return Promise.resolve(); return mode === 'power' ? this.refresh() : this.reloadDevices(); },
   onHide() {
@@ -153,7 +156,15 @@ function createDevicePage(mode) {
     this.setData({needsReauthorize, cloudState: needsReauthorize ? 'reauthorize' : 'unavailable',
       cloudStatusText: needsReauthorize ? '需要重新授权' : '暂时无法连接'});
   },
-  openCodex() { openPage(wx, 'codex', this.data.selectedId); },
+  openDevice(event) {
+    if (this.data.busy || this.data.updatingList) return;
+    const device = this.data.devices.find(row => row.device_id === event.currentTarget.dataset.id);
+    if (!device) return;
+    saveDeviceSelection(wx, this.client, this.data.devices, device.device_id);
+    openPage(wx, 'power', device.device_id);
+  },
+  openDevices() { openPage(wx, 'devices'); },
+  openCodex() { if (this.data.selectedId && !this.data.busy) openPage(wx, 'codex', this.data.selectedId); },
   openSettings() { openPage(wx, 'settings', this.data.selectedId); },
   openPower() { openPage(wx, 'power', this.data.selectedId); },
   openHelp() { openPage(wx, 'help'); },
@@ -195,13 +206,13 @@ function createDevicePage(mode) {
               routeHint: '正在读取电脑列表', controlHint: '选择电脑后显示可执行操作', wakeHint: '正在检查可用的唤醒方式'});
             this.preferredDevice = '';
       this.syncPairing(); this.cacheDevices();
-            this.notify('手机已授权，正在准备 Codex 工作台。', 'success');
+            this.notify('手机已授权，正在读取我的设备。', 'success');
             this.enrolled = true;
             if (wx.pageScrollTo) wx.pageScrollTo({scrollTop: 0, duration: 0});
           } catch (error) { this.notify(error.message, 'error'); }
           finally {
             this.setData({busy: false}); await this.syncConnection();
-            if (this.enrolled && this.visible) { this.enrolled = false; this.openCodex(); }
+            if (this.enrolled && this.visible) { this.enrolled = false; this.openDevices(); }
           }
         }});
     }, fail: error => this.scanFailed(error)});
@@ -237,7 +248,7 @@ function createDevicePage(mode) {
   selectDevice(event) {
     if (this.data.busy || this.data.updatingList) return;
     const device = this.data.devices[Number(event.detail.value)];
-    if (!device) return;
+    if (!device || (this.targetDevice && device.device_id !== this.targetDevice)) return;
     this.serial = (this.serial || 0) + 1;
     this.route = ''; this.wakeRoute = '';
     this.setData({selectedId: device.device_id, selectedIndex: Number(event.detail.value), device: device.name,
@@ -258,17 +269,22 @@ function createDevicePage(mode) {
       const list = await client.call('/api/v2/devices');
       if (client !== this.client || serial !== this.serial || run !== this.deviceListRun) return;
       if (!Array.isArray(list)) throw new Error('设备列表暂时无法读取，请稍后重试');
-      const devices = list.filter(d => d.device_type === 'windows');
-      const selected = devices.find(d => d.device_id === (this.preferredDevice || this.data.selectedId)) || devices[0];
+      const devices = list.filter(d => d.device_type === 'windows').map(deviceSummary);
+      const selected = devices.find(d => d.device_id === (this.targetDevice || this.preferredDevice || this.data.selectedId)) || (!this.targetDevice ? devices[0] : null);
       this.serial = (this.serial || 0) + 1;
       this.setData({devices, selectedId: selected ? selected.device_id : '', selectedIndex: selected ? devices.indexOf(selected) : 0,
-        device: selected ? selected.name : '还没有电脑', devicesLoaded: true, cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
+        device: selected ? selected.name : this.targetDevice ? '设备不可用' : '还没有电脑', deviceMissing: !!this.targetDevice && !selected,
+        devicesLoaded: true, cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
         canControl: false, canWake: false, statusClass: 'busy',
         routeHint: selected ? '正在检查局域网和 Cloud 连接' : '等待 Windows 应用连接 Cloud', controlHint: selected ? '正在同步设备状态' : '请先在 Windows 应用中连接 Cloud'});
       this.preferredDevice = '';
       this.syncPairing(); this.cacheDevices();
     } catch (error) {
-      if (client === this.client && serial === this.serial) { this.cloudError(error); this.notify(error.message, 'error'); }
+      if (client === this.client && serial === this.serial) {
+        this.cloudError(error);
+        this.setData({devices: this.data.devices.map(device => deviceSummary({...device, state: ''}))});
+        this.notify(error.message, 'error');
+      }
     } finally { if (client === this.client && run === this.deviceListRun) { this.setData({updatingList: false}); if (mode === 'power') await this.refresh(); } }
   },
   syncPairing() {
@@ -281,7 +297,7 @@ function createDevicePage(mode) {
   scanLocal() {
     const key = this.localKey();
     if (this.data.busy || this.data.updatingList) return;
-    if (!this.data.selectedId) { this.notify('请先授权手机，并在“我的电脑”选择要关联的电脑。'); return; }
+    if (!this.data.selectedId) { this.notify('请先在“我的设备”打开要关联的设备。'); return; }
     wx.scanCode({onlyFromCamera: true, scanType: ['qrCode'], success: ({result}) => {
       try {
         const pairing = parsePairingLink(result);
@@ -366,10 +382,10 @@ function createDevicePage(mode) {
       if (!current()) return;
       if (!Array.isArray(list)) throw new Error('设备列表无效');
       const devices = list.filter(d => d.device_type === 'windows');
-      const device = devices.find(d => d.device_id === (this.preferredDevice || this.data.selectedId)) || devices[0];
+      const device = devices.find(d => d.device_id === (this.targetDevice || this.preferredDevice || this.data.selectedId)) || (!this.targetDevice ? devices[0] : null);
       const changed = device && device.device_id !== this.data.selectedId;
       this.setData({devices, selectedId: device ? device.device_id : '', selectedIndex: device ? devices.indexOf(device) : 0,
-        device: device ? device.name : '还没有电脑', devicesLoaded: true,
+        device: device ? device.name : this.targetDevice ? '设备不可用' : '还没有电脑', deviceMissing: !!this.targetDevice && !device, devicesLoaded: true,
         cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false});
       this.preferredDevice = '';
       this.cacheDevices();

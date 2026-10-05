@@ -53,7 +53,7 @@ Page({
   onUnload() { this.stopTimers(); },
 
   goCloud() {
-    openPage(wx, 'codex');
+    openPage(wx, 'settings');
   },
   localWakeTarget() {
     if (!this.pairing) return null;

@@ -193,10 +193,21 @@ assert.equal(navigationConfig.navigationBarTitleText, undefined, '不再配置�
         const composer = await page.locator('.cr-composer').boundingBox(); assert.ok(composer.y + composer.height <= height - 260 + 1);
         assert.deepEqual(errors, []); await context.close(); continue;
       }
-      assert.deepEqual(await page.locator('.cr-bottom-nav .cr-nav wx-text:last-child').allTextContents(), ['Codex','电脑与电源','连接与设置']);
+      assert.equal(await page.locator('.cr-bottom-nav').count(), 0);
+      await page.evaluate(() => {
+        crPage.setData({deviceLocked:true});
+        window.getCurrentPages = () => [{route:'pages/devices/devices'}, {route:'pages/power/power',targetDevice:'pc-a'}, {route:'pages/codex/codex',targetDevice:'pc-a'}];
+        wx.navigateBack = value => {window.deviceReturn = value.delta;};
+      });
+      assert.equal(await page.locator('.cr-home-filters wx-picker').count(), 0);
+      await page.locator('[aria-label="返回设备详情"]').click();
+      assert.equal(await page.evaluate(() => deviceReturn), 1);
+      await geometry();
+      await page.screenshot({path:path.join(output,'device-codex-' + width + '.png'),fullPage:true});
+      await page.evaluate(() => {crPage.setData({deviceLocked:false}); delete window.getCurrentPages;});
       await page.evaluate(() => {window.savedHome = structuredClone(crPage.data);crPage.setData({authorized:false,devices:[],feedback:'',homeMenu:false});});
       assert.equal(await page.locator('.cr-empty-title').textContent(), '随时继续你的 Codex');
-      assert.equal(await page.locator('.cr-primary[data-page="settings"]').textContent(), '连接 Codex');
+      assert.ok((await page.locator('.cr-primary[data-page="settings"]').textContent()).startsWith('前往我的'));
       await geometry();await page.screenshot({path:path.join(output,'home-onboarding-'+width+'.png')});
       await page.evaluate(() => crPage.setData({authorized:true,devicesLoaded:true}));
       assert.equal(await page.locator('.cr-empty-title').textContent(), '添加你的开发电脑');await geometry();

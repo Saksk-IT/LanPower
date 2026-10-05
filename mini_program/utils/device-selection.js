@@ -1,6 +1,11 @@
 const {storageKey} = require('./environment');
 const CACHE_KEY = 'lanpower_device_cache_v2';
 
+function deviceSummary(device) {
+  const state = ({online: ['在线', 'online'], offline: ['离线', 'offline'], transitioning: ['正在执行电源操作', 'busy']})[device.state];
+  return {...device, name: device.name || 'Windows 电脑', stateText: state ? state[0] : '状态未知', stateClass: state ? state[1] : 'unknown'};
+}
+
 function deviceCache(wxApi, client) {
   if (!client) return null;
   const cache = wxApi.getStorageSync(storageKey(wxApi, CACHE_KEY));
@@ -22,4 +27,4 @@ function saveDeviceSelection(wxApi, client, devices, selectedId) {
   });
 }
 
-module.exports = {CACHE_KEY, deviceCache, selectedDevice, saveDeviceSelection};
+module.exports = {CACHE_KEY, deviceCache, selectedDevice, saveDeviceSelection, deviceSummary};

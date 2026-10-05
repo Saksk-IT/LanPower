@@ -1,4 +1,4 @@
 {
-  "light": {"codexBackground": "#ffffff", "codexTextStyle": "black"},
-  "dark": {"codexBackground": "#181818", "codexTextStyle": "white"}
+  "light": {"codexBackground": "#ffffff", "codexTextStyle": "black", "pageBackground": "#f5f6f7", "tabText": "#889098", "tabSelected": "#16a085", "tabBorder": "white"},
+  "dark": {"codexBackground": "#181818", "codexTextStyle": "white", "pageBackground": "#101a20", "tabText": "#889098", "tabSelected": "#16a085", "tabBorder": "black"}
 }

@@ -1,0 +1,43 @@
+<view class="app-shell">
+  <view wx:if="{{feedback}}" class="feedback feedback-{{feedbackKind}}" role="alert">
+    <text class="feedback-copy">{{feedback}}</text>
+    <button class="feedback-close" bindtap="dismissFeedback" aria-label="关闭提示">×</button>
+  </view>
+  <view class="page-content devices-content">
+    <view class="page-heading heading-row">
+      <view><view class="page-title">我的设备</view><view class="page-subtitle">{{connected ? '点击设备，查看状态与控制' : '连接电脑，随时管理与使用'}}</view></view>
+      <button wx:if="{{connected}}" class="text-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">刷新</button>
+    </view>
+    <view wx:if="{{!connected}}" class="empty-card">
+      <view class="empty-symbol"><view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view></view>
+      <view class="onboarding-title">连接你的第一台设备</view>
+      <view class="onboarding-copy">在“我的”扫描手机授权码。已经连接的电脑会显示在这里。</view>
+      <button class="primary-button compact-button" bindtap="openSettings">前往我的，连接设备</button>
+    </view>
+    <block wx:else>
+      <view wx:if="{{needsReauthorize}}" class="notice-card">
+        <view class="notice-title">手机授权需要更新</view><view class="notice-copy">请前往“我的”重新扫描 Cloud 手机授权码。</view>
+        <button class="outline-button compact-button" bindtap="openSettings">更新手机授权</button>
+      </view>
+      <view wx:elif="{{cloudState == 'unavailable' && devices.length}}" class="notice-card">
+        <view class="notice-title">暂时无法更新设备状态</view><view class="notice-copy">已保留设备列表，恢复连接后会自动更新。</view>
+      </view>
+      <view wx:if="{{devices.length}}" class="device-list">
+        <view class="section-title-row"><view class="section-title">已连接设备</view><view class="section-caption">{{devices.length}} 台</view></view>
+        <button wx:for="{{devices}}" wx:key="device_id" class="device-card" data-id="{{item.device_id}}" bindtap="openDevice" disabled="{{busy || updatingList}}" aria-label="{{'查看设备 ' + item.name}}">
+          <view class="device-card-icon"><view class="monitor-icon"><view class="monitor-screen"></view><view class="monitor-stand"></view></view></view>
+          <view class="device-card-copy"><view class="device-card-name">{{item.name}}</view><view class="device-card-state device-state-{{item.stateClass}}"><view class="device-state-dot"></view><text>{{item.stateText}}</text></view></view>
+          <text class="chevron">›</text>
+        </button>
+        <view class="device-list-note">电源操作和 Codex 控制都在设备详情中</view>
+      </view>
+      <view wx:else class="empty-card">
+        <view class="empty-symbol"><view class="monitor-icon"><view class="monitor-screen">⏻</view><view class="monitor-stand"></view></view></view>
+        <view class="onboarding-title">{{needsReauthorize || cloudState == 'unavailable' ? '暂时无法读取设备' : devicesLoaded ? '还没有连接设备' : '正在读取设备'}}</view>
+        <view class="onboarding-copy">{{needsReauthorize || cloudState == 'unavailable' ? '检查网络与手机授权后，再刷新列表。' : devicesLoaded ? '在 Windows 版 CodexDock 连接同一个 Cloud，电脑就会出现在这里。' : '正在连接 Cloud，请稍候。'}}</view>
+        <button class="outline-button compact-button" bindtap="reloadDevices" loading="{{updatingList}}" disabled="{{busy || updatingList}}">刷新设备列表</button>
+        <button class="text-button centered-button" bindtap="openHelp">查看连接步骤</button>
+      </view>
+    </block>
+  </view>
+</view>

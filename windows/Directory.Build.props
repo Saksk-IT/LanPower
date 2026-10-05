@@ -2,7 +2,7 @@
   <PropertyGroup>
     <Product>CodexDock</Product>
     <Description>Codex 远程开发与会话控制，附带电脑电源管理</Description>
-    <Version>1.22.4</Version>
-    <FileVersion>1.22.4.0</FileVersion>
+    <Version>1.23.1</Version>
+    <FileVersion>1.23.1.0</FileVersion>
   </PropertyGroup>
 </Project>
