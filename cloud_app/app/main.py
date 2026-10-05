@@ -40,7 +40,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.23.2"
+VERSION = "1.23.3"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))

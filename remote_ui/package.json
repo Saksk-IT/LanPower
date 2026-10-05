@@ -1,10 +1,10 @@
 {
   "name": "codexdock-web",
-  "version": "1.23.2",
+  "version": "1.23.3",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build && python ../scripts/verify-codex-web-assets.py --record-build --version-file ../cloud_app/pyproject.toml",
     "test": "vitest run"
   },
   "dependencies": {

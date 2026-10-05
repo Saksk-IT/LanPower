@@ -75,6 +75,8 @@ jobs:
         run: python -m unittest discover -s scripts/tests -v
       - name: Product version consistency
         run: python scripts/validate-release-tag.py "refs/tags/v$(cat VERSION)"
+      - name: Codex Web asset integrity
+        run: python scripts/verify-codex-web-assets.py --version "$(cat VERSION)"
       - uses: actions/setup-node@v7
         with:
           node-version: '22'

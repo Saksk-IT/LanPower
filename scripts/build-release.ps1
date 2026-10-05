@@ -6,6 +6,8 @@ $outputDir = Join-Path $repoDir 'windows\out'
 if ($LASTEXITCODE -ne 0) { throw '公开文件检查失败。' }
 & python (Join-Path $repoDir 'scripts\validate-release-tag.py') ('refs/tags/v' + (Get-Content -LiteralPath (Join-Path $repoDir 'VERSION') -Raw).Trim())
 if ($LASTEXITCODE -ne 0) { throw '发布版本检查失败。' }
+& python (Join-Path $repoDir 'scripts\verify-codex-web-assets.py') --version (Get-Content -LiteralPath (Join-Path $repoDir 'VERSION') -Raw).Trim()
+if ($LASTEXITCODE -ne 0) { throw '网页资源完整性检查失败。' }
 & (Join-Path $repoDir 'windows\installer\build-installer.ps1') -DotnetPath $DotnetPath -IsccPath $IsccPath
 & (Join-Path $repoDir 'windows\installer\build-portable.ps1') -SkipPublish -DotnetPath $DotnetPath
 $previousGoOs = [Environment]::GetEnvironmentVariable('GOOS', 'Process')

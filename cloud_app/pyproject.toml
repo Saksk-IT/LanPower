@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "codexdock-cloud"
 description = "Codex remote development and session control with companion power management"
-version = "1.23.2"
+version = "1.23.3"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.141.1",

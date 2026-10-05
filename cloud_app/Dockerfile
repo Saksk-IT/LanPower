@@ -5,7 +5,9 @@ WORKDIR /app
 
 COPY cloud_app /app/cloud_app
 COPY cloud_remote /app/cloud_remote
-RUN pip install --no-cache-dir /app/cloud_app \
+COPY scripts/verify-codex-web-assets.py /tmp/verify-codex-web-assets.py
+RUN python /tmp/verify-codex-web-assets.py /app/cloud_app/static/codex-ui --version-file /app/cloud_app/pyproject.toml \
+    && pip install --no-cache-dir /app/cloud_app \
     && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin lanpower \
     && mkdir -p /var/lib/lanpower-cloud \
     && chown 10001:10001 /var/lib/lanpower-cloud

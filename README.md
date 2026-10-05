@@ -38,9 +38,11 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.23.2` |
+| Windows 应用 / 安装器、Cloud、Web | `1.23.3` |
 | 微信小程序 | `3.6.2` |
 | Wake Gateway（配套组件） | `2.1.2` |
+
+网页聊天 `1.23.3` 直接找回历史提交 `352d580` 的原版资源，恢复正文、命令及输入栏排版，没有重新编译网页；CI 和 Docker 打包增加整套资源校验。见 [原版恢复说明](docs/codex-web-style-recovery.md)。
 
 小程序 `3.6.2` 缩小 Codex 首页和聊天页菜单，收紧宽度、字号与间距，保留菜单滚动和长标题省略。重新编译 `mini_program` 或导入新版包，见 [小程序说明](mini_program/README.md)。
 

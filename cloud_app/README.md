@@ -2,7 +2,9 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.23.2`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
+Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.23.3`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
+
+网页 `1.23.3` 直接恢复历史提交 `352d580` 的整套原版资源，修复脚本与样式混用造成的聊天排版异常；没有重新编译网页，CI 和 Docker 打包增加资源校验。见 [原版恢复说明](../docs/codex-web-style-recovery.md)。
 
 ## 更新与兼容记录
 

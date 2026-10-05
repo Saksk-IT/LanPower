@@ -4,7 +4,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 (async () => {
   const base = process.env.LANPOWER_DEV_URL || 'https://localhost:8443';
   const password = fs.readFileSync(path.resolve(__dirname,'../deploy/docker/private/dev-login.txt'),'utf8').match(/^Password: (.+)$/m)[1].trim();
-  const output = path.resolve(__dirname,'../private/codex-process-fold-1.18.3/browser'); fs.mkdirSync(output,{recursive:true});
+  const output = process.env.LANPOWER_UI_OUTPUT || path.resolve(__dirname,'../private/codex-process-fold-1.18.3/browser'); fs.mkdirSync(output,{recursive:true});
   const image = process.env.LANPOWER_CONVERSATION_FIXTURE_IMAGE ? fs.readFileSync(process.env.LANPOWER_CONVERSATION_FIXTURE_IMAGE) : Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=','base64');
   const browser = await chromium.launch({headless:true}), context = await browser.newContext({viewport:{width:1440,height:900}});
   const calls = [], errors = [], startedAt = Date.now()-18000;
@@ -19,6 +19,32 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     {id:'reason-one',type:'reasoning',summary:['正在检查会话展示。']},
     ...Array.from({length:4},(_,index)=>({id:`view-${index}`,type:'imageView',path:`D:/Projects/Demo/image-${index}.png`})),
   ]};
+  const assertLayout = async page => {
+    const layout = await page.evaluate(() => {
+      const shell = document.querySelector('.thread-composer-shell');
+      const footer = document.querySelector('.thread-composer-controls');
+      const hiddenInputs = [...document.querySelectorAll('.thread-composer-hidden-input')];
+      const command = document.querySelector('.native-command-toggle');
+      const icon = document.querySelector('.native-command-icon');
+      return {
+        radius: parseFloat(getComputedStyle(shell).borderTopLeftRadius),
+        footerDisplay: getComputedStyle(footer).display,
+        inputCount: hiddenInputs.length,
+        hiddenInputs: hiddenInputs.every(input => getComputedStyle(input).display === 'none'),
+        icons: [...shell.querySelectorAll('svg')].map(svg => ({width: svg.getBoundingClientRect().width, height: svg.getBoundingClientRect().height})),
+        commandDisplay: command && getComputedStyle(command).display,
+        commandIcon: icon && {width: icon.getBoundingClientRect().width, height: icon.getBoundingClientRect().height},
+      };
+    });
+    assert.ok(layout.radius >= 12, 'composer must retain its rounded input shell');
+    assert.equal(layout.footerDisplay, 'flex', 'composer controls must retain their horizontal layout');
+    assert.ok(layout.inputCount >= 3 && layout.hiddenInputs, 'native file inputs must stay hidden');
+    assert.ok(layout.icons.every(icon => icon.width <= 24 && icon.height <= 24), 'composer icons must not expand to browser defaults');
+    if (layout.commandDisplay) {
+      assert.equal(layout.commandDisplay, 'flex', 'command icon, label and arrow must share a row');
+      assert.ok(layout.commandIcon.width <= 20 && layout.commandIcon.height <= 20, 'command icons must stay compact');
+    }
+  };
   const thread = id => ({id,name:id==='native-chat'?'会话展示验收':'另一条工作会话',cwd:'D:/Projects/Demo',createdAt:1700000000,updatedAt:1700000100,control:'shared',status:{type:'active'},turns:id==='native-chat'?[{...turn,status:active?'inProgress':'completed'}]:[{id:'other-turn',status:'inProgress',items:[{id:'other-user',type:'userMessage',content:[{type:'text',text:'另一条任务'}]}]}]});
   const rpc = request => {
     calls.push(request); const p = request.params || {};
@@ -33,6 +59,13 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     }
   };
   try {
+    if (process.env.LANPOWER_UI_STATIC) await context.route('**/static/codex-ui/**', async route => {
+      const root = path.resolve(process.env.LANPOWER_UI_STATIC);
+      const relative = new URL(route.request().url()).pathname.split('/static/codex-ui/')[1];
+      const file = path.resolve(root, relative);
+      assert.ok(file.startsWith(root + path.sep));
+      await route.fulfill({path: file, contentType: relative.endsWith('.css') ? 'text/css' : 'application/javascript'});
+    });
     await context.exposeBinding('__conversationRpc',(_,request)=>rpc(request));
     await context.addInitScript(() => {
       window.WebSocket=class {
@@ -64,6 +97,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.ok((await page.locator('.native-activity-toggle').textContent()).includes('编辑了文件，运行了命令'));
     await page.locator('.native-activity-toggle').click();
     assert.equal(await page.locator('.native-command-toggle').count(),3);
+    await assertLayout(page);
     assert.equal(await page.locator('.command-activity').count(),0,'commands must not disappear inside aggregate cards');
     assert.equal(await page.locator('.native-command-output').count(),0,'collapsed commands avoid mounting full output');
     assert.equal(await page.getByRole('button',{name:'命令运行失败',exact:true}).count(),1);
@@ -96,8 +130,10 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
       assert.ok(sizes.scroll<=sizes.width+1,'horizontal overflow at '+width);
       assert.ok(sizes.composer<=901,'composer remains visible');
       assert.ok(sizes.thumbs.every(thumb=>thumb.width<=104 && thumb.width===thumb.height),'small square thumbnails at '+width);
+      await assertLayout(page);
       await page.screenshot({path:path.join(output,'conversation-light-'+width+'.png'),fullPage:true,animations:'disabled'});
       await page.evaluate(()=>document.documentElement.classList.add('dark'));
+      await assertLayout(page);
       await page.screenshot({path:path.join(output,'conversation-dark-'+width+'.png'),fullPage:true,animations:'disabled'});
       await page.evaluate(()=>document.documentElement.classList.remove('dark'));
     }
@@ -154,8 +190,10 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     for (const width of [1440,390,320]) {
       await page.setViewportSize({width,height:900});await page.mouse.move(0,0);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1));
+      await assertLayout(page);
       await page.screenshot({path:path.join(output,'completed-light-'+width+'.png'),fullPage:true,animations:'disabled'});
       await page.evaluate(()=>document.documentElement.classList.add('dark'));
+      await assertLayout(page);
       await page.screenshot({path:path.join(output,'completed-dark-'+width+'.png'),fullPage:true,animations:'disabled'});
       await page.evaluate(()=>document.documentElement.classList.remove('dark'));
     }
@@ -176,6 +214,6 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     assert.ok((await page.locator('.conversation-root').textContent()).includes(final.text));
     assert.equal(calls.filter(call=>call.method==='turn/start').length,0,'presentation and reconnect must never submit a task');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({activityGroupCollapse:true,individualCommands:true,fullCommandDetails:true,completedTurnCollapse:true,expandFullProcess:true,refreshPreservesCollapse:true,thinkingAnimation:true,elapsedTimer:true,elapsedBeforeProcess:true,approvalWait:true,compactImages:true,imageModal:true,cleanUserText:true,threadIsolation:true,reconnectNoResend:true,completedDuration:true,reducedMotion:true,widths:[1440,390,320],lightAndDark:true,browserErrors:0}));
+    console.log(JSON.stringify({composerLayout:true,hiddenFileInputs:true,compactCommandIcons:true,activityGroupCollapse:true,individualCommands:true,fullCommandDetails:true,completedTurnCollapse:true,expandFullProcess:true,refreshPreservesCollapse:true,thinkingAnimation:true,elapsedTimer:true,elapsedBeforeProcess:true,approvalWait:true,compactImages:true,imageModal:true,cleanUserText:true,threadIsolation:true,reconnectNoResend:true,completedDuration:true,reducedMotion:true,widths:[1440,390,320],lightAndDark:true,browserErrors:0}));
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});
