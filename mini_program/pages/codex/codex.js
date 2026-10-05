@@ -12,7 +12,7 @@ const {projectName} = require('../../utils/codex-format');
 const {homePreferences, homeLibrary, quotaSummary} = require('../../utils/codex/home');
 const {DEFAULT_NAVIGATION, navigationLayout} = require('../../utils/codex/navigation-layout');
 const {selectedDevice, saveDeviceSelection} = require('../../utils/device-selection');
-const {openPage} = require('../../utils/navigation');
+const {openPage, returnToDevice} = require('../../utils/navigation');
 const HOME_KEY = 'lanpower_codex_home';
 const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2';
 const dataOf = event => event.currentTarget.dataset;
@@ -182,7 +182,13 @@ Page({
   selectDevice(event) { this.chooseDevice(this.data.devices[Number(event.detail.value)]); },
   reconnect() { if (this.controller.deviceId) this.connection.connect(this.controller.deviceId); },
   async wake() { if (!this.client || this.data.waking || !this.data.wakeAvailable) return; const client = this.client, id = this.controller.deviceId; if (!await modal({title: '唤醒开发电脑', content: `尝试唤醒“${this.data.deviceName}”，电脑上线且 Windows 用户登录后才能继续 Codex。`}) || client !== this.client || id !== this.controller.deviceId || !this.visible || this.data.waking || !this.data.wakeAvailable) return; this.setData({waking: true}); try { await client.call(`/api/v2/devices/${encodeURIComponent(id)}/commands`, 'POST', {action: 'wake'}); if (client === this.client && id === this.controller.deviceId) this.controller.notify('唤醒请求已发送，电脑登录后会自动连接。'); } catch (error) { this.controller.notify(error.message); } finally { this.setData({waking: false}); } },
-  navigate(event) { const page = dataOf(event).page; this.setData({homeMenu: false, sheet: '', keyboardHeight: 0}); openPage(wx, ({home: 'power', connect: 'settings'})[page] || page, this.data.deviceId); },
+  navigate(event) {
+    const page = ({home: 'power', connect: 'settings'})[dataOf(event).page] || dataOf(event).page;
+    const computer = this.targetDevice || this.data.deviceId;
+    this.setData({homeMenu: false, sheet: '', keyboardHeight: 0});
+    if (page === 'power') returnToDevice(wx, computer);
+    else openPage(wx, page, computer);
+  },
   back() { this.setData({view: this.auxReturn || 'library', sheet: '', keyboardHeight: 0}); this.auxReturn = ''; this.paint(); },
   backLibrary() { this.setData({view: 'library', sheet: '', keyboardHeight: 0}); this.paint(); },
   async selectThread(event) { this.follow = true; this.changeOffset = 0; this.setData({view: 'chat', sheet: '', progressOpen: false, inputFocused: false}); await this.controller.selectThread(dataOf(event).id); this.paint(); },

@@ -38,7 +38,7 @@ function createDevicePage(mode) {
     this.networkChanged = info => {
       this.networkType = info.networkType || (info.isConnected === false ? 'none' : 'unknown');
       if (mode === 'power') this.serial = (this.serial || 0) + 1;
-      this.route = ''; this.wakeRoute = '';
+      this.controlRoute = ''; this.wakeRoute = '';
       this.setData({canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态', networkType: this.networkType,
         networkText: NETWORK_LABELS[this.networkType] || '网络未知', wakeHint: '正在检查可用的唤醒方式',
         controlHint: '正在同步设备状态', routeHint: '正在检查局域网和 Cloud 连接'});
@@ -52,7 +52,8 @@ function createDevicePage(mode) {
     this.lanStorageKey = storageKey(wx, LOCAL_KEY);
     this.client = CloudClient.load(wx);
     this.local = wx.getStorageSync(this.lanStorageKey) || {};
-    this.route = ''; this.wakeRoute = '';
+    // Page.route 是微信页面路径；电源通道使用独立字段，供返回导航正确识别页面。
+    this.controlRoute = ''; this.wakeRoute = '';
     this.setData({environmentLabel: current.label, development: current.development, developmentCloud: url, cloudUrlDraft: url, testingCloud: false,
       connected: !!this.client, cloudHost: this.client ? this.client.session.url.replace(/^https?:\/\//, '') : '',
       accountUsername: this.client && this.client.session.account ? this.client.session.account.username : '',
@@ -125,7 +126,7 @@ function createDevicePage(mode) {
     const id = this.targetDevice || this.preferredDevice || selectedDevice(wx, this.client);
     if (id && id !== this.data.selectedId) {
       this.serial = (this.serial || 0) + 1;
-      this.route = ''; this.wakeRoute = '';
+      this.controlRoute = ''; this.wakeRoute = '';
       const cache = deviceCache(wx, this.client), devices = cache ? cache.devices.map(deviceSummary) : this.data.devices;
       const device = devices.find(row => row.device_id === id);
       this.setData({selectedId: device ? id : '', devices, device: device ? device.name : '正在读取设备', selectedIndex: Math.max(0, devices.indexOf(device)), canControl: false, canWake: false});
@@ -143,7 +144,7 @@ function createDevicePage(mode) {
     this.connectionTestSerial = (this.connectionTestSerial || 0) + 1;
     this.visible = false; clearInterval(this.timer); this.serial = (this.serial || 0) + 1;
     this.refreshAgain = false;
-    this.route = ''; this.wakeRoute = '';
+    this.controlRoute = ''; this.wakeRoute = '';
     this.deviceListRun = (this.deviceListRun || 0) + 1;
     this.setData({canControl: false, canWake: false, testingCloud: false, updatingList: false});
   },
@@ -242,7 +243,7 @@ function createDevicePage(mode) {
             this.lanStorageKey = storageKey(wx, LOCAL_KEY);
                     this.local = wx.getStorageSync(this.lanStorageKey) || {};
             if (!sameCloud) this.wakeDrafts = {};
-            this.route = ''; this.wakeRoute = '';
+            this.controlRoute = ''; this.wakeRoute = '';
             this.setData({connected: true, ...(sameCloud ? {} : {devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑'}),
               cloudHost: pairing.url.replace(/^https?:\/\//, ''), cloudState: 'online', cloudStatusText: '已连接', needsReauthorize: false,
               developmentCloud: developmentCloud(wx), cloudUrlDraft: developmentCloud(wx),
@@ -275,7 +276,7 @@ function createDevicePage(mode) {
           this.client.close();
           wx.removeStorageSync(client.storageKey);
           this.client = null;
-          this.route = ''; this.wakeRoute = '';
+          this.controlRoute = ''; this.wakeRoute = '';
           this.serial = (this.serial || 0) + 1;
           this.setData({connected: false, devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', cloudHost: '', paired: false, canControl: false,
             canWake: false, statusClass: 'idle', lanOpen: false, stateText: '已断开', modeText: '未连接', routeHint: '等待重新连接 Cloud',
@@ -295,7 +296,7 @@ function createDevicePage(mode) {
     const device = this.data.devices[Number(event.detail.value)];
     if (!device || (this.targetDevice && device.device_id !== this.targetDevice)) return;
     this.serial = (this.serial || 0) + 1;
-    this.route = ''; this.wakeRoute = '';
+    this.controlRoute = ''; this.wakeRoute = '';
     this.setData({selectedId: device.device_id, selectedIndex: Number(event.detail.value), device: device.name,
       canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态',
       routeHint: '正在检查局域网和 Cloud 连接', controlHint: '正在同步设备状态', wakeHint: '正在检查可用的唤醒方式', feedback: ''});
@@ -368,7 +369,7 @@ function createDevicePage(mode) {
         const local = {...this.local}; delete local[key]; delete this.wakeDrafts[key];
         wx.setStorageSync(this.lanStorageKey, local); this.local = local;
         this.serial = (this.serial || 0) + 1;
-        this.route = ''; this.wakeRoute = '';
+        this.controlRoute = ''; this.wakeRoute = '';
         this.setData({lanOpen: false, canControl: false, canWake: false});
         this.notify('已移除局域网关联。', 'success'); this.syncPairing(); this.refresh();
       }});
@@ -415,7 +416,7 @@ function createDevicePage(mode) {
           success: r => resolve(r.statusCode === 200 && r.data && r.data.state === 'online'), fail: () => resolve(false)}));
         if (!current()) return;
         if (reachable) {
-          this.route = 'local'; this.wakeRoute = '';
+          this.controlRoute = 'local'; this.wakeRoute = '';
           this.preferredDevice = ''; this.cacheDevices();
           this.setData({stateText: '在线 · 局域网', statusClass: 'online', modeText: '局域网直连', routeHint: '通过当前局域网直接连接电脑',
             detail: '电脑在线，可以发送电源指令', controlHint: '可执行睡眠、休眠、重启和关机', wakeHint: '电脑已在线，无需唤醒',
@@ -436,18 +437,18 @@ function createDevicePage(mode) {
       this.cacheDevices();
       this.syncPairing();
       if (!device) {
-        this.route = ''; this.wakeRoute = '';
+        this.controlRoute = ''; this.wakeRoute = '';
         this.setData({stateText: '没有设备', statusClass: 'idle', modeText: '等待连接', routeHint: 'Windows 应用尚未向 Cloud 注册电脑',
           detail: '先在 Windows 应用中连接 Cloud', controlHint: '连接完成后回到这里更新设备列表', wakeHint: '请先添加电脑',
           canControl: false, canWake: false}); return;
       }
       if (changed && this.pairing()) {
-        this.route = ''; this.wakeRoute = '';
+        this.controlRoute = ''; this.wakeRoute = '';
         this.setData({canControl: false, canWake: false, statusClass: 'busy', stateText: '正在同步状态',
           controlHint: '正在检查新选中电脑的连接', wakeHint: '正在检查可用的唤醒方式'});
         this.refreshAgain = true; return;
       }
-      this.route = 'cloud';
+      this.controlRoute = 'cloud';
       this.wakeRoute = device.wake_available ? 'cloud' : this.canUseLan() && this.pairing() && this.pairing().mac ? 'local' : '';
       const online = device.state === 'online';
       const transitioning = device.state === 'transitioning';
@@ -466,7 +467,7 @@ function createDevicePage(mode) {
     } catch (error) {
       if (!current()) return;
       this.cloudError(error);
-      this.route = '';
+      this.controlRoute = '';
       this.wakeRoute = this.canUseLan() && this.pairing() && this.pairing().mac ? 'local' : '';
       this.setData({stateText: '状态未知', statusClass: this.wakeRoute ? 'ready' : 'idle', modeText: this.wakeRoute ? '局域网唤醒可用' : '未连接',
         routeHint: this.wakeRoute ? 'Cloud 暂时不可用，已保留局域网唤醒' : '请检查网络或刷新授权',
@@ -479,11 +480,11 @@ function createDevicePage(mode) {
   action(event) {
     const action = event.currentTarget.dataset.action;
     if (!ACTIONS[action] || this.data.busy || (action === 'wake' ? !this.data.canWake : !this.data.canControl)) return;
-    const id = this.data.selectedId, client = this.client, route = action === 'wake' ? this.wakeRoute : this.route;
+    const id = this.data.selectedId, client = this.client, route = action === 'wake' ? this.wakeRoute : this.controlRoute;
     wx.showModal({title: `确定${ACTIONS[action]}？`, content: `${ACTION_HINTS[action]}\n\n目标电脑：${this.data.device}`,
       success: async ({confirm}) => {
         if (!confirm || id !== this.data.selectedId || client !== this.client || this.data.busy ||
-            route !== (action === 'wake' ? this.wakeRoute : this.route) ||
+            route !== (action === 'wake' ? this.wakeRoute : this.controlRoute) ||
             (action === 'wake' ? !this.data.canWake : !this.data.canControl)) return;
         this.serial = (this.serial || 0) + 1;
         this.setData({busy: true, statusClass: 'busy', canControl: false, canWake: false, controlHint: '指令发送中，请不要重复点击', wakeHint: '请等待指令处理完成'});

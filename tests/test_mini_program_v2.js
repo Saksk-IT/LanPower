@@ -198,7 +198,7 @@ async function main() {
   assert.equal(network.data.canControl, false);
   lanResponse.success({statusCode: 200, data: {state: 'online'}});
   await pendingLan; await tick();
-  assert.equal(network.route, 'cloud');
+  assert.equal(network.controlRoute, 'cloud');
   assert.equal(network.data.stateText, '离线 · Cloud');
   assert.equal(network.data.canWake, true);
   assert.equal(network.wakeRoute, 'cloud');
@@ -318,10 +318,10 @@ async function main() {
   await removal.refresh(); await tick();
   assert.equal(removal.data.selectedId, 'b');
   assert.equal(removal.data.canControl, false);
-  assert.equal(removal.route, '');
+  assert.equal(removal.controlRoute, '');
   nextComputer.success({statusCode: 200, data: {state: 'online'}}); await tick();
   assert.equal(removal.data.canControl, true);
-  assert.equal(removal.route, 'local');
+  assert.equal(removal.controlRoute, 'local');
 
   const empty = page({[CLIENT_KEY]: {...session}}, opts => opts.success({statusCode: 200, data: []}));
   await empty.refresh();

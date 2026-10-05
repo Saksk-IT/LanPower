@@ -76,14 +76,14 @@ async function main() {
   assert.equal(connected.data.selectedId, 'test-a');
   assert.equal(connected.data.canControl, false);
   assert.equal(connected.data.cloudUrlDraft, originA);
-  connected.route = 'local'; connected.setData({canControl: true, canWake: true, mac: 'old draft'});
+  connected.controlRoute = 'local'; connected.setData({canControl: true, canWake: true, mac: 'old draft'});
   connected.wakeDrafts = {old: {mac: 'draft'}};
   connected.editCloudUrl({detail: {value: originB}}); connected.saveDevelopmentCloud();
   assert.equal(connected.data.connected, false);
   assert.equal(connected.data.canControl, false);
   assert.equal(connected.data.canWake, false);
   assert.equal(connected.data.selectedId, '');
-  assert.equal(connected.route, '');
+  assert.equal(connected.controlRoute, '');
   assert.deepEqual(connected.wakeDrafts, {});
   assert.equal(storage[sessionAKey].url, originA);
   await assert.rejects(clientA.call('/api/v2/devices'), {code: 'CLOUD_CHANGED'});
