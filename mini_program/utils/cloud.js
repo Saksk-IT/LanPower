@@ -4,8 +4,9 @@ const {cloudOrigin, environment, developmentCloud, setDevelopmentCloud, storageK
 const {cloudConnectionError} = require('./cloud-connectivity');
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
+const ACCOUNT_KEY = 'lanpower_account_connection_v1';
 
-function authorizationError(message = 'Cloud 授权已失效，请重新扫码') {
+function authorizationError(message = 'Cloud 登录或授权已失效，请重新登录；原扫码方式也可使用') {
   const error = new Error(message);
   error.code = 'REAUTHORIZE';
   return error;
@@ -28,7 +29,22 @@ function validTokens(data) {
 
 function savedSession(url, data) {
   return {url, client_id: data.client_id, access_token: data.access_token,
-    refresh_token: data.refresh_token, access_expires_at: data.access_expires_at};
+    refresh_token: data.refresh_token, access_expires_at: data.access_expires_at,
+    ...(data.account ? {account: data.account} : {})};
+}
+
+async function accountConnectionKey(wxApi, url, username) {
+  const key = storageKey(wxApi, ACCOUNT_KEY, url) + '|' + encodeURIComponent(url) + '|' + encodeURIComponent(username);
+  const saved = wxApi.getStorageSync(key);
+  if (/^[A-Za-z0-9_-]{43}$/.test(saved || '')) return saved;
+  if (!wxApi.getRandomValues || !wxApi.arrayBufferToBase64) throw new Error('请更新微信后使用账号登录，或使用原扫码方式');
+  const bytes = await new Promise((resolve, reject) => wxApi.getRandomValues({length: 32,
+    success: result => resolve(result.randomValues), fail: () => reject(new Error('无法准备安全登录，请重试'))}));
+  if (!bytes || bytes.byteLength !== 32) throw new Error('无法准备安全登录，请重试');
+  const created = wxApi.arrayBufferToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  if (!/^[A-Za-z0-9_-]{43}$/.test(created)) throw new Error('无法准备安全登录，请重试');
+  wxApi.setStorageSync(key, created);
+  return created;
 }
 
 function request(wxApi, url, method, data, token) {
@@ -48,12 +64,20 @@ class CloudClient {
     this.session = session;
     this.environment = environment(wxApi).name;
     this.storageKey = storageKey(wxApi, CLIENT_KEY, session.url);
+    this.savedIdentity = !!wxApi.getStorageSync(this.storageKey);
     this.assertCurrent();
   }
 
   assertCurrent() {
+    if (this.closed) throw new Error('连接已关闭');
     if (environment(this.wx).name !== this.environment || storageKey(this.wx, CLIENT_KEY) !== this.storageKey) {
       const error = new Error('Cloud 地址已切换，请重新连接');
+      error.code = 'CLOUD_CHANGED';
+      throw error;
+    }
+    const saved = this.wx.getStorageSync(this.storageKey);
+    if ((this.savedIdentity && !saved) || saved && (saved.url !== this.session.url || saved.client_id !== this.session.client_id || saved.refresh_token !== this.session.refresh_token)) {
+      const error = new Error('账号或 Cloud 已切换，请重新连接');
       error.code = 'CLOUD_CHANGED';
       throw error;
     }
@@ -93,6 +117,53 @@ class CloudClient {
     return new CloudClient(wxApi, session);
   }
 
+  static async accountLogin(wxApi, {url, username, password, register = false}) {
+    url = cloudOrigin(String(url || '').trim().replace(/\/+$/, ''), wxApi);
+    if (!url.startsWith('https://')) throw new Error('账号登录需要 HTTPS 地址');
+    assertReachableCloud(url, wxApi);
+    username = String(username || '').trim().toLowerCase();
+    if (!username || username.length > 80 || typeof password !== 'string' || !password || password.length > 256)
+      throw new Error('请填写账号和密码');
+    const initialEnvironment = environment(wxApi).name, initialKey = storageKey(wxApi, CLIENT_KEY);
+    const previous = wxApi.getStorageSync(initialKey) || null;
+    const initialIdentity = previous ? previous.client_id + '|' + previous.refresh_token : '';
+    const ensureCurrent = () => {
+      const current = wxApi.getStorageSync(initialKey) || null;
+      if (environment(wxApi).name !== initialEnvironment || storageKey(wxApi, CLIENT_KEY) !== initialKey ||
+          (current ? current.client_id + '|' + current.refresh_token : '') !== initialIdentity) {
+        const error = new Error('账号或 Cloud 已切换，请重新登录'); error.code = 'CLOUD_CHANGED'; throw error;
+      }
+    };
+    if (previous && (previous.url !== url || previous.account && previous.account.username !== username))
+      throw new Error('请先退出当前账号，再登录其他账号或 Cloud');
+    const connectionKey = await accountConnectionKey(wxApi, url, username);
+    ensureCurrent();
+    const check = response => {
+      if (response.statusCode === 404 || response.statusCode === 405) throw new Error('请先更新 Cloud，以支持统一账号登录');
+      if (response.statusCode === 429) throw new Error('尝试次数过多，请在 5 分钟后重试');
+      if (response.statusCode !== 200) throw new Error(response.data && typeof response.data.error === 'string'
+        ? response.data.error.slice(0, 300) : '登录暂时不可用，请稍后重试');
+    };
+    if (register) {
+      if (!/^[a-z0-9][a-z0-9_.-]{2,39}$/.test(username) || password.length < 12) throw new Error('账号需要 3 至 40 位字母、数字、点、下划线或短横线，密码至少 12 个字符');
+      const created = await request(wxApi, url + '/api/v2/account/register', 'POST', {username, password});
+      ensureCurrent(); check(created);
+    }
+    const response = await request(wxApi, url + '/api/v2/account/login', 'POST', {
+      username, password, client_type: 'mobile', connection_key: connectionKey, name: '我的手机',
+      version: VERSION, protocol_version: PROTOCOL_VERSION,
+      ...(previous && previous.url === url ? {previous: {id: previous.client_id, refresh_token: previous.refresh_token}} : {})
+    });
+    ensureCurrent(); check(response);
+    if (!validTokens(response.data) || !response.data.account || !ID.test(response.data.account.id || '') || response.data.account.username !== username)
+      throw new Error('Cloud 登录响应无效，请重试');
+    const session = savedSession(url, response.data);
+    wxApi.setStorageSync(storageKey(wxApi, CLIENT_KEY, url), session);
+    if (environment(wxApi).development) setDevelopmentCloud(wxApi, url);
+    wxApi.setStorageSync(storageKey(wxApi, 'lanpower_account_cloud_v1'), url);
+    return new CloudClient(wxApi, session);
+  }
+
   refresh() {
     if (this.closed) return Promise.reject(new Error('连接已关闭'));
     if (this.authorizationInvalid) return Promise.reject(authorizationError());
@@ -119,6 +190,7 @@ class CloudClient {
         throw new Error('Cloud 暂时无法续期，恢复连接后将自动重试');
       }
       const next = savedSession(original.url, response.data);
+      if (original.account) next.account = original.account;
       try { this.wx.setStorageSync(this.storageKey, next); }
       catch (_) { throw new Error('无法保存 Cloud 授权，请检查手机存储后重试'); }
       this.session = next;

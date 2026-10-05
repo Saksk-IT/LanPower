@@ -27,7 +27,8 @@ function createDevicePage(mode) {
     networkType: 'unknown', networkText: '检测网络', statusClass: 'idle', wakeHint: '先连接并选择电脑',
     canControl: false, canWake: false, busy: false, feedback: '', feedbackKind: 'info', wakeDirty: false,
     mac: '', broadcast: '255.255.255.255', version: VERSION,
-    environmentLabel: '正式版', development: false, developmentCloud: '', cloudUrlDraft: '', testingCloud: false},
+    environmentLabel: '正式版', development: false, developmentCloud: '', cloudUrlDraft: '', testingCloud: false,
+    accountUsername: '', accountUrlDraft: '', loginUsername: '', accountRegister: false, accountFormVisible: true},
 
   onLoad(options = {}) {
     this.wakeDrafts = {};
@@ -54,6 +55,9 @@ function createDevicePage(mode) {
     this.route = ''; this.wakeRoute = '';
     this.setData({environmentLabel: current.label, development: current.development, developmentCloud: url, cloudUrlDraft: url, testingCloud: false,
       connected: !!this.client, cloudHost: this.client ? this.client.session.url.replace(/^https?:\/\//, '') : '',
+      accountUsername: this.client && this.client.session.account ? this.client.session.account.username : '',
+      loginUsername: this.client && this.client.session.account ? this.client.session.account.username : this.data.loginUsername || '',
+      accountUrlDraft: url || (this.client ? this.client.session.url : wx.getStorageSync(storageKey(wx, 'lanpower_account_cloud_v1')) || ''),
       cloudStatusText: this.client ? '已保存授权' : '未授权', cloudState: 'idle', needsReauthorize: false,
       devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', devicesLoaded: false, deviceMissing: false,
       paired: false, lanOpen: false, mac: '', broadcast: '255.255.255.255', wakeDirty: false,
@@ -108,6 +112,7 @@ function createDevicePage(mode) {
   },
   onShow() {
     this.visible = true;
+    this.setData({accountFormVisible: true});
     clearInterval(this.timer);
     const latest = CloudClient.load(wx);
     if (!latest || !this.client || latest.storageKey !== this.client.storageKey || latest.session.client_id !== this.client.session.client_id || latest.session.refresh_token !== this.client.session.refresh_token) {
@@ -133,6 +138,8 @@ function createDevicePage(mode) {
   },
   syncConnection() { if (this.visible === false) return Promise.resolve(); return mode === 'power' ? this.refresh() : this.reloadDevices(); },
   onHide() {
+    this.accountPassword = ''; this.accountRepeatPassword = '';
+    this.setData({accountFormVisible: false});
     this.connectionTestSerial = (this.connectionTestSerial || 0) + 1;
     this.visible = false; clearInterval(this.timer); this.serial = (this.serial || 0) + 1;
     this.refreshAgain = false;
@@ -172,6 +179,43 @@ function createDevicePage(mode) {
   toggleLan() { this.setData({lanOpen: !this.data.lanOpen}); },
   scanFailed(error) {
     if (!/cancel/.test(error.errMsg || '')) this.notify('无法打开扫码，请检查微信相机权限后重试。', 'error');
+  },
+
+  editAccountUrl(event) { this.setData({accountUrlDraft: event.detail.value}); },
+  editAccountUsername(event) { this.setData({loginUsername: event.detail.value}); },
+  editAccountPassword(event) { this.accountPassword = event.detail.value; },
+  editAccountRepeatPassword(event) { this.accountRepeatPassword = event.detail.value; },
+  toggleAccountRegister() {
+    if (!this.data.busy) this.setData({accountRegister: !this.data.accountRegister});
+  },
+  async loginAccount() {
+    if (this.data.busy || this.data.updatingList) return;
+    if (this.data.accountRegister && this.accountPassword !== this.accountRepeatPassword) {
+      this.notify('两次输入的密码不一致。', 'error'); return;
+    }
+    this.setData({busy: true});
+    try {
+      const client = await CloudClient.accountLogin(wx, {url: this.data.accountUrlDraft,
+        username: this.data.loginUsername, password: this.accountPassword, register: this.data.accountRegister});
+      if (this.client) this.client.close();
+      this.serial = (this.serial || 0) + 1;
+      this.wakeDrafts = {}; this.refreshAgain = false; this.refreshing = null;
+      this.loadConnection();
+      this.setData({accountRegister: false, accountFormVisible: false});
+      this.notify('已登录，正在读取账号下的电脑。', 'success');
+      this.accountLoggedIn = true;
+    } catch (error) { this.notify(error.message, 'error'); }
+    finally {
+      this.accountPassword = ''; this.accountRepeatPassword = '';
+      this.setData({busy: false, accountFormVisible: false}, () => {
+        if (!this.data.connected || this.data.needsReauthorize) this.setData({accountFormVisible: true});
+      });
+      if (this.accountLoggedIn) {
+        this.accountLoggedIn = false;
+        await this.reloadDevices();
+        if (this.visible) this.openDevices();
+      }
+    }
   },
 
   scanCloud() {
@@ -221,7 +265,7 @@ function createDevicePage(mode) {
   disconnect() {
     if (!this.client || this.data.busy) return;
     const client = this.client;
-    wx.showModal({title: this.data.needsReauthorize ? '移除失效授权' : '撤销手机授权', content: '退出后需要重新扫码才能访问电脑列表。局域网关联会保留，重新授权同一 Cloud 后可以继续使用。',
+    wx.showModal({title: this.data.needsReauthorize ? '移除失效授权' : this.data.accountUsername ? '退出账号' : '撤销手机授权', content: '退出后可重新登录同一账号或使用原扫码方式。局域网关联会保留。',
       success: async ({confirm}) => {
         if (!confirm || client !== this.client || this.data.busy) return;
         this.serial = (this.serial || 0) + 1;
@@ -236,6 +280,7 @@ function createDevicePage(mode) {
           this.setData({connected: false, devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', cloudHost: '', paired: false, canControl: false,
             canWake: false, statusClass: 'idle', lanOpen: false, stateText: '已断开', modeText: '未连接', routeHint: '等待重新连接 Cloud',
             needsReauthorize: false, devicesLoaded: false, cloudState: 'idle', cloudStatusText: '未授权', controlHint: '扫描授权码后即可重新开始'});
+          this.setData({accountUsername: '', accountFormVisible: true, controlHint: '登录账号后即可重新开始'});
           this.notify('已退出手机授权。', 'success');
         } catch (error) { this.cloudError(error); this.notify('暂时无法撤销，请重试或在 Cloud 网页移除此手机。', 'error'); }
         finally { this.setData({busy: false}); }

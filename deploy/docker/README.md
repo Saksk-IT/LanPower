@@ -8,6 +8,8 @@ Docker 部署承载 Codex Remote 网页工作台与 HTTPS/WSS 授权中继，附
 
 新部署默认由 Caddy 自动提供 HTTPS，Windows 和 Wake Gateway 只建立出站连接。
 
+网页、Windows 和手机现在支持统一账号密码。初始化后在网页「设置 → 统一账号」设置密码；需要开放新用户注册时在私有 `.env` 设置 `LANPOWER_ALLOW_REGISTRATION=true`，正式部署默认关闭，本机开发环境显式开放。流程见 [三端账号登录](../../docs/account-login.md)。
+
 ## 新安装
 
 服务器需安装 Docker Compose，将自己的域名解析到服务器，并允许公网访问 TCP 80/443（UDP 443 可选）。在本目录执行：

@@ -77,6 +77,10 @@ public partial class MainWindow : Window
             DeviceState.Text = "服务运行中";
             LanState.Text = status.LanState;
             CloudState.Text = status.CloudState;
+            CloudAccountText.Text = string.IsNullOrEmpty(status.AccountUsername)
+                ? "登录后自动加入账号，无需配对码。" : "当前账号：" + status.AccountUsername;
+            if (!_cloudBusy && !CloudAccountBox.IsKeyboardFocused && string.IsNullOrEmpty(CloudAccountBox.Text))
+                CloudAccountBox.Text = status.AccountUsername;
             GatewayState.Text = status.GatewayState;
             LanIp.Text = status.LanIp;
             Mac.Text = string.IsNullOrEmpty(status.Mac) ? "未检测到" : status.Mac;
@@ -102,6 +106,36 @@ public partial class MainWindow : Window
     }
 
     private async void RefreshStatus(object? sender, EventArgs e) => await LoadStatusAsync();
+
+    private async void LoginCloudAccount(object sender, RoutedEventArgs e)
+    {
+        if (_cloudBusy) return;
+        _cloudBusy = true;
+        UpdateCloudButtons();
+        CloudNotice.Text = "正在登录并连接电脑…";
+        try
+        {
+            using var response = await RequestAsync(JsonSerializer.Serialize(new
+            {
+                op = "account_login", cloud_url = CloudUrlBox.Text.Trim(),
+                username = CloudAccountBox.Text.Trim(), password = CloudPasswordBox.Password
+            }));
+            if (!response.RootElement.GetProperty("ok").GetBoolean())
+            {
+                CloudNotice.Text = response.RootElement.GetProperty("error").GetString() ?? "登录未完成，请重试。";
+                return;
+            }
+            CloudNotice.Text = "已登录。手机与网页登录同一账号即可找到这台电脑。";
+            await LoadStatusAsync();
+        }
+        catch { CloudNotice.Text = "无法登录，请检查后台服务与 Cloud 地址后重试。"; }
+        finally
+        {
+            CloudPasswordBox.Clear();
+            _cloudBusy = false;
+            UpdateCloudButtons();
+        }
+    }
 
     private async void ConnectCloud(object sender, RoutedEventArgs e)
     {

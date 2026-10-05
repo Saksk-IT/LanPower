@@ -2,6 +2,7 @@
 {% block title %}手机授权{% endblock %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">随身的控制入口</p><h1>手机授权</h1><p class="muted">连接微信小程序，在手机上查看和控制电脑。</p></div></div>
+<section class="card"><h2>推荐：手机登录同一账号</h2><p class="muted">在小程序“我的”填写同一 Cloud 地址与账号密码，直接显示账号下的电脑，无需生成二维码。通过账号登录的手机也会显示在下方，可单独撤销或调整权限。</p><a href="/settings#account">设置统一账号密码</a></section>
 <div class="two-column">
 <section class="card pairing-card"><div class="card-heading"><div class="device-identity"><span class="icon-tile">{{ icon('phone', 25) }}</span><div><span class="device-type">添加手机</span><h2>{{ '扫描二维码完成授权' if pairing else '连接微信小程序' }}</h2></div></div></div>
 {% if pairing %}
@@ -29,7 +30,7 @@
 {% for client in clients %}
 <section class="card list-card"><div class="device-identity"><span class="icon-tile subtle">{{ icon('phone', 23) }}</span><div><h2>{{ client.name }}</h2><p class="hint">最近使用 {{ client.last_seen_at | relative_time }}<span class="text-divider">·</span>授权时版本：{{ client.version or '尚未上报' }}</p><p class="hint">允许操作：{% if client.allowed_actions %}{% for action in client.allowed_actions.split(',') %}{{ action | action_label }}{{ '、' if not loop.last else '' }}{% endfor %}{% else %}全部电源操作{% endif %}</p>
 <details class="advanced-options"><summary>修改手机权限</summary><form method="post" action="/clients/{{ client.id }}/permissions" class="login-form"><input type="hidden" name="csrf" value="{{ csrf }}"><fieldset class="permission-options"><legend>允许执行的操作</legend>{% for action, label in client_action_labels.items() %}<label class="checkbox-field"><input type="checkbox" name="allow_{{ action }}" {% if action in client.allowed_actions.split(',') or not client.allowed_actions and action != 'codex' %}checked{% endif %}>{{ label }}</label>{% endfor %}</fieldset><button type="submit" class="secondary">保存权限</button><p class="hint">保存后直接生效，无需重新扫码。关闭 Codex Remote 会断开这部手机的开发连接。</p></form></details></div></div>
-<form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="撤销后，此手机将无法再通过 Cloud 控制电脑，需要重新扫码授权。" data-confirm-target="{{ client.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="danger-quiet">撤销授权</button></form></section>
+<form method="post" action="/clients/{{ client.id }}/revoke" data-confirm-message="撤销后，此手机将无法继续通过 Cloud 控制电脑；需重新登录账号或扫码授权。" data-confirm-target="{{ client.name }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="danger-quiet">撤销授权</button></form></section>
 {% else %}<section class="card quiet-empty">{{ icon('phone', 24) }}<p>还没有授权手机，使用上方二维码开始连接。</p></section>{% endfor %}
 {% if legacy_clients %}<details class="help-details"><summary>旧版客户端连接（{{ legacy_clients | length }}）</summary>{% for client in legacy_clients %}<h3>{{ client.name }}</h3><p>扫描新二维码可升级为独立手机授权。旧凭据请在服务器的旧版配置中移除。</p>{% endfor %}</details>{% endif %}
 {% endblock %}

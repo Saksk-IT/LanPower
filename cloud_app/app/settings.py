@@ -17,6 +17,7 @@ class Settings:
     wx_app_id: str = field(default="", repr=False)
     wx_app_secret: str = field(default="", repr=False)
     additional_origins: tuple[str, ...] = ()
+    allow_registration: bool = False
 
     @property
     def browser_origins(self) -> frozenset[str]:
@@ -36,7 +37,8 @@ class Settings:
                        wx_app_id=os.environ.get("WX_APP_ID", ""),
                        wx_app_secret=os.environ.get("WX_APP_SECRET", ""),
                        additional_origins=tuple(value.strip().rstrip("/") for value in
-                           os.environ.get("LANPOWER_ADDITIONAL_ORIGINS", "").split(",") if value.strip()))
+                           os.environ.get("LANPOWER_ADDITIONAL_ORIGINS", "").split(",") if value.strip()),
+                       allow_registration=os.environ.get("LANPOWER_ALLOW_REGISTRATION", "false").lower() == "true")
         settings.validate()
         return settings
 

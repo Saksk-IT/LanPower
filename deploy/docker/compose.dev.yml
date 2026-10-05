@@ -2,7 +2,7 @@ name: lanpower-dev
 
 services:
   cloud:
-    image: codexdock-cloud:1.23.1-dev.1
+    image: codexdock-cloud:1.23.2-dev.1
     build:
       context: ../..
       dockerfile: cloud_app/Dockerfile
@@ -13,6 +13,7 @@ services:
       LANPOWER_DATABASE_URL: sqlite:////var/lib/lanpower-cloud/platform.db
       LANPOWER_PUBLIC_URL: https://localhost:8443
       LANPOWER_LEGACY_CONFIG: ""
+      LANPOWER_ALLOW_REGISTRATION: "true"
       WX_APP_ID: ""
       WX_APP_SECRET: ""
     volumes:

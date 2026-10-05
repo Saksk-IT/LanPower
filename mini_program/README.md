@@ -1,6 +1,8 @@
 # CodexDock 微信小程序
 
-当前小程序版本 **3.5.0**，协议版本 **2**，配套 Windows / Cloud / Web **1.23.1**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.5.0.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
+
+当前小程序版本 **3.6.0**，协议版本 **2**，配套 Windows / Cloud / Web **1.23.2**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.0.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
 
 ## 页面与入口
 
@@ -17,13 +19,13 @@ Codex 沿用已有的自定义顶部导航，避让状态栏和微信胶囊；�
 
 ## 第一次连接
 
-1. 在 Windows 版 CodexDock 连接 Cloud，使电脑出现在该 Cloud 的设备列表中。
-2. 在同一 Cloud 网页的“已授权客户端”为这部手机生成授权二维码。需要远程开发时开启 **Codex Remote** 权限；电源权限独立授权。
-3. 打开小程序 **我的 → 扫描 Cloud 授权码**。授权成功后自动进入 **我的设备**。
+1. 在 Cloud 注册账号，或用已有 Passkey 登录后，在 **设置 → 统一账号** 设置密码。部署配置中的管理员密码也可直接使用。
+2. 在 Windows 版 CodexDock 的 **远程连接** 登录该 Cloud 的账号，电脑自动加入账号。
+3. 打开小程序 **我的 → 统一账号**，填写同一 Cloud 地址并登录同一账号，自动进入 **我的设备**。原扫码授权方式继续保留。
 4. 点击目标电脑，进入 **设备详情**。需要电源操作时在本页操作；需要开发时打开 **Codex 控制**，选择项目或聊天。
 5. Codex 使用 Windows 当前用户已登录的原 Codex 窗口；电脑须在线、启用 Codex Remote 并授权项目。
 
-开发版测试地址位于 **我的 → 开发版 Cloud 地址**，填写后先测试连接，再保存并扫描同一地址网页生成的手机授权码。手机使用电脑的局域网 HTTPS 地址；`localhost` 仅供电脑模拟器测试。步骤见 [局域网联调](../docs/local-lan-access.md#微信小程序连接本机-docker) 和 [环境隔离](../docs/mini-program-environments.md)。
+开发版测试地址位于 **我的 → 开发版 Cloud 地址**，填写后先测试连接，再保存并登录该 Cloud 的账号。手机使用电脑的局域网 HTTPS 地址；`localhost` 仅供电脑模拟器测试。步骤见 [局域网联调](../docs/local-lan-access.md#微信小程序连接本机-docker) 和 [环境隔离](../docs/mini-program-environments.md)。
 
 ## 电源与局域网
 

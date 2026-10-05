@@ -5,11 +5,11 @@ import uuid
 import hashlib
 import secrets
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from cloud_remote.server import Relay
-from cloud_app.app.models import AuditLog, Command, Device, DeviceLink, LegacyClient, User, WebSession
+from cloud_app.app.models import AccountConnection, AuditLog, ClientSession, Command, Device, DeviceLink, DeviceSession, LegacyClient, User, WebSession
 from cloud_app.app.routing import select_route
 from cloud_app.app.settings import Settings
 from cloud_app.app.windows import WindowsProtocol
@@ -33,6 +33,13 @@ def seed_admin(settings: Settings, sessions: sessionmaker[Session]) -> None:
         elif settings.admin_password_hash is not None and admin.password_hash != settings.admin_password_hash:
             admin.password_hash = settings.admin_password_hash
             db.execute(delete(WebSession).where(WebSession.owner_id == ADMIN_ID))
+            mappings = list(db.scalars(select(AccountConnection).where(AccountConnection.owner_id == ADMIN_ID)))
+            devices = [item.device_id for item in mappings if item.device_id]
+            clients = [item.client_id for item in mappings if item.client_id]
+            if devices:
+                db.execute(update(DeviceSession).where(DeviceSession.device_id.in_(devices)).values(revoked_at=now))
+            if clients:
+                db.execute(update(ClientSession).where(ClientSession.id.in_(clients)).values(revoked_at=now))
 
 
 def seed_legacy(settings: Settings, sessions: sessionmaker[Session]) -> tuple[str, str]:

@@ -13,6 +13,8 @@
 **/gateway.json
 **/device-credentials.json
 **/credentials.dat
+**/account-key.dat
+**/account-key.dat.new
 **/codex-remote.json
 **/auth.json
 **/tokens.json

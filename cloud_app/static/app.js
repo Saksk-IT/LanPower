@@ -140,7 +140,7 @@ document.querySelectorAll('form[data-auth]').forEach(form => {
     try {
       const mode = form.dataset.auth;
       if (mode === 'recovery') {
-        finishAuth(await authRequest('/api/v2/auth/recovery', { code: new FormData(form).get('code') }), form);
+        finishAuth(await authRequest('/api/v2/auth/recovery', { code: new FormData(form).get('code'), username: new FormData(form).get('username') || 'admin' }), form);
         return;
       }
       if (!window.PublicKeyCredential || !navigator.credentials) {
@@ -148,7 +148,8 @@ document.querySelectorAll('form[data-auth]').forEach(form => {
       }
       const registration = mode !== 'passkey-login';
       const path = `/api/v2/auth/passkeys/${registration ? 'register' : 'login'}`;
-      const proof = mode === 'setup' ? { setup_code: new FormData(form).get('setup_code') } : {};
+      const proof = mode === 'setup' ? { setup_code: new FormData(form).get('setup_code') }
+        : mode === 'passkey-login' ? { username: new FormData(form).get('username') || 'admin' } : {};
       const ceremony = await authRequest(`${path}/options`, proof);
       const options = { publicKey: publicKeyOptions(ceremony.options) };
       const credential = registration ? await navigator.credentials.create(options) : await navigator.credentials.get(options);

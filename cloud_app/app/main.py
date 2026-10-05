@@ -25,11 +25,12 @@ from starlette.concurrency import run_in_threadpool
 from webauthn.helpers.exceptions import WebAuthnException
 
 from cloud_app.app.auth import SESSION_SECONDS, create_session, current_session, digest, parse_form, read_limited, require_csrf
+from cloud_app.app.accounts import Accounts, AccountConflict
 from cloud_app.app.automation import owned_device, register_automation_routes
 from cloud_app.app.database import make_engine, migrate, session_factory
 from cloud_app.app.identity import BootstrapCode, Identity
 from cloud_app.app.enrollment import EnrollmentError
-from cloud_app.app.models import AuditLog, Device, NotificationConfig, User
+from cloud_app.app.models import AuditLog, Device, NotificationConfig, Passkey, User
 from cloud_app.app.clients import CLIENT_ACTIONS
 from cloud_app.app.events import device_events
 from cloud_app.app.notify import Notifier
@@ -39,7 +40,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.22.4"
+VERSION = "1.23.2"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -58,6 +59,7 @@ EVENT_LABELS.update({"remote_connected": "Codex Remote 已连接", "remote_disco
     "remote_task_started": "发送 Codex 开发任务", "remote_approval_decided": "处理 Codex 审批",
     "remote_interrupted": "请求中断 Codex 任务"})
 EVENT_LABELS.update({"device_credential_failed": "设备授权失败", "client_credential_failed": "客户端授权失败"})
+EVENT_LABELS.update({"account_registered": "创建统一账号", "account_login": "账号登录", "account_password_changed": "修改账号密码"})
 EVENT_LABELS.update({"schedule_created": "创建计划任务", "schedule_deleted": "删除计划任务",
                      "schedule_fired": "计划任务已执行", "schedule_failed": "计划任务执行失败",
                      "schedule_toggled": "切换计划任务状态", "device_grouped": "修改设备分组",
@@ -122,12 +124,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     migrate(settings.database_url)
     engine = make_engine(settings.database_url)
     platform = Platform(settings, session_factory(engine))
+    accounts = Accounts(platform)
     identity = Identity(platform.sessions, settings.public_url)
     bootstrap = BootstrapCode(settings.database_url,
                               enabled=settings.admin_password_hash is None and not identity.initialized(ADMIN_ID))
     if identity.initialized(ADMIN_ID):
         bootstrap.disable()
     limiter = LoginLimiter()
+    account_limiter = LoginLimiter()
     enrollment_limiter = LoginLimiter()
     notifier = Notifier(platform)
     scheduler = Scheduler(platform, notifier)
@@ -146,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="CodexDock Cloud", version=VERSION, docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)
     app.state.platform = platform
+    app.state.accounts = accounts
     app.state.identity = identity
     app.state.bootstrap = bootstrap
     app.state.engine = engine
@@ -186,12 +191,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base.update(context)
         return templates.TemplateResponse(request, name + ".html", base, status_code=status)
 
-    def session_response(path: str, owner_id: str, *, payload: dict | None = None) -> Response:
+    def session_response(path: str, owner_id: str, *, payload: dict | None = None, auth_method: str = "") -> Response:
         with platform.sessions() as db:
             owner = db.get(User, owner_id)
             if owner is None or owner.revoked_at is not None:
                 raise HTTPException(401, "unauthorized")
-            token, csrf = create_session(db, owner)
+            token, csrf = create_session(db, owner, auth_method)
         response = (JSONResponse({"redirect": path, **payload}) if payload is not None
                     else RedirectResponse(path, status_code=303))
         response.set_cookie("lp_session", token, max_age=SESSION_SECONDS, secure=True, httponly=True, samesite="strict")
@@ -268,13 +273,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Check persisted state on every request, including across worker restarts.
         return bootstrap.enabled and not identity.initialized(ADMIN_ID)
 
-    def auth_page(request: Request, name: str = "login", *, error: bool = False, status: int = 200):
+    def auth_page(request: Request, name: str = "login", *, error: bool = False, status: int = 200, message: str = ""):
         token = request.cookies.get("lp_auth", "")
         if len(token) != 43 or not token.isascii() or not all(c.isalnum() or c in "_-" for c in token):
             token = secrets.token_urlsafe(32)
-        response = page(request, name, None, auth_token=token, error=error, status=status,
-                        passkey_enabled=identity.has_passkey(ADMIN_ID),
-                        password_enabled=settings.admin_password_hash is not None)
+        with platform.sessions() as db:
+            passkey_enabled = db.scalar(select(Passkey.credential_id).limit(1)) is not None
+        response = page(request, name, None, auth_token=token, error=error, status=status, message=message,
+                        passkey_enabled=passkey_enabled, registration_enabled=settings.allow_registration,
+                        password_enabled=accounts.has_password_accounts())
         response.set_cookie("lp_auth", token, max_age=600, secure=True, httponly=True, samesite="strict")
         return response
 
@@ -300,6 +307,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def failed_login(address: str) -> None:
         limiter.fail(address)
         platform.record(ADMIN_ID, "login_failed")
+
+    async def account_authenticate(request: Request, payload: dict):
+        address = login_address(request, ceremony=True)
+        username = payload.get("username", "")
+        key = digest(accounts.username(username)) if isinstance(username, str) else "invalid"
+        if account_limiter.blocked(key):
+            raise HTTPException(429, "尝试次数过多，请在 5 分钟后重试")
+        try:
+            owner = await run_in_threadpool(accounts.authenticate, username, payload.get("password"))
+        except PermissionError as error:
+            limiter.fail(address)
+            account_limiter.fail(key)
+            raise HTTPException(401, str(error)) from error
+        limiter.clear(address)
+        account_limiter.clear(key)
+        return owner
+
+    def identity_owner(payload: dict) -> str:
+        username = payload.get("username", "admin")
+        if not isinstance(username, str) or len(username) > 80:
+            raise HTTPException(400, "账号无效")
+        with platform.sessions() as db:
+            owner = db.scalar(select(User).where(User.username == accounts.username(username), User.revoked_at.is_(None)))
+        if owner is None:
+            raise HTTPException(401, "账号或登录方式不可用")
+        return owner.id
 
     def registration_proof(request: Request, payload: dict) -> tuple[str, str, bool]:
         if "setup_code" in payload:
@@ -437,23 +470,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/login")
     async def login(request: Request):
-        if settings.admin_password_hash is None:
+        if not accounts.has_password_accounts():
             raise HTTPException(404, "密码登录未启用")
-        address = request.client.host if request.client else "unknown"
-        if limiter.blocked(address):
-            return auth_page(request, error=True, status=429)
         form = await parse_form(request)
         auth_binding(request, form.get("auth", ""))
-        username, password = form.get("username", ""), form.get("password", "")
-        with platform.sessions() as db:
-            owner = db.scalar(select(User).where(User.username == username, User.revoked_at.is_(None)))
-            valid = verify_password(password, owner.password_hash if owner else settings.admin_password_hash or "")
-            if not owner or not valid:
-                failed_login(address)
-                return auth_page(request, error=True, status=401)
-        limiter.clear(address)
+        try:
+            owner = await account_authenticate(request, form)
+        except HTTPException as error:
+            return auth_page(request, error=True, status=error.status_code, message=str(error.detail))
         platform.record(owner.id, "login")
-        return session_response("/dashboard", owner.id)
+        return session_response("/dashboard", owner.id, auth_method="password")
+
+    @app.get("/register")
+    def register_page(request: Request):
+        if not settings.allow_registration: raise HTTPException(403, "此 Cloud 暂未开放账号注册")
+        if setup_available(): return RedirectResponse("/setup", status_code=303)
+        return auth_page(request, "register")
+
+    @app.post("/register")
+    async def register_web(request: Request):
+        form = await parse_form(request, 16384)
+        auth_binding(request, form.get("auth", ""))
+        address = login_address(request, ceremony=True)
+        if setup_available(): raise HTTPException(409, "请先初始化 Cloud")
+        try:
+            if form.get("password") != form.get("repeat_password"):
+                raise ValueError("两次输入的密码不一致")
+            owner = await run_in_threadpool(accounts.register, {"username": form.get("username"), "password": form.get("password")})
+        except (ValueError, PermissionError) as error:
+            limiter.fail(address)
+            return auth_page(request, "register", error=True, status=400, message=str(error))
+        return session_response("/dashboard", owner.id, auth_method="password")
+
+    def native_origin(request: Request) -> None:
+        # Native applications do not send browser cookies. Reject browser
+        # cross-origin attempts even when a valid account password is supplied.
+        origin = request.headers.get("origin")
+        if (origin is not None and origin not in settings.browser_origins) or request.headers.get("sec-fetch-site") == "cross-site":
+            raise HTTPException(403, "请求来源不可用")
+
+    @app.post("/api/v2/account/register")
+    async def register_native(request: Request):
+        native_origin(request)
+        address = login_address(request, ceremony=True)
+        if setup_available(): raise HTTPException(409, "请先在网页初始化 Cloud")
+        payload = await json_body(request)
+        try:
+            owner = await run_in_threadpool(accounts.register, payload)
+        except AccountConflict as error:
+            limiter.fail(address)
+            raise HTTPException(409, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(403, str(error)) from error
+        except ValueError as error:
+            limiter.fail(address)
+            raise HTTPException(400, str(error)) from error
+        return {"account": {"id": owner.id, "username": owner.username}}
+
+    @app.post("/api/v2/account/login")
+    async def login_native(request: Request):
+        native_origin(request)
+        payload = await json_body(request)
+        owner = await account_authenticate(request, payload)
+        try:
+            return await run_in_threadpool(accounts.connect, owner, payload)
+        except AccountConflict as error:
+            raise HTTPException(409, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
 
     @app.post("/api/v2/auth/passkeys/register/options")
     async def passkey_register_options(request: Request):
@@ -479,15 +565,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limiter.clear(address)
         bootstrap.disable()
         return session_response("/settings" if not setup else "/dashboard", owner_id,
-                                payload={"recovery_codes": codes})
+                                payload={"recovery_codes": codes}, auth_method="passkey")
 
     @app.post("/api/v2/auth/passkeys/login/options")
     async def passkey_login_options(request: Request):
         binding = auth_binding(request)
         login_address(request, ceremony=True)
-        await json_body(request)
+        payload = await json_body(request)
         try:
-            return identity.authentication_options(ADMIN_ID, binding)
+            return identity.authentication_options(identity_owner(payload), binding)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
 
@@ -495,14 +581,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def passkey_login_verify(request: Request):
         binding = auth_binding(request)
         address = login_address(request)
-        challenge_id, credential = credential_payload(await json_body(request, limit=65536))
+        payload = await json_body(request, limit=65536)
+        challenge_id, credential = credential_payload(payload)
         try:
-            owner_id = identity.finish_authentication(ADMIN_ID, challenge_id, credential, binding)
+            owner_id = identity.finish_authentication(identity_owner(payload), challenge_id, credential, binding)
         except (ValueError, WebAuthnException) as error:
             failed_login(address)
             raise HTTPException(401, "Passkey 登录失败，请重试") from error
         limiter.clear(address)
-        return session_response("/dashboard", owner_id, payload={})
+        return session_response("/dashboard", owner_id, payload={}, auth_method="passkey")
 
     @app.post("/api/v2/auth/recovery")
     async def recovery_login(request: Request):
@@ -510,11 +597,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         address = login_address(request)
         payload = await json_body(request)
         code = payload.get("code")
-        if not isinstance(code, str) or len(code) > 128 or not identity.use_recovery_code(ADMIN_ID, code):
+        owner_id = identity_owner(payload)
+        if not isinstance(code, str) or len(code) > 128 or not identity.use_recovery_code(owner_id, code):
             failed_login(address)
             raise HTTPException(401, "恢复码无效或已使用")
         limiter.clear(address)
-        return session_response("/settings", ADMIN_ID, payload={})
+        return session_response("/settings", owner_id, payload={}, auth_method="recovery")
 
     @app.post("/logout")
     async def logout(request: Request):
@@ -764,20 +852,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     device_names={device.id: device.name for device in platform.devices(session.owner_id)},
                     commands=platform.recent_commands(session.owner_id))
 
-    @app.get("/settings")
-    def settings_page(request: Request):
-        session, redirect = browser_guard(request)
-        if redirect: return redirect
+    def render_settings(request: Request, session, *, account_error: str = "", status: int = 200):
         with platform.sessions() as db:
+            owner = db.get(User, session.owner_id)
             notifications = db.execute(select(NotificationConfig, Device.name.label("device_name"))
                 .join(Device, Device.id == NotificationConfig.device_id)
                 .where(NotificationConfig.owner_id == session.owner_id, Device.owner_id == session.owner_id)
                 .order_by(Device.name, NotificationConfig.id)).all()
         return page(request, "settings", session, passkeys=identity.passkeys(session.owner_id),
                     recovery_count=identity.recovery_count(session.owner_id)[1],
-                    password_enabled=settings.admin_password_hash is not None,
+                    account_username=owner.username, password_enabled=accounts.password_enabled(owner),
+                    password_managed=owner.id == ADMIN_ID and settings.admin_password_hash is not None,
+                    account_error=account_error, account_updated=request.query_params.get("account") == "updated", status=status,
                     devices=platform.devices(session.owner_id), notifications=notifications,
                     notifications_enabled=notifier.enabled)
+
+    @app.get("/settings")
+    def settings_page(request: Request):
+        session, redirect = browser_guard(request)
+        if redirect: return redirect
+        return render_settings(request, session)
+
+    @app.post("/settings/account/password")
+    async def account_password(request: Request):
+        session = session_owner(request)
+        form = await parse_form(request, 16384)
+        require_csrf(request, session, form)
+        try:
+            if form.get("password") != form.get("repeat_password"):
+                raise ValueError("两次输入的密码不一致")
+            await run_in_threadpool(accounts.set_password, session, form.get("current_password"), form.get("password"))
+        except (ValueError, PermissionError) as error:
+            return render_settings(request, session, account_error=str(error), status=400)
+        return RedirectResponse("/settings?account=updated#account", status_code=303)
 
     @app.get("/system")
     def system_page(request: Request):

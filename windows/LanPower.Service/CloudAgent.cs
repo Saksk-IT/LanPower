@@ -30,12 +30,15 @@ public sealed class CloudAgent(
     private string _gatewayState = "状态未知";
     private string _cloudUrl = "";
     private CloudEnrollment? _enrollment;
+    private CloudAccountLogin? _accountLogin;
+    private string _accountUsername = "";
     private CloudEnrollment Enrollment => LazyInitializer.EnsureInitialized(ref _enrollment,
         () => new CloudEnrollment(client, SaveTokensAsync));
     public string State => Volatile.Read(ref _state) == "已连接" && Environment.TickCount64 - Volatile.Read(ref _lastHeartbeat) > 35000
         ? "连接中断" : Volatile.Read(ref _state);
     public string CloudUrl => Volatile.Read(ref _cloudUrl);
     public string DeviceId => Volatile.Read(ref _deviceId);
+    public string AccountUsername => Volatile.Read(ref _accountUsername);
     public string GatewayHint => State == "已连接" ? Volatile.Read(ref _gatewayHint) : "";
     public string GatewayState => State == "未配置" ? "未配置" : State == "已连接" ? Volatile.Read(ref _gatewayState) : "等待云端连接";
 
@@ -50,6 +53,23 @@ public sealed class CloudAgent(
 
     public Task CancelEnrollmentAsync(Guid id, CancellationToken token) => Enrollment.CancelAsync(id, token);
 
+    public Task LoginAccountAsync(string cloudUrl, string username, string password, CancellationToken token) =>
+        LazyInitializer.EnsureInitialized(ref _accountLogin,
+            () => new CloudAccountLogin(client, credentials.Load, credentials.AccountConnectionKey, SaveAccountTokensAsync))
+        .LoginAsync(cloudUrl, username, password, token);
+
+    private async Task SaveAccountTokensAsync(string origin, JsonElement result, CloudCredentials? expected, CancellationToken token)
+    {
+        await Enrollment.CancelAsync(null, token);
+        await _tokens.SaveAccountLoginAsync(origin, result, expected, token);
+        Volatile.Write(ref _accountUsername, credentials.Load()?.AccountUsername ?? "");
+        Volatile.Write(ref _deviceId, result.GetProperty("device_id").GetString() ?? "");
+        Volatile.Write(ref _cloudUrl, origin);
+        Volatile.Write(ref _state, "连接中");
+        ResetConnection();
+        log.Write("Windows 已登录统一账号");
+    }
+
     public async Task<bool> DisconnectAsync(CancellationToken token)
     {
         await Enrollment.CancelAsync(null, token);
@@ -59,6 +79,7 @@ public sealed class CloudAgent(
         Volatile.Write(ref _deviceId, "");
         Volatile.Write(ref _gatewayHint, "");
         Volatile.Write(ref _cloudUrl, "");
+        Volatile.Write(ref _accountUsername, "");
         Volatile.Write(ref _gatewayState, "未配置");
         Volatile.Write(ref _state, "未配置");
         ResetConnection();
@@ -136,6 +157,7 @@ public sealed class CloudAgent(
                     continue;
                 }
                 Volatile.Write(ref _cloudUrl, configured.CloudUrl);
+                Volatile.Write(ref _accountUsername, configured.AccountUsername);
                 var granted = await _tokens.GetAccessAsync(token);
                 saved = granted.Credentials;
                 token.ThrowIfCancellationRequested();

@@ -8,7 +8,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 PRIVATE_NAMES = {
     "agents.md", "project.private.config.json", "config.json", "gateway.json",
-    "cloud.json", "device-credentials.json", "credentials.dat",
+    "cloud.json", "device-credentials.json", "credentials.dat", "account-key.dat", "account-key.dat.new",
     "command-receipts.json", "codex-submissions.json", "cloud-replay.jsonl", "gateway.lock", "seen.json",
     "setup-code", "auto-targets.json", "codex-remote.json", "auth.json", "tokens.json",
 }
@@ -25,7 +25,7 @@ EXAMPLE_VALUES = {
 }
 SECRET_FIELDS = {
     "gateway_secret", "lan_token", "access_token", "refresh_token",
-    "client_secret", "password",
+    "client_secret", "password", "connection_key",
 }
 CONTENT_PATTERNS = {
     "personal WeChat AppID": re.compile(r"\bwx[0-9a-fA-F]{16}\b"),

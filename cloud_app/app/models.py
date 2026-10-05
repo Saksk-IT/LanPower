@@ -18,6 +18,7 @@ class User(Base):
     revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     identity_initialized_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    account_password_enabled: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class Device(Base):
@@ -53,6 +54,17 @@ class WebSession(Base):
     csrf_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[int] = mapped_column(Integer)
     expires_at: Mapped[int] = mapped_column(Integer, index=True)
+    auth_method: Mapped[str] = mapped_column(String(16), default="", server_default="")
+
+
+class AccountConnection(Base):
+    __tablename__ = "account_connections"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    client_type: Mapped[str] = mapped_column(String(16))
+    device_id: Mapped[str | None] = mapped_column(ForeignKey("devices.id"), nullable=True)
+    client_id: Mapped[str | None] = mapped_column(ForeignKey("client_sessions.id"), nullable=True)
 
 
 class Passkey(Base):

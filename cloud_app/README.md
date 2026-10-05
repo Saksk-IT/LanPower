@@ -1,6 +1,8 @@
 # CodexDock Cloud
 
-Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.23.1`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
+统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
+
+Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.23.2`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
 
 ## 更新与兼容记录
 
@@ -38,7 +40,7 @@ Relay 只在限额内存队列中转发 JSON-RPC；任务、代码、Diff、审�
 
 Cloud“手机授权”支持为每部手机生成一次性二维码，并逐个撤销。Cloud `1.7.2` 配合小程序 `2.0.5` 支持一次扫码长期授权：访问凭据每 15 分钟续期，手机长期凭据不因断网、响应丢失、重启或长期闲置过期；Gateway 续期也通过不消费长期凭据的重试接口恢复。新版小程序通过独立会话读取设备列表并按电脑编号控制；客户端凭据与 Windows、Gateway、浏览器身份分开。升级顺序和旧凭据恢复边界见 [小程序 v2](../docs/mini-program-v2.md#长期授权升级)。
 
-Cloud Web 是浏览器控制端，默认使用 Passkey 登录。Windows 应用可通过一次性配对码连接 Cloud，之后定期上报状态、领取命令并回传结果。在线 Windows 可直接接收状态、睡眠、休眠、重启和关机命令，无需 Wake Gateway。Cloud 保留旧 Gateway 与小程序使用的 `/api/v1/*` 协议；启用旧网关配置后继续兼容。Cloud 从不接收 Windows LAN 配对密钥。
+Cloud Web 是浏览器控制端，支持统一账号密码并保留 Passkey 登录。Windows 登录后自动加入该账号，手机登录同一账号即可发现电脑，之后沿用状态上报、命令领取和结果回传。在线 Windows 可直接接收状态、睡眠、休眠、重启和关机命令，无需 Wake Gateway。原一次性配对码以及旧 Gateway、小程序使用的 `/api/v1/*` 协议继续兼容；启用旧网关配置后仍可使用。Cloud 从不接收 Windows LAN 配对密钥。
 
 ## 控制台分工
 
@@ -63,7 +65,7 @@ python -m venv cloud_app/.venv
 1. 新安装将 `deploy/docker/.env.example` 复制为 `deploy/docker/.env`，设置实际 `LANPOWER_DOMAIN`；`LANPOWER_PUBLIC_URL` 随之生成。已有安装保留原 `.env` 和数据挂载。新安装无需设置管理员密码。`.env`、`private/`、`data/` 和 `backups/` 不应提交。
 2. 在 `deploy/docker/` 运行 `docker compose up -d --build`。新示例默认启用 Caddy 和 Cloud 数据卷；已有 `./data` 目录需保持 UID 10001 可写。应用入口只绑定宿主机 `127.0.0.1:8765`；公网 HTTPS 由 Caddy 提供。已有反向代理时将 `COMPOSE_PROFILES` 留空。不要把 `8765`、Windows `48211` 或路由器 SSH 直接暴露到公网。
 3. 检查本机 `http://127.0.0.1:8765/healthz`。在服务器运行 `docker compose exec cloud cat /var/lib/lanpower-cloud/setup-code` 读取初始化验证码，并在自己的 HTTPS 地址打开 `/setup`。填入验证码，按浏览器提示创建管理员 `admin` 的 Passkey，保存随后显示的 10 个恢复码，再进入控制台。验证码不会写入应用日志；初始化完成后会删除验证码文件并永久关闭 `/setup`，重启也不会重新开放。
-4. 在 Windows 应用中填写 Cloud 地址并点击“连接 Cloud”，电脑将显示短配对码。打开 Cloud 的 `/enroll`（也可从“连接电脑”进入），输入短码、核对设备名称并允许连接。设备在线后可在网页中直接控制。旧版 Windows 仍可使用网页生成的一次性长配对码。
+4. 在网页“设置 → 统一账号”设置密码。在 Windows 应用“远程连接”填写同一 Cloud 地址、账号和密码，电脑自动加入账号；网页与手机登录同一账号即可发现并控制。原短码批准与一次性长配对码继续保留在兼容入口。
 
 已有 Gateway 的部署额外使用 `deploy/docker/compose.legacy.yml`：把旧 `cloud.json` 放到 `deploy/docker/private/cloud.json`，其中 `database` 路径为 `/var/lib/lanpower-cloud/relay.db`；将旧 `relay.db` 保留在 `deploy/docker/data/relay.db`。确保 `private/cloud.json` 对容器 UID 10001 可读且权限为 `0600`，然后运行：
 

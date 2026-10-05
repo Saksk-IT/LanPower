@@ -24,7 +24,8 @@ public sealed record ServiceStatus(
     [property: JsonPropertyName("cloud_url")] string CloudUrl = "",
     [property: JsonPropertyName("cloud_device_id")] string CloudDeviceId = "",
     [property: JsonPropertyName("gateway_hint")] string GatewayHint = "",
-    [property: JsonPropertyName("codex_remote")] string CodexRemote = "cloud_offline");
+    [property: JsonPropertyName("codex_remote")] string CodexRemote = "cloud_offline",
+    [property: JsonPropertyName("account_username")] string AccountUsername = "");
 
 public sealed record CloudPairing(Guid Id, string UserCode, string VerificationUri, long ExpiresAt, int Interval);
 

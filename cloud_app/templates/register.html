@@ -1,0 +1,26 @@
+{% from "components.html" import icon %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>创建账号 · CodexDock</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v={{ version }}">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <p class="eyebrow">CodexDock</p><h1>创建统一账号</h1>
+    <p class="muted">网页、电脑和手机共用一个账号。电脑登录后，其他两端即可找到它。</p>
+    {% if message %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+    <form method="post" action="/register" class="login-form">
+      <input type="hidden" name="auth" value="{{ auth_token }}">
+      <label>账号<input name="username" autocomplete="username" minlength="3" maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{2,39}" required></label>
+      <p class="hint">3 至 40 位字母、数字、点、下划线或短横线，不区分大小写。</p>
+      <label>密码<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+      <label>确认密码<input type="password" name="repeat_password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+      <button type="submit" class="primary">创建账号并登录</button>
+    </form>
+    <p class="login-foot"><a href="/login">已有账号，返回登录</a></p>
+  </main>
+</body>
+</html>

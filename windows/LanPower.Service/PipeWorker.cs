@@ -94,6 +94,19 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
             if (request.ValueKind != JsonValueKind.Object)
                 return JsonSerializer.Serialize(new { ok = false, error = "unknown request" });
             var operation = request.GetProperty("op").GetString();
+            if (operation == "account_login" && request.EnumerateObject().Count() == 4)
+            {
+                try
+                {
+                    await cloud.LoginAccountAsync(request.GetProperty("cloud_url").GetString() ?? "",
+                        request.GetProperty("username").GetString() ?? "", request.GetProperty("password").GetString() ?? "", token);
+                    return JsonSerializer.Serialize(new { ok = true });
+                }
+                catch (CloudLoginException error)
+                {
+                    return JsonSerializer.Serialize(new { ok = false, error = error.Message });
+                }
+            }
             if (operation == "network_save" && request.EnumerateObject().Count() == 3)
             {
                 await network.ConfigureAsync(request.GetProperty("adapter_id").GetString() ?? "",
@@ -145,7 +158,7 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
     {
         var command = new StringBuilder();
         var buffer = new char[1];
-        while (command.Length <= 512)
+        while (command.Length <= 4096)
         {
             if (await reader.ReadAsync(buffer.AsMemory(), token) == 0) return null;
             if (buffer[0] == '\n') return command.ToString().TrimEnd('\r');
@@ -159,6 +172,6 @@ public sealed class PipeWorker(CloudAgent cloud, ServiceLog log, LanNetworkManag
         var status = network.ReadStatus();
         return new ServiceStatus(Environment.MachineName, status.LanIp, status.Mac,
             status.WolState, status.LanState, cloud.State, cloud.GatewayState, LanProtocol.Version, cloud.CloudUrl, cloud.DeviceId, cloud.GatewayHint,
-            codexRemote?.State == "connected" ? codexHost?.State ?? "host_offline" : "cloud_offline");
+            codexRemote?.State == "connected" ? codexHost?.State ?? "host_offline" : "cloud_offline", cloud.AccountUsername);
     }
 }

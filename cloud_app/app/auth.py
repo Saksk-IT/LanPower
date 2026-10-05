@@ -29,10 +29,10 @@ async def read_limited(request: Request, limit: int) -> bytes:
     return bytes(body)
 
 
-async def parse_form(request: Request) -> dict[str, str]:
+async def parse_form(request: Request, limit: int = 4096) -> dict[str, str]:
     if request.headers.get("content-type", "").split(";", 1)[0] != "application/x-www-form-urlencoded":
         raise HTTPException(415, "unsupported form")
-    body = await read_limited(request, 4096)
+    body = await read_limited(request, limit)
     try:
         values = parse_qs(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True)
     except (UnicodeDecodeError, ValueError) as exc:
@@ -42,13 +42,13 @@ async def parse_form(request: Request) -> dict[str, str]:
     return {key: items[0] for key, items in values.items()}
 
 
-def create_session(db: Session, owner: User) -> tuple[str, str]:
+def create_session(db: Session, owner: User, auth_method: str = "") -> tuple[str, str]:
     token = secrets.token_urlsafe(32)
     csrf = secrets.token_urlsafe(32)
     now = int(time.time())
     db.execute(delete(WebSession).where(WebSession.expires_at < now))
     db.add(WebSession(token_hash=digest(token), owner_id=owner.id, csrf_hash=digest(csrf),
-                      created_at=now, expires_at=now + SESSION_SECONDS))
+                      created_at=now, expires_at=now + SESSION_SECONDS, auth_method=auth_method))
     db.commit()
     return token, csrf
 

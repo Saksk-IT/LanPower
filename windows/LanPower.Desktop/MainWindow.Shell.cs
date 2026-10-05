@@ -142,6 +142,8 @@ public partial class MainWindow
     private void UpdateCloudButtons()
     {
         CloudConnectButton.IsEnabled = LegacyConnectButton.IsEnabled = _serviceAvailable && !_cloudBusy;
+        CloudLoginButton.IsEnabled = _serviceAvailable && !_cloudBusy;
+        CloudAccountBox.IsEnabled = CloudPasswordBox.IsEnabled = !_cloudBusy;
         CloudUrlBox.IsEnabled = !_cloudBusy;
         CloudDisconnectButton.IsEnabled = _serviceAvailable && !_cloudBusy && _cloudConfigured;
     }

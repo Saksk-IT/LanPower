@@ -238,16 +238,24 @@
             <Border Style="{StaticResource Section}" Margin="0,0,0,20">
               <StackPanel>
                 <TextBlock Text="在外也能连接这台电脑" FontSize="20" FontWeight="SemiBold"/>
-                <TextBlock Text="连接自己的 Cloud 后，可通过浏览器或已授权的小程序控制在线电脑。" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,20"/>
+                <TextBlock Text="电脑、手机和网页登录同一账号，电脑会自动出现在其他两端。" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,10,0,20"/>
                 <TextBlock Text="Cloud 地址" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBox x:Name="CloudUrlBox" Text="https://" AutomationProperties.Name="Cloud 地址"/>
-                <TextBlock Text="输入你部署的 HTTPS 地址，在网页核对设备名称与配对码后批准。" Style="{StaticResource Caption}" Margin="0,8,0,16"/>
+                <TextBlock Text="填写与手机、网页相同的 Cloud 地址。" Style="{StaticResource Caption}" Margin="0,8,0,16"/>
+                <TextBlock x:Name="CloudAccountText" Text="登录后自动加入账号，无需配对码。" Style="{StaticResource Caption}" Margin="0,0,0,12"/>
+                <TextBlock Text="账号" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBox x:Name="CloudAccountBox" MaxLength="80" AutomationProperties.Name="统一账号" Margin="0,0,0,12"/>
+                <TextBlock Text="密码" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <PasswordBox x:Name="CloudPasswordBox" MaxLength="256" AutomationProperties.Name="账号密码" Margin="0,0,0,16"/>
                 <WrapPanel>
-                  <Button x:Name="CloudConnectButton" Content="连接 Cloud" Click="ConnectCloud" Margin="0,0,10,8"/>
+                  <Button x:Name="CloudLoginButton" Content="登录并连接电脑" Click="LoginCloudAccount" Margin="0,0,10,8"/>
                   <Button Content="打开 Cloud 网页" Click="OpenCloud" Style="{StaticResource SecondaryButton}" Margin="0,0,10,8"/>
-                  <Button x:Name="CloudDisconnectButton" Content="断开连接" Click="DisconnectCloud" Style="{StaticResource SecondaryButton}" IsEnabled="False" Margin="0,0,0,8"/>
+                  <Button x:Name="CloudDisconnectButton" Content="退出并断开连接" Click="DisconnectCloud" Style="{StaticResource SecondaryButton}" IsEnabled="False" Margin="0,0,0,8"/>
                 </WrapPanel>
+                <TextBlock Text="已有 Passkey 账号？先在网页设置统一密码。新账号可在开放注册的 Cloud 网页创建。切换账号前请先退出。" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock x:Name="CloudNotice" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{StaticResource Accent}"/>
+                <Expander Header="使用原配对方式" Margin="0,16,0,0"><StackPanel>
+                  <Button x:Name="CloudConnectButton" Content="使用配对码连接" Click="ConnectCloud" HorizontalAlignment="Left" Margin="0,12,0,8"/>
                 <Border x:Name="CloudPairingPanel" Background="#EAF5EF" CornerRadius="8" Padding="20" Margin="0,18,0,0" Visibility="Collapsed">
                   <StackPanel>
                     <TextBlock Text="在网页输入设备配对码" FontWeight="SemiBold"/>
@@ -264,6 +272,7 @@
                     <Button x:Name="LegacyConnectButton" Content="使用旧版配对码" Click="ConnectLegacyCloud" HorizontalAlignment="Left" Margin="0,10,0,0"/>
                   </StackPanel>
                 </Expander>
+                </StackPanel></Expander>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Section}">

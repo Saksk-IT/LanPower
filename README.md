@@ -6,6 +6,7 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 - **远程开发**：查看项目与完整聊天历史，发送消息，跟进输出和工作过程，继续、引导或暂停任务。
 - **会话控制**：使用模型、思考强度、权限设置、原生队列与审批，访问电脑端文件、图片和能力目录；多个页面同步状态，断线后恢复。
+- **统一账号**：网页、Windows、手机共用账号密码，电脑登录后自动加入账号，手机直接显示你的电脑；网页 Passkey 与既有配对继续兼容。见 [三端账号登录](docs/account-login.md)。
 - **配套电源管理**：查看电脑状态，进行睡眠、休眠、重启、关机及可选 WOL 唤醒；唤醒离线电脑需要已配置的 Wake Gateway。
 
 任务在自己的电脑上执行，Codex 登录、代码与会话历史保留在电脑。Cloud 负责身份授权和内存中继，不保存任务正文、代码、Diff 或 OpenAI 凭据。完整接入范围与尚未接入的能力见 [功能对齐说明](docs/codex-system-parity.md)。
@@ -13,9 +14,9 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 ## 开始使用 Codex Remote
 
 1. 安装当前源码构建的 [Windows 应用](windows/README.md)，并启动自己的 [Cloud](cloud_app/README.md)。公开旧版安装包尚不包含当前 Codex Remote 功能。
-2. 在当前 Windows 用户下打开并登录 Codex，在应用的「远程连接」连接 Cloud、启用 Codex Remote 并保存项目授权。
+2. 在 Windows「远程连接」填写 Cloud 地址并登录账号，电脑自动加入账号。在当前 Windows 用户下打开并登录 Codex，启用 Codex Remote 并保存项目授权。
 3. 点击「连接原 Codex 窗口」，在 Cloud 的「Codex Remote」选择同一电脑和聊天。若本机连接接口尚未开启，按应用提示手动开启。
-4. 使用微信小程序时，先在 Cloud「手机授权」开启这部手机的 Codex Remote 权限，在小程序 **我的** 页扫码授权，再从 **我的设备 → 设备详情 → Codex 控制** 进入目标电脑。电源权限与开发权限分别授权。
+4. 在小程序「我的 / 连接与设置」登录同一 Cloud 的同一账号，直接显示电脑并进入 Codex。已有 Passkey 用户先在网页「设置 → 统一账号」设置密码；原扫码方式继续兼容。
 
 电脑需要保持在线且 Windows 用户已经登录。局域网 HTTPS、手机证书信任与详细连接步骤见 [使用与验收指南](docs/codex-remote.md)。
 
@@ -31,12 +32,14 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 | 配套电源管理与远程唤醒 | [Cloud Direct](docs/cloud-direct.md) · [Wake Gateway](docs/wake-gateway.md) |
 | 升级、迁移与发布 | [数据保留](docs/migration-v1.md) · [构建与发布](docs/releasing.md) |
 
+三端统一登录 `1.23.2` / 小程序 `3.6.0` 已完成本机升级与自动验证：同账号自动发现电脑、设置与修改密码、多账号隔离，沿用原身份、授权和数据。[使用流程](docs/account-login.md)。
+
 ## 当前版本
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.23.1` |
-| 微信小程序 | `3.5.0` |
+| Windows 应用 / 安装器、Cloud、Web | `1.23.2` |
+| 微信小程序 | `3.6.0` |
 | Wake Gateway（配套组件） | `2.1.2` |
 
 小程序 `3.5.0` 底部只保留 **我的设备 / 我的**。默认显示已连接设备，点击进入设备详情，执行电源操作或进入该设备的 **Codex 控制**；授权、连接设置和帮助集中在“我的”。详情和控制页固定对应点击的设备，设备被移除时停止控制并提示返回列表。Windows / Cloud / Web 同步版本为 `1.23.1`。路径与使用流程见 [小程序页面结构](docs/mini-program-navigation.md)。

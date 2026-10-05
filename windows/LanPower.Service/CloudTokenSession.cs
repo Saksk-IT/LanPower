@@ -42,7 +42,28 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
         if (!Guid.TryParseExact(deviceId, "D", out _) || !ValidToken(refresh) || !ValidToken(access) ||
             expires <= _clock.GetUtcNow().ToUnixTimeSeconds() || expires > _clock.GetUtcNow().ToUnixTimeSeconds() + 3600)
             throw new InvalidDataException("Cloud 凭据响应无效");
-        return (new CloudCredentials(origin, deviceId!, refresh!), access!, expires);
+        var username = payload.TryGetProperty("account", out var account) ? account.GetProperty("username").GetString() ?? "" : "";
+        if (username.Length > 80) throw new InvalidDataException("Cloud 账号响应无效");
+        return (new CloudCredentials(origin, deviceId!, refresh!, AccountUsername: username), access!, expires);
+    }
+
+    public async Task SaveAccountLoginAsync(string origin, JsonElement payload, CloudCredentials? expected, CancellationToken token)
+    {
+        origin = CloudEnrollment.NormalizeOrigin(origin);
+        var result = Parse(origin, payload);
+        await _lock.WaitAsync(token);
+        try
+        {
+            var current = store.Load();
+            if (current?.CloudUrl != expected?.CloudUrl || current?.DeviceId != expected?.DeviceId || current?.RefreshToken != expected?.RefreshToken)
+                throw new CloudLoginException("连接已变化，请重新登录");
+            store.Save(result.Credentials);
+            _pending = null;
+            _active = result.Credentials;
+            _access = result.Access;
+            _expires = result.Expires;
+        }
+        finally { _lock.Release(); }
     }
 
     public async Task SaveEnrollmentAsync(string origin, JsonElement payload, CancellationToken token)
@@ -90,7 +111,7 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
                 var renewed = Parse(saved.CloudUrl, renewalData.RootElement);
                 if (renewed.Credentials.DeviceId != saved.DeviceId || renewed.Credentials.RefreshToken != saved.RefreshToken)
                     throw new InvalidDataException("Cloud 续期响应无效");
-                _pending = new PendingTokens(saved, renewed.Credentials, renewed.Access, renewed.Expires);
+                _pending = new PendingTokens(saved, renewed.Credentials with { AccountUsername = saved.AccountUsername }, renewed.Access, renewed.Expires);
                 return CommitPending();
             }
 
@@ -124,7 +145,7 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
             var result = Parse(saved.CloudUrl, data.RootElement);
             if (result.Credentials.DeviceId != saved.DeviceId || result.Credentials.RefreshToken == saved.RefreshToken)
                 throw new InvalidDataException("Cloud 凭据响应无效");
-            _pending = new PendingTokens(intent, result.Credentials, result.Access, result.Expires);
+            _pending = new PendingTokens(intent, result.Credentials with { AccountUsername = saved.AccountUsername }, result.Access, result.Expires);
             return CommitPending();
         }
         finally { _lock.Release(); }

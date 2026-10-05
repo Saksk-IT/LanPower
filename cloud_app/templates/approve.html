@@ -2,13 +2,19 @@
 {% block title %}连接设备{% endblock %}
 {% block content %}
 {% set gateway_mode = request.query_params.get('type') == 'gateway' %}
-<div class="page-heading"><div><p class="eyebrow">设备接入</p><h1>{{ '连接唤醒网关' if gateway_mode else '连接设备' }}</h1><p class="muted">从设备发起连接，在这里核对并完成授权。</p></div><a class="back-link" href="{{ '/gateways' if gateway_mode else '/devices' }}">返回{{ '远程唤醒' if gateway_mode else '我的电脑' }}</a></div>
+<div class="page-heading"><div><p class="eyebrow">设备接入</p><h1>{{ '连接唤醒网关' if gateway_mode else '连接电脑' }}</h1><p class="muted">{{ '从设备发起连接，在这里核对并完成授权。' if gateway_mode else '电脑登录与网页相同的账号，就会自动加入你的设备。' }}</p></div><a class="back-link" href="{{ '/gateways' if gateway_mode else '/devices' }}">返回{{ '远程唤醒' if gateway_mode else '我的电脑' }}</a></div>
 {% if message %}
 <section class="card empty-state"><span class="empty-icon">{{ icon('check', 34) }}</span><h2>{{ message }}</h2><p>回到设备等待连接完成，随后可查看状态。</p><div class="controls"><a class="button-link" href="/devices">查看我的电脑</a><a class="button-link secondary" href="/gateways">查看唤醒网关</a></div></section>
 {% elif device %}
 <section class="card approval-card"><p class="eyebrow">核对设备</p><span class="icon-tile">{{ icon('computer' if device.device_type == 'windows' else 'gateway', 28) }}</span><h2>{{ device.name }}</h2><p class="muted">{{ 'Windows 电脑' if device.device_type == 'windows' else '唤醒网关' }} · 版本 {{ device.version }}</p><div class="pair-code">{{ user_code }}</div><p class="muted">请确认名称和配对码与自己的设备屏幕一致，再允许连接。</p>
 <form method="post" action="/enroll/decision" class="controls"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="user_code" value="{{ user_code }}"><button name="decision" value="approve" type="submit" class="primary">{{ icon('check', 18) }}允许连接</button><button name="decision" value="deny" type="submit" class="secondary">拒绝</button></form></section>
 {% else %}
+{% if not gateway_mode %}
+<section class="card narrow-card"><h2>{{ icon('computer', 24) }}用账号连接电脑</h2>
+<ol class="setup-steps"><li><span>1</span><div><h3>在 Windows 打开 CodexDock</h3><p class="muted">进入“远程连接”，填写此 Cloud 地址。</p><div class="copy-field"><input id="account-cloud-address" value="{{ public_url }}" readonly aria-label="Cloud 地址"><button type="button" class="secondary" data-copy="account-cloud-address">{{ icon('copy', 16) }}复制</button></div></div></li><li><span>2</span><div><h3>登录与网页相同的账号</h3><p class="muted">点击“登录并连接电脑”。已有 Passkey 账号先在网页设置密码。</p><a href="/settings#account">查看账号与设置密码</a></div></li><li><span>3</span><div><h3>在网页或手机选择电脑</h3><p class="muted">电脑自动加入账号，手机登录同一账号后即可看到，无需配对码或扫码。</p><a class="button-link" href="/devices">查看我的电脑</a></div></li></ol>
+</section>
+<details class="help-details" {% if error %}open{% endif %}><summary>使用旧版 Windows 或配对码连接</summary>
+{% endif %}
 <div class="two-column enroll-layout">
 <section class="card"><h2>跟随这三步完成连接</h2><ol class="setup-steps"><li><span>1</span><div><h3>在设备上填写 Cloud 地址</h3><p class="muted">{{ '安装并打开 CodexDock 网关，设置 Cloud 地址。' if gateway_mode else '在 Windows 电脑上打开 CodexDock，进入 Cloud 连接。' }}</p><div class="copy-field"><input id="cloud-address" value="{{ public_url }}" readonly aria-label="Cloud 地址"><button type="button" class="secondary" data-copy="cloud-address">{{ icon('copy', 16) }}复制</button></div></div></li><li><span>2</span><div><h3>获取设备配对码</h3><p class="muted">在设备上发起连接，找到类似 A7K2-M9QP 的短码。</p></div></li><li><span>3</span><div><h3>在这里核对并允许连接</h3><p class="muted">输入配对码后确认设备名称，批准即可完成。</p></div></li></ol></section>
 <section class="card code-entry"><span class="icon-tile">{{ icon('key', 27) }}</span><h2>输入设备配对码</h2><p class="muted">配对码十分钟内有效。</p>{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
@@ -16,6 +22,7 @@
 <p class="hint">请输入你本人设备上显示的配对码。</p>
 </section>
 </div>
+{% if not gateway_mode %}</details>{% endif %}
 {% if not gateway_mode %}<details class="help-details"><summary>使用没有短码入口的旧版 Windows？</summary><p>旧版应用需要由网页生成一次性长配对码，再回到电脑上填写。</p><form method="post" action="/devices/enroll"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="secondary">生成旧版配对码</button></form></details>{% endif %}
 {% endif %}
 {% endblock %}
