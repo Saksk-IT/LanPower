@@ -262,7 +262,19 @@ public static class NativeSessionSnapshot
         type = type.Length == 0 ? type : char.ToLowerInvariant(type[0]) + type[1..];
         var id = item["id"]?.GetValue<string>(); if (id is null) return null;
         var result = new JsonObject { ["id"] = id, ["type"] = type };
-        if (type == "userMessage") result["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = Text(item["content"]) });
+        if (type == "userMessage")
+        {
+            var blocks = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = Text(item["content"]) });
+            if (item["content"] is JsonArray content) foreach (var block in content.OfType<JsonObject>())
+            {
+                var kind = block["type"]?.GetValue<string>()?.ToLowerInvariant();
+                if (kind is not ("image" or "localimage" or "input_image" or "image_url")) continue;
+                var source = block["path"] ?? block["url"] ?? (block["image_url"] is JsonObject image ? image["url"] : block["image_url"]);
+                if (source is JsonValue scalar && scalar.TryGetValue<string>(out var path) && path.Length > 0)
+                    blocks.Add(new JsonObject { ["type"] = kind == "localimage" ? "localImage" : "image", [kind == "localimage" ? "path" : "url"] = path });
+            }
+            result["content"] = blocks;
+        }
         else if (type is "agentMessage" or "plan") { result["text"] = Text(item["content"] ?? item["text"]); result["phase"] = item["phase"]?.DeepClone(); }
         else if (type == "commandExecution")
         {

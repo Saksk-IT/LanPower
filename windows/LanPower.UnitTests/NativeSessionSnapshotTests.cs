@@ -124,6 +124,23 @@ public class NativeSessionSnapshotTests
     }
 
     private static void Append(string file,string kind,JsonObject payload) => File.AppendAllText(file,new JsonObject { ["type"]=kind,["timestamp"]="2026-10-02T10:02:00Z",["payload"]=payload }.ToJsonString()+"\n");
+    [TestMethod]
+    public void UserAttachmentsSurviveNativeHistoryFallback()
+    {
+        WithSession((id, file, root) =>
+        {
+            Append(file, "event_msg", new() { ["type"] = "task_started", ["turn_id"] = "images" });
+            Append(file, "event_msg", new() { ["type"] = "item_completed", ["turn_id"] = "images", ["item"] = new JsonObject {
+                ["type"] = "UserMessage", ["id"] = "user", ["content"] = new JsonArray(new JsonObject { ["type"] = "Text", ["text"] = "查看图片" },
+                    new JsonObject { ["type"] = "LocalImage", ["path"] = "C:/Fixture/screenshot.png" },
+                    new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64,YQ==" } }) } });
+            var content = NativeSessionSnapshot.Read(id, file, root)!["turns"]![0]!["items"]![0]!["content"]!.AsArray();
+            Assert.AreEqual(3, content.Count); Assert.AreEqual("查看图片", content[0]!["text"]!.GetValue<string>());
+            Assert.AreEqual("C:/Fixture/screenshot.png", content[1]!["path"]!.GetValue<string>()); Assert.AreEqual("localImage", content[1]!["type"]!.GetValue<string>());
+            Assert.AreEqual("data:image/png;base64,YQ==", content[2]!["url"]!.GetValue<string>());
+        });
+    }
+
     private static void WithSession(Action<string,string,string> action)
     {
         var original=Environment.GetEnvironmentVariable("CODEX_HOME");

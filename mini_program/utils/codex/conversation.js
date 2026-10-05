@@ -20,7 +20,7 @@ function commandAction(item) {
   if (type === 'read') return {action: 'read', icon: 'book', label: `${isRunning(item.status) ? '正在读取' : '已读取'} ${name || '文件'}`};
   if (['listFiles', 'list_files'].includes(type)) return {action: 'list', icon: 'folder', label: `${isRunning(item.status) ? '正在列出' : '已列出'} ${name || '目录'}`};
   if (type === 'search') return {action: 'search', icon: 'search', label: `${isRunning(item.status) ? '正在搜索' : '已搜索'} ${name || '项目内容'}`};
-  return {action: 'command', icon: 'terminal', label: `${isRunning(item.status) ? '正在运行' : '已运行'} ${item.command || '命令'}`};
+  return {action: 'command', icon: 'terminal', label: isRunning(item.status) ? '正在运行命令' : '已运行命令'};
 }
 function changesSummary(thread) {
   const turn = (thread && thread.turns || []).slice().reverse().find(value => value.diff || (value.items || []).some(item => item.type === 'fileChange' && (item.changes || []).length));
@@ -40,20 +40,33 @@ function changesSummary(thread) {
   return {turnId: turn.id, files: rows, count: rows.length, added: rows.reduce((sum, row) => sum + row.added, 0), removed: rows.reduce((sum, row) => sum + row.removed, 0)};
 }
 function userContent(content) {
-  const blocks = Array.isArray(content) ? content : [], raw = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('\n');
-  const match = /^# Files mentioned by the user:\n([\s\S]*?)\n\n## My request for Codex:\n([\s\S]*)$/.exec(raw);
+  const blocks = Array.isArray(content) ? content : [], raw = blocks.filter(b => ['text', 'input_text', 'Text'].includes(b.type)).map(b => b.text || '').join('\n');
+  const normalized = raw.replace(/\r\n?/g, '\n');
+  const match = /^# Files mentioned by the user:[ \t]*\n([\s\S]*?)\n## My request(?: for Codex)?:[ \t]*\n([\s\S]*)$/.exec(normalized);
+  const attachments = match ? match[1].split(/^## /m).slice(1).map(part => {
+    const lines = part.split('\n'), heading = /^(.+?):[ \t]*(.*)$/.exec(lines.shift());
+    if (!heading) return null;
+    const path = heading[2].trim() || (lines.find(line => line.trim()) || '').trim();
+    return path ? {label: heading[1], path, image: /^Image attachment:[ \t]*true[ \t]*$/m.test(lines.join('\n'))} : null;
+  }).filter(Boolean) : [];
+  const images = [...blocks.filter(b => ['image', 'localImage', 'input_image', 'image_url'].includes(b.type)).map(b => b.url || b.path || (typeof b.image_url === 'string' ? b.image_url : b.image_url && b.image_url.url)),
+    ...attachments.filter(file => file.image).map(file => file.path)].filter(source => typeof source === 'string' && source.trim());
+  const sourceKey = source => {
+    let path = source; if (/^file:/i.test(path)) { try { path = decodeURIComponent(path.replace(/^file:\/\//i, '').replace(/^\/([A-Za-z]:)/, '$1')); } catch (_) {} }
+    path = path.replace(/\\/g, '/'); return /^[A-Za-z]:/.test(path) ? path.toLowerCase() : path;
+  };
+  const unique = new Map(images.map(source => [sourceKey(source), source]));
   return {text: match ? match[2] : raw,
-    files: match ? match[1].split('\n').map(line => /^## (.*?): (.*)$/.exec(line)).filter(Boolean).map(m => ({label: m[1], path: m[2]})) : [],
-    skills: blocks.filter(b => b.type === 'skill').map(b => ({name: b.name, path: b.path})),
-    images: blocks.filter(b => ['image', 'localImage'].includes(b.type)).map(b => b.url || b.path)};
+    files: attachments.filter(file => !file.image && !unique.has(sourceKey(file.path))).map(({label, path}) => ({label, path})),
+    skills: blocks.filter(b => b.type === 'skill').map(b => ({name: b.name, path: b.path})), images: Array.from(unique.values())};
 }
 function itemRow(item, turn, index) {
   const row = {key: `${turn.id}:${item.id}`, turnId: turn.id, turnIndex: index, itemId: item.id, status: item.status || turn.status || '', text: '', kind: 'activity', label: '', images: [], files: [], skills: []};
   if (item.type === 'userMessage') return {...row, kind: 'user', ...userContent(item.content)};
   if (item.type === 'agentMessage') return {...row, kind: 'assistant', text: item.text || '', phase: item.phase || '', images: Array.from(String(item.text || '').matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)).map(match => match[1])};
   if (item.type === 'reasoning') {
-    const text = (item.summary || []).filter(part => typeof part === 'string').join('\n\n');
-    return {...row, kind: 'reasoning', icon: 'spark', label: previewText(text.split('\n')[0].replace(/[*#`]/g, '').trim() || (isRunning(row.status) ? '正在思考' : '思考摘要'), 100), text};
+    const text = (item.summary || []).map(part => typeof part === 'string' ? part : part && part.text || '').filter(Boolean).join('\n\n');
+    return {...row, kind: 'reasoning', icon: 'spark', label: isRunning(row.status) ? '正在思考' : '思考摘要', text};
   }
   if (item.type === 'plan') return {...row, kind: 'plan', label: '计划', text: item.text || ''};
   if (item.type === 'commandExecution') return {...row, ...commandAction({...item, status: row.status}), command: item.command || '', text: item.aggregatedOutput || '', exitCode: item.exitCode, cwd: item.cwd || ''};
@@ -92,7 +105,7 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
       const row = normalized[position];
       if (!inserted && row.kind !== 'user') { rows.push(work); inserted = true; }
       if (foldable && !expandedTurns.has(turn.id) && row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key)) { position++; continue; }
-      if (row.kind !== 'activity') { rows.push({...row, expanded: row.kind === 'imageActivity' ? expandedImages.has(row.key) : expandedActivities.has(row.key), imagesExpanded: expandedImages.has(row.key)}); position++; continue; }
+      if (row.kind !== 'activity') { rows.push({...row, expanded: row.kind === 'imageActivity' ? expandedImages.has(row.key) : expandedActivities.has(row.key), imagesExpanded: row.kind === 'user' || expandedImages.has(row.key)}); position++; continue; }
       const members = [];
       while (position < normalized.length && normalized[position].kind === 'activity') members.push(normalized[position++]);
       const key = `activity:${row.key}`, failed = members.some(m => m.status === 'failed' || typeof m.exitCode === 'number' && m.exitCode !== 0);
@@ -115,7 +128,8 @@ function conversationWindow(rows, offset = null, imageView = () => '') {
   let selected = [], bytes = 0, start = from;
   const candidates = rows.slice(from, from + 36);
   for (const row of (latest ? candidates.slice().reverse() : candidates)) {
-    const text = previewText(row.text), value = {...row, text, hasMoreText: text.length < String(row.text || '').length,
+    const visibleText = !['activity', 'reasoning', 'plan'].includes(row.kind) || row.expanded;
+    const text = visibleText ? previewText(row.text) : '', value = {...row, text, hasMoreText: visibleText && text.length < String(row.text || '').length,
       label: previewText(row.label, 180), summary: previewText(row.summary, 220),
       command: previewText(row.command, 800),
       domId: 'row-' + encodeURIComponent(row.key).replace(/%/g, '-'),

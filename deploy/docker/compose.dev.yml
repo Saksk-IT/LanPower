@@ -2,7 +2,7 @@ name: lanpower-dev
 
 services:
   cloud:
-    image: codexdock-cloud:1.22.2-dev.1
+    image: codexdock-cloud:1.22.4-dev.1
     build:
       context: ../..
       dockerfile: cloud_app/Dockerfile

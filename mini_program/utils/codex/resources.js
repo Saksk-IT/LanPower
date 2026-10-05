@@ -33,6 +33,7 @@ class ResourceBrowser {
 }
 class ImageCache {
   constructor(wxApi, client) { this.wx = wxApi; this.client = client; this.entries = new Map(); this.generation = 0; this.sequence = 0; }
+  peek(source, threadId) { const entry = this.entries.get(threadId + '\0' + source); return entry && entry.path || ''; }
   async resolve(source, threadId, cwd) {
     const key = threadId + '\0' + source, existing = this.entries.get(key); if (existing) return existing.promise;
     const generation = this.generation, entry = {path: '', size: 0};

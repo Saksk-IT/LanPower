@@ -58,9 +58,9 @@ test('更改摘要按最后一次有更改的任务读取，原生 diff 不重�
   const thread={turns:[{id:'old',items:[{type:'fileChange',changes:[{path:'old.js',diff:'+ old'}]}]},{id:'current',diff:'--- a/new.js\n+++ b/new.js\n-old\n+new\n+next',items:[{type:'fileChange',changes:[{path:'new.js',diff:'-old\n+new\n+next'}]}]}]};
   const before=JSON.stringify(thread),summary=changesSummary(thread);assert.equal(summary.turnId,'current');assert.equal(summary.count,1);assert.equal(summary.added,2);assert.equal(summary.removed,1);assert.equal(JSON.stringify(thread),before);assert.equal(changesSummary({turns:[]}).count,0);
 });
-test('用户图片与回复内图片独立折叠，图片地址不重复进入普通链接区',()=>{
+test('用户图片直接显示缩略图，回复图片可折叠且不重复进入普通链接区',()=>{
   const thread={turns:[{id:'t',status:'completed',items:[{id:'u',type:'userMessage',content:[{type:'image',url:'data:image/png;base64,YQ=='}]},{id:'a',type:'agentMessage',phase:'final_answer',text:'预览 ![图片](C:/Fixture/image.png) 与 [文档](C:/Fixture/README.md)'}]}]};
-  const rows=projectConversation(thread);assert.equal(rows.find(row=>row.kind==='user').imagesExpanded,false);assert.equal(rows.find(row=>row.kind==='assistant').imagesExpanded,false);
+  const rows=projectConversation(thread);assert.equal(rows.find(row=>row.kind==='user').imagesExpanded,true);assert.equal(rows.find(row=>row.kind==='assistant').imagesExpanded,false);
   const visible=conversationWindow(projectConversation(thread,new Set(),new Set(),new Set(['t:a'])));assert.equal(visible.messages.find(row=>row.key==='t:a').imagesExpanded,true);assert.deepEqual(visible.messages.find(row=>row.key==='t:a').links,[{label:'文档',target:'C:/Fixture/README.md'}]);
 });
 let pageDefinition;global.Page=value=>pageDefinition=value;require('../mini_program/pages/codex/codex');delete global.Page;

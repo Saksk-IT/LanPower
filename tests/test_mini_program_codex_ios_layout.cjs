@@ -62,21 +62,49 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
             const input = document.createElement(node.tag === 'wx-input' ? 'input' : 'textarea');
             input.value = attrs.value || ''; input.placeholder = attrs.placeholder || ''; input.disabled = !!attrs.disabled;
             if (attrs.bindinput) input.addEventListener('input', () => model[attrs.bindinput]({currentTarget: element, detail: {value: input.value}})); element.append(input);
+          } else if (node.tag === 'wx-slider') {
+            const input = document.createElement('input'); input.type='range'; input.min=attrs.min; input.max=attrs.max; input.step=attrs.step; input.value=attrs.value; input.disabled=!!attrs.disabled;
+            input.style.cssText='width:100%;height:32px;accent-color:#315ff5';
+            for (const [event,handler] of [['input',attrs.bindchanging],['change',attrs.bindchange]]) if(handler) input.addEventListener(event,()=>model[handler]({detail:{value:Number(input.value)}})); element.append(input);
+          } else if (node.tag === 'wx-image') {
+            const img=document.createElement('img');img.src=attrs.src;img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';element.append(img);
           } else if (node.tag === 'wx-rich-text') {
             const rich = nodes => nodes.map(n => {if (n.type === 'text') return document.createTextNode(n.text); const e = document.createElement(n.name); for (const [k, v] of Object.entries(n.attrs || {})) e.setAttribute(k, v); e.append(...rich(n.children || [])); return e;});
             element.append(...rich(attrs.nodes || []));
           } else for (const child of node.children || []) element.append(makeNode(child));
+          if(node.tag==='wx-scroll-view' && attrs.bindscroll)element.addEventListener('scroll',()=>{
+            if(!element.isConnected)return;
+            const detail={scrollTop:element.scrollTop,scrollHeight:element.scrollHeight};model[attrs.bindscroll]({detail});
+            if(element.scrollTop <= Number(attrs['upper-threshold']||50) && attrs.bindscrolltoupper)void model[attrs.bindscrolltoupper]();
+            if(element.scrollHeight-element.scrollTop-element.clientHeight <= Number(attrs['lower-threshold']||50) && attrs.bindscrolltolower)void model[attrs.bindscrolltolower]();
+          });
           return element;
         }
         const render = $gwx('pages/codex/codex.wxml');
-        window.crRender = () => document.querySelector('#preview').replaceChildren(makeNode(render(model.data, {})));
+        window.crRender = (changes={}) => {
+          const old=document.querySelector('.cr-chat-scroll'),top=old?.scrollTop||0;
+          document.querySelector('#preview').replaceChildren(makeNode(render(model.data, {})));
+          const scroll=document.querySelector('.cr-chat-scroll');if(!scroll)return;
+          scroll.scrollTop=Object.hasOwn(changes,'scrollTop')?model.data.scrollTop:top;
+          if(Object.hasOwn(changes,'scrollTarget')&&model.data.scrollTarget){const target=document.getElementById(model.data.scrollTarget);if(target)scroll.scrollTop+=target.getBoundingClientRect().top-scroll.getBoundingClientRect().top;}
+        };
+        wx.nextTick=callback=>setTimeout(callback,0);
+        wx.createSelectorQuery=()=>{
+          const requests=[],query={in:()=>query,select:selector=>{query.selector=selector;query.all=false;return query;},selectAll:selector=>{query.selector=selector;query.all=true;return query;},
+            boundingClientRect:()=>{requests.push({selector:query.selector,all:query.all,offset:false});return query;},scrollOffset:()=>{requests.push({selector:query.selector,all:false,offset:true});return query;},
+            exec:callback=>queueMicrotask(()=>callback(requests.map(request=>{
+              const value=element=>{if(!element)return null;if(request.offset)return {scrollTop:element.scrollTop};const r=element.getBoundingClientRect();return {id:element.id,top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height};};
+              return request.all?[...document.querySelectorAll(request.selector)].map(value):value(document.querySelector(request.selector));
+            })))};return query;
+        };
         model.setData = changes => {
           if (new TextEncoder().encode(JSON.stringify(changes)).length >= 1048576) throw new Error('setData 超过 1 MiB');
+          let changed=false;
           for (const [key, value] of Object.entries(changes)) {
             const parts = key.replace(/\[(\d+)\]/g, '.$1').split('.'); let object = model.data;
-            for (const part of parts.slice(0, -1)) object = object[part]; object[parts.at(-1)] = value;
+            for (const part of parts.slice(0, -1)) object = object[part];if(JSON.stringify(object[parts.at(-1)])!==JSON.stringify(value))changed=true;object[parts.at(-1)] = value;
           }
-          window.crRender();
+          if(changed)window.crRender(changes);
         };
         model.onLoad(); model.follow = true; model.visible = true;
         const c = model.controller; c.state = 'runtime_ready'; c.deviceId = 'pc-a'; c.sharedControl = true; c.desktopControl = true; c.queueSupported = true; c.chatSupported = true; c.planSupported = true;
@@ -100,7 +128,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         window.crShowRunning=()=>{crShowChat();c.current.turns.push({id:'running',status:'inProgress',startedAt:Date.now()-38000,items:[{id:'running-user',type:'userMessage',content:[{type:'text',text:'检查运行状态'}]},{id:'running-comment',type:'agentMessage',phase:'commentary',text:'开始检查工作记录。'}]});c.activeTurns.set('a','running');c.overlay={label:'正在运行命令',plan:[],error:''};c.queue=[{id:'q1',input:[{type:'text',text:'完成后再检查深色模式'}]}];model.paint();};
         window.crShowCatalog=()=>{c.resources.catalog={kind:'skill',cwd:root,loading:false,error:'',rows:[{name:'项目检查',path:root+'/skills/check',description:'检查项目布局和会话控制逻辑',enabled:true,scope:'project'}]};model.setData({view:'catalog',catalogKind:'skill'});model.paint();};
         window.crShowFiles=()=>{c.resources.state={cwd:root,directory:'.',branch:'main',files:[{name:'README.md',path:'README.md',directory:false},{name:'mini_program',path:'mini_program',directory:true}],cursor:'',query:'',selected:null,loading:false,error:'',truncated:false};model.setData({view:'files'});model.paint();};
-        window.crShowImages=()=>{crShowChat();c.current.turns[0].items.splice(1,0,{id:'view-image',type:'imageView',path:root+'/portrait.png'},{id:'generate-image',type:'imageGeneration',result:'data:image/png;base64,fixture'});window.crImageReads=0;window.crImageOpened=[];model.images.resolve=async()=>{window.crImageReads++;return '/fixture/portrait.png';};wx.previewImage=value=>window.crImageOpened.push(value);model.paint();};
+        window.crShowImages=()=>{crShowChat();c.current.turns[0].items.splice(1,0,{id:'view-image',type:'imageView',path:root+'/portrait.png'},{id:'generate-image',type:'imageGeneration',result:'data:image/png;base64,fixture'});window.crImageReads=0;window.crImageOpened=[];model.images.resolve=async()=>{window.crImageReads++;return '/fixture/portrait.png';};model.images.peek=()=>'/fixture/portrait.png';wx.previewImage=value=>window.crImageOpened.push(value);model.paint();};
       }, {sources});
 
       await page.evaluate(() => {
@@ -127,7 +155,8 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
           if(method==='lanpower/files/read')return {path:params.path,content:'# 项目说明\n\n这是用于验证文件预览的公开测试内容。'};
           return {data:[{name:'mini_program',path:'mini_program',directory:true},{name:'README.md',path:'README.md',directory:false},{name:'conversation.js',path:'conversation.js',directory:false}],branch:'main',nextCursor:null};
         };
-        window.crImageOpened=[];window.crImageReads=0;crPage.images.resolve=async source=>{crImageReads++;return '/fixture/preview.png';};wx.previewImage=value=>crImageOpened.push(value);wx.showModal=options=>options.success({confirm:true});wx.setClipboardData=options=>{window.crCopied=options.data;options.success();};
+        const canvas=document.createElement('canvas');canvas.width=240;canvas.height=500;const ctx=canvas.getContext('2d');ctx.fillStyle='#eef3ff';ctx.fillRect(0,0,240,500);ctx.fillStyle='#315ff5';ctx.font='24px sans-serif';ctx.fillText('示例图片',64,180);ctx.fillRect(32,220,176,3);ctx.fillStyle='#7494ec';ctx.fillRect(48,260,144,140);
+        window.crFixtureImage=canvas.toDataURL('image/png');const cache=new Map();window.crImageOpened=[];window.crImageReads=0;crPage.images.resolve=async source=>{if(!cache.has(source)){crImageReads++;cache.set(source,crFixtureImage);}return cache.get(source);};crPage.images.peek=source=>cache.get(source)||'';wx.previewImage=value=>crImageOpened.push(value);wx.showModal=options=>options.success({confirm:true});wx.setClipboardData=options=>{window.crCopied=options.data;options.success();};
         crResetConversation();
       });
       async function geometry(name) {
@@ -140,11 +169,14 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         if(measure.panel){assert.ok(measure.panel.top>=measure.page.top-1,name+JSON.stringify(measure));assert.ok(measure.panel.bottom<=measure.page.bottom+1,name+JSON.stringify(measure));}
       }
       await geometry('conversation');
+      assert.equal(await page.locator('.cr-model-pill').count(),0,'输入框上方不应再显示模型与强度');
+      const bubble=await page.evaluate(()=>{const area=document.querySelector('.cr-composer-area'),pill=document.querySelector('.cr-changes-pill'),scroll=document.querySelector('.cr-chat-scroll');return {background:getComputedStyle(area).backgroundColor,pointerEvents:getComputedStyle(area).pointerEvents,overlaps:scroll.getBoundingClientRect().bottom>pill.getBoundingClientRect().bottom};});
+      assert.equal(bubble.background,'rgba(0, 0, 0, 0)','文件气泡外层必须透明');assert.equal(bubble.pointerEvents,'none','气泡外围应允许正文触摸滚动');assert.equal(bubble.overlaps,true,'正文应延伸至悬浮气泡后方');
       assert.equal(await page.locator('.cr-activity-detail').count(),0);assert.equal(await page.locator('.cr-reasoning-detail').count(),0);assert.equal(await page.locator('.cr-image-previews').count(),0);
       await page.locator('.cr-activity-group').first().click();assert.equal(await page.locator('.cr-message-activity').count(),4);await page.locator('.cr-activity-toggle').first().click();assert.equal(await page.locator('.cr-activity-detail').count(),1);assert.ok((await page.locator('.cr-activity-detail').textContent()).includes('文件内容已读取'));await geometry('command-expanded');
       await page.locator('.cr-reasoning-toggle').click();assert.equal(await page.locator('.cr-reasoning-detail').count(),1);await page.locator('.cr-image-toggle').click();assert.equal(await page.evaluate(()=>crImageReads),1);await page.locator('.cr-image-button').click();assert.equal(await page.evaluate(()=>crImageOpened.length),1);
       await page.locator('.cr-live').click();assert.equal(await page.locator('.cr-live-work .cr-plan').count(),1);await geometry('work-expanded');
-      await page.evaluate(()=>crResetConversation());await page.locator('.cr-model-pill').click();await geometry('advanced');
+      await page.evaluate(()=>crResetConversation());await page.locator('.cr-context-button').click();await geometry('advanced');
       await page.locator('.cr-advanced-row[data-kind=models]').click();assert.equal(await page.locator('.cr-model-option').count(),2);await geometry('models');
       await page.locator('.cr-model-option[data-value="gpt-6-astra"]').click();assert.equal(await page.evaluate(()=>crPage.data.selectedEffort),'high');assert.equal(await page.evaluate(()=>crPage.data.efforts.length),2);
       await page.locator('.cr-advanced-row[data-kind=models]').click();await page.locator('.cr-model-option[data-value="gpt-6.1-sol"]').click();await page.locator('.cr-advanced-row[data-kind=effort]').click();assert.equal(await page.locator('.cr-effort-dot').count(),6);await page.locator('.cr-effort-dot[data-value=high]').click();assert.equal(await page.evaluate(()=>crPage.data.selectedEffort),'high');await geometry('effort');
@@ -157,6 +189,35 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       await page.evaluate(()=>{crPage.controller.draft.files=[];crPage.paint();crPage.openMenu();});await geometry('menu');assert.equal(await page.locator('.cr-chat-menu-row').filter({hasText:'复制对话串 ID'}).count(),1);await page.locator('.cr-chat-menu-row').filter({hasText:'复制对话串 ID'}).click();assert.equal(await page.evaluate(()=>crCopied),'a');
       await page.evaluate(()=>{crPage.dismissFeedback();crPage.openChanges();});await geometry('changes');assert.equal(await page.locator('.cr-change-file').count(),2);await page.locator('.cr-change-file').first().click();assert.ok((await page.locator('.cr-detail-text').textContent()).includes('新的会话布局'));await geometry('diff');
       await page.evaluate(()=>{crPage.closeSheet();crPage.openStatus();});await geometry('status');assert.ok((await page.locator('.cr-sheet-status').textContent()).includes('上下文'));
+      await page.evaluate(()=>{
+        const c=crPage.controller;c.resetHistory();c.activeTurns.clear();crPage.follow=false;
+        c.current.turns=[{id:'attachment-turn',status:'completed',items:[{id:'user',type:'userMessage',content:[{type:'text',text:'# Files mentioned by the user:\n\n'+Array.from({length:4},(_,i)=>'## image-'+i+'.png:\nC:/Fixture/image-'+i+'.png\nImage attachment: true').join('\n\n')+'\n\n## My request:\n我的请求：查看这四张图片。'}]}]}];crPage.setData({sheet:'',keyboardHeight:0,inputFocused:false});crPage.paint();
+      });
+      await page.waitForFunction(()=>crPage.data.messages.find(row=>row.kind==='user').images.every(image=>image.src));
+      assert.equal(await page.locator('.cr-message-user .cr-image-button').count(),4);assert.equal(await page.locator('.cr-message-user .cr-image-toggle').count(),0);assert.ok(!(await page.locator('.cr-message-user').textContent()).includes('Files mentioned'));
+      const thumbnails=await page.locator('.cr-message-user .cr-image-button').evaluateAll(elements=>elements.map(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,fit:e.querySelector('wx-image')?.getAttribute('mode')})));
+      assert.ok(thumbnails.every(image=>image.width<=140.5&&image.height<=140.5&&image.fit==='aspectFit'));await geometry('user-thumbnails');
+      await page.locator('.cr-message-user .cr-image-button').nth(1).click();assert.equal(await page.evaluate(()=>crImageOpened.at(-1).urls.length),4);
+      await page.locator('.cr-context-button').click();assert.equal(await page.evaluate(()=>crPage.data.sheet),'options');
+      await page.locator('.cr-effort-slider input').evaluate(input=>{input.value='3';input.dispatchEvent(new Event('input',{bubbles:true}));});assert.equal(await page.evaluate(()=>crPage.data.selectedEffort),'high');await geometry('ring-model-strength');
+      await page.evaluate(()=>{crPage.closeSheet();crResetConversation();});
+      const group=page.locator('.cr-activity-group').first();await group.scrollIntoViewIfNeeded();const groupTop=await group.evaluate(e=>e.getBoundingClientRect().top);
+      await group.click();await page.waitForFunction(()=>!crPage.chatUpdating);assert.ok(Math.abs(await group.evaluate(e=>e.getBoundingClientRect().top)-groupTop)<=2,'展开活动应保持标题位置');
+      assert.ok(await page.locator('.cr-message-activity').first().evaluate((e,top)=>e.getBoundingClientRect().top>top,groupTop));await geometry('downward-expansion');
+      await page.evaluate(()=>{
+        const c=crPage.controller;c.resetHistory();c.activeTurns.clear();c.current.turns=Array.from({length:100},(_,i)=>({id:'history-'+i,status:'completed',items:[{id:'user',type:'userMessage',content:[{type:'text',text:'第 '+i+' 个任务'}]},{id:'reply',type:'agentMessage',phase:'final_answer',text:'第 '+i+' 个任务已完成，完整内容保留。'}]}));crPage.follow=true;crPage.setData({sheet:''});crPage.paint();
+      });
+      await page.waitForFunction(()=>!crPage.chatUpdating&&!crPage.composerMeasuring&&Math.abs(crPage.lastScrollTop-document.querySelector('.cr-chat-scroll').scrollTop)<2);
+      const historyStart=await page.evaluate(()=>crPage.data.windowStart);
+      const upperAnchor=await page.evaluate(()=>{const scroll=document.querySelector('.cr-chat-scroll');scroll.scrollTop=20;const viewport=scroll.getBoundingClientRect(),row=[...document.querySelectorAll('.cr-message')].find(row=>row.getBoundingClientRect().bottom>viewport.top+1),anchor={id:row.id,top:row.getBoundingClientRect().top-viewport.top};scroll.dispatchEvent(new Event('scroll'));return anchor;});
+      await page.waitForFunction(start=>crPage.data.windowStart<start&&!crPage.chatUpdating,historyStart);
+      const anchorTop=await page.evaluate(id=>document.getElementById(id).getBoundingClientRect().top-document.querySelector('.cr-chat-scroll').getBoundingClientRect().top,upperAnchor.id);assert.ok(Math.abs(anchorTop-upperAnchor.top)<=2,'向上加载应保持阅读位置');
+      const earlierStart=await page.evaluate(()=>crPage.data.windowStart);
+      const lowerAnchor=await page.evaluate(()=>{const scroll=document.querySelector('.cr-chat-scroll');scroll.scrollTop=scroll.scrollHeight-scroll.clientHeight-20;const viewport=scroll.getBoundingClientRect(),row=[...document.querySelectorAll('.cr-message')].find(row=>row.getBoundingClientRect().bottom>viewport.top+1),anchor={id:row.id,top:row.getBoundingClientRect().top-viewport.top};scroll.dispatchEvent(new Event('scroll'));return anchor;});
+      await page.waitForFunction(start=>crPage.data.windowStart>start&&!crPage.chatUpdating,earlierStart);
+      const lowerTop=await page.evaluate(id=>document.getElementById(id).getBoundingClientRect().top-document.querySelector('.cr-chat-scroll').getBoundingClientRect().top,lowerAnchor.id);assert.ok(Math.abs(lowerTop-lowerAnchor.top)<=2,'向下加载应保持阅读位置');
+      assert.equal(await page.locator('.cr-chat-scroll .cr-load-more').count(),0);await geometry('automatic-history');
+      await page.evaluate(()=>{crResetConversation();crPage.follow=false;});
       for(const sheet of ['options','permissions','attachments','menu','files']){await page.evaluate(sheet=>{crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.setData({sheet});},sheet);await geometry('dark-'+sheet);}
       assert.deepEqual(errors,[]);await context.close();
     }

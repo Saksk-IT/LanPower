@@ -1,10 +1,12 @@
 # CodexDock 微信小程序
 
-小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。启动即进入 Codex；电脑与电源、连接与设置为独立辅助页面，帮助与旧版局域网入口收在设置中。当前小程序源码版本为 `3.4.2`，配套 Windows / Cloud / Web 为 `1.22.2`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
+小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。启动即进入 Codex；电脑与电源、连接与设置为独立辅助页面，帮助与旧版局域网入口收在设置中。当前小程序源码版本为 `3.4.3`，配套 Windows / Cloud / Web 为 `1.22.4`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
 
-页面路径、授权回流和电脑选择规则见 [页面结构与导航](../docs/mini-program-navigation.md)。本机导入包为 `windows/out/CodexDock-mini-program-3.4.2.zip`。
+页面路径、授权回流和电脑选择规则见 [页面结构与导航](../docs/mini-program-navigation.md)。本机导入包为 `windows/out/CodexDock-mini-program-3.4.3.zip`。
 
 ## 更新与兼容记录
+
+小程序 `3.4.3` 修复用户图片缩略图、圆环模型与强度滑动、向下展开、滚动自动加载和工作记录分项折叠；文件改动气泡背景透明，底部模型文字已移除。说明与编译预览见 [会话阅读修复](../docs/codex-mini-conversation-fixes.md)。
 
 小程序 `3.4.2` 去掉 Codex 首页和会话页上方重复的「Codex Remote」标题栏，使用页面现有工具栏作为顶部导航。菜单、搜索、返回、新建与聊天操作按状态栏和微信胶囊位置布局，支持尺寸变化、窄屏标题截断和深色外观；顶部弹出菜单跟随新的导航位置。说明和验证见 [顶部导航](../docs/codex-mini-navigation.md)。
 

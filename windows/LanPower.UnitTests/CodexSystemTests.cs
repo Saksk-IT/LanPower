@@ -71,6 +71,30 @@ public sealed class CodexSystemTests
     }
 
     [TestMethod]
+    public void DesktopAttachmentImagesAreReadableOnlyFromTheirOwnThread()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "LanPowerAttachmentTests", Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(root, "workspace"); Directory.CreateDirectory(workspace);
+        try
+        {
+            var image = Path.Combine(root, "long screen.png"); var unrelated = Path.Combine(root, "not attached.png");
+            var bytes = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3 }; File.WriteAllBytes(image, bytes); File.WriteAllBytes(unrelated, bytes);
+            var reader = new RemoteImages(); var scope = new CodexHostSettings(true, [workspace], AutoDiscover: false);
+            foreach (var marker in new[] { "## My request:", "## My request for Codex:" })
+            {
+                var text = "# Files mentioned by the user:\r\n\r\n## long screen.png:\r\n" + image + "\r\nImage attachment: true\r\n\r\n## notes.png: " + unrelated + "\r\nImage attachment: false\r\n\r\n" + marker + "\r\n查看图片";
+                reader.Observe("chat", new JsonObject { ["type"] = "userMessage", ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }) });
+                CollectionAssert.AreEqual(bytes, Convert.FromBase64String(reader.Read(scope, workspace, "chat", image)["base64"]!.GetValue<string>()));
+                Assert.Throws<InvalidDataException>(() => reader.Read(scope, workspace, "chat", unrelated));
+                Assert.Throws<InvalidDataException>(() => reader.Read(scope, workspace, "other", image));
+                reader.Observe("assistant", new JsonObject { ["type"] = "agentMessage", ["text"] = text });
+                Assert.Throws<InvalidDataException>(() => reader.Read(scope, workspace, "assistant", image));
+            }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
     public void ImageReferenceIsBoundToTheNativeThreadAndFileScope()
     {
         var root = Path.Combine(Path.GetTempPath(),"LanPowerImageTests",Guid.NewGuid().ToString("N"));

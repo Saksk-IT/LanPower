@@ -28,8 +28,8 @@ Page({
     prompt: '', draftImages: [], draftSkills: [], draftFiles: [], canSend: false, canControl: false, canInterrupt: false, canRelease: false, activeTurnId: '', running: false, interrupting: false, sendLabel: '发送', sendMode: 'queue', queueSupported: false,
     selectedModel: '', selectedModelName: '', selectedEffort: '', selectedEffortName: '', selectedMode: 'default', models: [], efforts: [], effortChoices: [], effortIndex: -1, effortPercent: 0, planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
     selectedPermission: 'unknown', permissionLabel: '批准状态待确认', permissionChoices: permissionOptions, permissionsSupported: false, changingPermissions: false, contextPercent: null,
-    inputFocused: false, uploadingAttachment: false, changes: {count: 0, added: 0, removed: 0, files: []}, changesPage: 1, changesPages: 1,
-    receiptState: '', receiptLabel: '', queryingReceipt: false, queue: [], editingQueue: '', approvals: [], approval: null, responding: false, keyboardHeight: 0, scrollTarget: '', showJump: false,
+    inputFocused: false, uploadingAttachment: false, composerInset: 160, changes: {count: 0, added: 0, removed: 0, files: []}, changesPage: 1, changesPages: 1,
+    receiptState: '', receiptLabel: '', queryingReceipt: false, queue: [], editingQueue: '', approvals: [], approval: null, responding: false, keyboardHeight: 0, scrollTarget: '', scrollTop: 0, showJump: false,
     renameTitle: '', renameDraft: '', newProjects: [], newProjectQuery: '', projectMenu: null, threadMenuPinned: false,
     catalogKind: 'skill', catalogQuery: '', catalogRows: [], catalogLoading: false, catalogError: '', catalogHasMore: false, catalogCwdIndex: 0, catalogPage: 1, catalogHasPrevious: false,
     quotaRows: [], quotaLoading: false, quotaReason: '连接电脑后读取原生额度。', contextText: '', contextReason: '尚未收到原生用量通知。',
@@ -105,7 +105,7 @@ Page({
       canControl: c.canControl, canSend, canInterrupt: c.canControl && !!c.activeTurn && !c.interrupting, canRelease: c.canControl && !c.sharedControl && c.handoff && !c.activeTurn, activeTurnId: c.activeTurn, running: !!c.activeTurn, interrupting: c.interrupting,
       sendLabel: draft.editingQueue ? '保存修改' : c.activeTurn ? this.data.sendMode === 'queue' && c.queueSupported ? '加入队列' : '引导任务' : '发送', queueSupported: c.queueSupported,
       selectedModel: options.model, selectedModelName: modelName(model) || options.model || '原窗口模型', selectedEffort: options.effort, selectedEffortName: effortNames[options.effort] || options.effort || '默认', selectedMode: options.mode,
-      models: c.models.map(row => ({value: modelId(row), name: modelName(row), description: row.description || ''})), efforts, effortIndex, effortPercent: effortIndex < 0 || efforts.length < 2 ? 0 : effortIndex / (efforts.length - 1) * 100,
+      models: c.models.map(row => ({value: modelId(row), name: modelName(row), description: row.description || ''})), efforts, effortIndex, effortMax: Math.max(1, efforts.length - 1), sliderEffortIndex: Math.max(0, effortIndex), effortPercent: effortIndex < 0 || efforts.length < 2 ? 0 : effortIndex / (efforts.length - 1) * 100,
       effortChoices: efforts.map((value, index) => ({value, index, name: effortNames[value] || value})), planSupported: c.planSupported,
       selectedPermission: permission, permissionLabel: permissionLabels[permission], permissionsSupported: c.permissionsSupported, changingPermissions: c.changingPermissions,
       contextPercent: usage && Number.isFinite(usage.remainingContextPercent) ? Math.max(0, Math.min(100, usage.remainingContextPercent)) : null,
@@ -117,9 +117,24 @@ Page({
       queue, approvals, approval, responding: c.responding, sheet};
     // Separate visible history from chrome, keeping each native bridge update comfortably below 1 MiB.
     const messagePatch = {messages: value.messages}; delete value.messages;
-    this.setData(messagePatch); this.setData(value);
+    const messageJson = JSON.stringify(messagePatch), changed = messageJson !== this.lastMessagesJson;
+    if (changed) { this.lastMessagesJson = messageJson; this.setData(messagePatch); }
+    this.setData(value);
     this.paintResources();
-    if (this.follow && this.data.view === 'chat' && c.beginningIndex < 0) this.scrollLatest();
+    this.measureComposer();
+    if (changed && this.follow && !this.chatUpdating && this.data.view === 'chat' && c.beginningIndex < 0) this.scrollLatest();
+    this.queueImagePreviews();
+  },
+  measureComposer() {
+    if (this.composerMeasuring || this.data.view !== 'chat' || typeof wx === 'undefined' || !wx.createSelectorQuery) return;
+    this.composerMeasuring = true; const c = this.controller, context = c.key;
+    const measure = () => wx.createSelectorQuery().in(this).select('.cr-composer-area').boundingClientRect().exec(([rect]) => {
+      this.composerMeasuring = false;
+      if (!rect || c !== this.controller || context !== c.key || this.data.view !== 'chat' || !this.visible) return;
+      const inset = Math.ceil(rect.height) + 16;
+      if (inset !== this.data.composerInset) { this.setData({composerInset: inset}); if (this.follow && !this.chatUpdating) this.scrollLatest(); }
+    });
+    if (wx.nextTick) wx.nextTick(measure); else measure();
   },
   paintResources() {
     const resource = this.controller.resources;
@@ -203,6 +218,7 @@ Page({
   openOptionList(event) { const kind = dataOf(event).kind; if (['models', 'effort'].includes(kind)) this.setData({sheet: kind}); },
   chooseModel(event) { this.controller.chooseSetting('model', dataOf(event).value); this.setData({sheet: 'options'}); this.paint(); },
   chooseEffort(event) { const value = dataOf(event).value; if (this.data.efforts.includes(value)) this.controller.chooseSetting('effort', value); this.paint(); },
+  slideEffort(event) { const index = Math.round(Number(event.detail && event.detail.value)), value = this.data.efforts[index]; if (this.controller.ready && value && value !== this.data.selectedEffort) { this.controller.chooseSetting('effort', value); this.paint(); } },
   optionBack() { this.setData({sheet: 'options'}); },
   openPermissions() { this.setData({sheet: 'permissions'}); this.paint(); },
   permissionHelp() { this.showDetail('批准 Codex 操作', '请求批准：编辑项目外的文件和访问互联网前询问你。\n\n替我批准：由电脑上的自动审核评估请求，需要你处理时显示审批。\n\n完全访问：允许 Codex 完全访问计算机，请确认你信任当前任务。\n\n自定义：在电脑的 config.toml 中管理。\n\n这里显示电脑确认的实际权限。更改用于后续任务，运行中的任务和已有审批保留原设置。'); },
@@ -248,14 +264,61 @@ Page({
   noop() {},
   dismissFeedback() { this.controller.notify(''); },
   toggleProgress() { this.setData({progressOpen: !this.data.progressOpen}); },
-  toggleRow(event) { this.controller.toggleRow(dataOf(event).key, dataOf(event).turn); this.paint(); },
-  chatScroll(event) { const detail = event.detail || {}; if (this.lastScrollTop !== undefined && detail.scrollTop < this.lastScrollTop - 8) { this.follow = false; this.setData({showJump: true}); } this.lastScrollTop = detail.scrollTop; },
-  reachedBottom() { if (this.controller.windowOffset === null && this.controller.beginningIndex < 0) { this.follow = true; this.setData({showJump: false}); } },
+  toggleRow(event) { const {key, turn} = dataOf(event); return this.updateChat(() => this.controller.toggleRow(key, turn), key); },
+  chatScroll(event) {
+    const detail = event.detail || {}, previous = this.lastScrollTop; this.lastScrollTop = Number(detail.scrollTop) || 0;
+    if (this.chatUpdating) return;
+    if (previous !== undefined && this.lastScrollTop < previous - 8) { this.follow = false; this.controller.holdWindow(); this.setData({scrollTarget: '', showJump: true}); }
+    if (previous !== undefined && this.lastScrollTop < previous && this.lastScrollTop <= 140) void this.earlier();
+  },
+  reachedBottom() {
+    if (this.chatUpdating || this.controller.readingHistory) return;
+    if (this.data.hasWindowAfter || this.controller.beginningIndex > 0) return this.later();
+    if (this.controller.beginningIndex < 0) { this.follow = true; this.controller.setWindow(null); this.setData({showJump: false}); }
+  },
   scrollLatest() { this.setData({scrollTarget: ''}); this.setData({scrollTarget: 'chat-end', showJump: false}); },
-  async jump() { this.follow = true; if (this.controller.beginningIndex >= 0) await this.controller.latest(); else { this.controller.windowOffset = null; this.controller.emit(); } this.paint(); this.scrollLatest(); },
-  async earlier() { this.follow = false; await this.controller.earlier(); this.paint(); this.setData({scrollTarget: this.data.messages[0] && this.data.messages[0].domId || ''}); },
-  later() { this.controller.laterWindow(); this.paint(); },
-  loadLater() { return this.controller.loadLater(); },
+  async jump() { this.chatUpdating = null; this.follow = true; if (this.controller.beginningIndex >= 0) await this.controller.latest(); else { this.controller.setWindow(null); this.controller.emit(); } this.paint(); this.scrollLatest(); },
+  earlier() { if (!this.controller.ready || this.controller.readingHistory || !(this.data.hasWindowBefore || this.controller.historyCursor)) return; return this.updateChat(() => this.controller.earlier()); },
+  later() { if (!this.controller.ready || this.controller.readingHistory) return; return this.updateChat(() => this.data.hasWindowAfter ? this.controller.laterWindow() : this.controller.loadLater()); },
+  loadLater() { return this.later(); },
+  async chatAnchor(key) {
+    const fallback = this.data.messages.find(row => row.key === key) || this.data.messages[0];
+    if (typeof wx === 'undefined' || !wx.createSelectorQuery) return {id: fallback && fallback.domId};
+    return new Promise(resolve => {
+      const query = wx.createSelectorQuery().in(this);
+      query.select('.cr-chat-scroll').boundingClientRect(); query.select('.cr-chat-scroll').scrollOffset(); query.selectAll('.cr-message').boundingClientRect();
+      query.exec(([viewport, offset, rows]) => {
+        const anchor = (rows || []).find(row => key && fallback && row.id === fallback.domId) || (rows || []).find(row => viewport && row.bottom > viewport.top + 1);
+        resolve(anchor && viewport ? {id: anchor.id, top: anchor.top - viewport.top, scrollTop: offset && offset.scrollTop || 0} : {id: fallback && fallback.domId});
+      });
+    });
+  },
+  async restoreChatAnchor(anchor) {
+    if (!anchor || !anchor.id || !this.data.messages.some(row => row.domId === anchor.id)) return;
+    if (typeof wx === 'undefined' || !wx.createSelectorQuery || anchor.top === undefined) { this.setData({scrollTarget: ''}); this.setData({scrollTarget: anchor.id}); return; }
+    const c = this.controller, context = c.key, epoch = c.epoch, selection = c.selection;
+    if (wx.nextTick) await new Promise(resolve => wx.nextTick(resolve));
+    if (c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
+    await new Promise(resolve => {
+      const query = wx.createSelectorQuery().in(this);
+      query.select('.cr-chat-scroll').boundingClientRect(); query.select('.cr-chat-scroll').scrollOffset(); query.select('#' + anchor.id).boundingClientRect();
+      query.exec(([viewport, offset, row]) => {
+        if (viewport && row && c === this.controller && context === c.key && epoch === c.epoch && selection === c.selection && this.visible) { const top = Math.max(0, (offset && offset.scrollTop || 0) + row.top - viewport.top - anchor.top); this.lastScrollTop = top; this.setData({scrollTarget: '', scrollTop: top}); }
+        resolve();
+      });
+    });
+  },
+  async updateChat(action, key) {
+    if (this.chatUpdating || this.data.view !== 'chat') return;
+    const token = {}, c = this.controller, context = c.key, epoch = c.epoch, selection = c.selection; this.chatUpdating = token; this.follow = false;
+    try {
+      const anchor = await this.chatAnchor(key);
+      if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
+      this.setData({scrollTarget: '', showJump: true}); await action();
+      if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
+      this.paint(); await this.restoreChatAnchor(anchor);
+    } finally { if (this.chatUpdating === token) this.chatUpdating = null; }
+  },
   cancelHistory() { this.controller.cancelHistory(); },
   resumeHistory() { return this.controller.jumpToBeginning(); },
   retryContent() { return this.controller.retryContent(); },
@@ -268,14 +331,35 @@ Page({
   copy() { const row = this.controller.rows.filter(value => value.kind === 'assistant').pop(); if (row) this.copyText(row.text); this.closeSheet(); },
   copyText(text) { if (wx.setClipboardData) wx.setClipboardData({data: String(text || ''), success: () => this.controller.notify('已复制。'), fail: () => this.controller.notify('复制未完成，可以在完整内容中分段选取。')}); },
   openLink(event) { const target = dataOf(event).target; if (/^(https?:|codex:)/i.test(target)) this.copyText(target); else this.openFiles({currentTarget: {dataset: {path: target.replace(/:\d+(?::\d+)?$/, '')}}}); },
-  async loadImagePreview(key, index) {
+  imageLoadKey(key, index) { return this.controller.key + ':' + this.controller.epoch + ':' + key + ':' + index; },
+  queueImagePreviews() {
+    if (!this.visible || !this.images || !this.controller.ready || this.data.view !== 'chat') return;
+    this.imageFailures = this.imageFailures || new Set(); this.imageLoads = this.imageLoads || new Map();
+    for (const row of this.data.messages) if (row.kind === 'user' || row.imagesExpanded || row.kind === 'imageActivity' && row.expanded) {
+      if (!this.controller.rows.some(value => value.key === row.key)) continue;
+      for (let index = 0; index < row.images.length; index++) {
+        const key = this.imageLoadKey(row.key, index);
+        if (!row.images[index].src && !this.imageFailures.has(key) && !this.imageLoads.has(key) && this.imageLoads.size < 4) void this.loadImagePreview(row.key, index);
+      }
+    }
+  },
+  loadImagePreview(key, index) {
+    this.imageLoads = this.imageLoads || new Map(); this.imageFailures = this.imageFailures || new Set();
+    const row = this.controller.rows.find(value => value.key === key), cached = this.imagePaths.get(key + ':img:' + index);
+    if (row && cached && this.imageSources && this.imageSources.get(key + ':img:' + index) === row.images[index] && (!this.images.peek || this.images.peek(row.images[index], this.controller.threadId) === cached)) return Promise.resolve(cached);
+    const id = this.imageLoadKey(key, index), existing = this.imageLoads.get(id); if (existing) return existing;
+    const promise = this.readImagePreview(key, index).finally(() => { this.imageLoads.delete(id); this.queueImagePreviews(); });
+    this.imageLoads.set(id, promise); return promise;
+  },
+  async readImagePreview(key, index) {
     const c = this.controller, context = c.key, epoch = c.epoch, row = c.rows.find(value => value.key === key); if (!row || !row.images[index] || !c.ready || !this.visible) return '';
-    try { const path = await this.images.resolve(row.images[index], c.threadId, c.current.cwd || ''); if (c !== this.controller || context !== c.key || epoch !== c.epoch || !c.ready || !this.visible) return ''; this.imagePaths.set(key + ':img:' + index, path); this.paint(); return path; }
-    catch (error) { if (c === this.controller && context === c.key && epoch === c.epoch) c.notify(error.message); return ''; }
+    const source = row.images[index];
+    try { const path = await this.images.resolve(source, c.threadId, c.current.cwd || ''); if (c !== this.controller || context !== c.key || epoch !== c.epoch || !c.ready || !this.visible || (c.rows.find(value => value.key === key) || {images: []}).images[index] !== source) return ''; this.imageSources = this.imageSources || new Map(); this.imageSources.set(key + ':img:' + index, source); this.imagePaths.set(key + ':img:' + index, path); this.paint(); return path; }
+    catch (error) { if (c === this.controller && context === c.key && epoch === c.epoch) { this.imageFailures.add(this.imageLoadKey(key, index)); c.notify(error.message); } return ''; }
   },
   async toggleImageRow(event) {
     const {key} = dataOf(event), c = this.controller, context = c.key, row = c.rows.find(value => value.key === key); if (!row || !row.images.length) return;
-    c.toggleImageRow(key); this.paint();
+    await this.updateChat(() => c.toggleImageRow(key), key);
     if (c.expandedImages.has(key)) for (let index = 0; index < row.images.length; index++) { if (c !== this.controller || context !== c.key || !c.expandedImages.has(key)) break; await this.loadImagePreview(key, index); }
   },
   async viewImage(event) {

@@ -1,6 +1,6 @@
 # CodexDock Windows 应用
 
-Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.22.2`，小程序为 `3.4.0`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
+Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.22.4`，小程序为 `3.4.3`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
 
 ## 更新与兼容记录
 

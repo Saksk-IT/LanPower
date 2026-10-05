@@ -9,6 +9,9 @@ public sealed class RemoteImages
 {
     private readonly ConcurrentDictionary<string, HashSet<string>> _references = new();
     private static readonly Regex MarkdownImage = new(@"!\[[^\]]*\]\((?:<([^>]+)>|([^\r\n)]+))\)", RegexOptions.CultureInvariant);
+    private static readonly Regex AttachmentSection = new(@"\A# Files mentioned by the user:[ \t]*\r?\n(?<files>[\s\S]*?)\r?\n## My request(?: for Codex)?:[ \t]*(?:\r?\n|$)", RegexOptions.CultureInvariant);
+    private static readonly Regex Attachment = new(@"^## [^\r\n]+?:[ \t]*(?<inline>[^\r\n]*)\r?\n(?<details>[\s\S]*?)(?=^## |\z)", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+    private static readonly Regex ImageAttachment = new(@"^Image attachment:[ \t]*true[ \t]*\r?$", RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
     public void Observe(string threadId, JsonNode? content)
     {
@@ -21,7 +24,24 @@ public sealed class RemoteImages
         }
         void Visit(JsonNode? value, string? key = null)
         {
-            if (value is JsonObject obj) { foreach (var entry in obj) Visit(entry.Value, entry.Key); }
+            if (value is JsonObject obj)
+            {
+                if (obj["type"] is JsonValue type && type.TryGetValue<string>(out var name) && name.Equals("userMessage", StringComparison.OrdinalIgnoreCase))
+                {
+                    var text = obj["content"] is JsonArray blocks ? string.Join("\n", blocks.OfType<JsonObject>()
+                        .Where(block => block["type"]?.GetValue<string>() is "text" or "Text" or "input_text").Select(block => block["text"]?.GetValue<string>() ?? "")) : "";
+                    var section = AttachmentSection.Match(text);
+                    if (section.Success) foreach (Match attachment in Attachment.Matches(section.Groups["files"].Value))
+                    {
+                        var details = attachment.Groups["details"].Value;
+                        if (!ImageAttachment.IsMatch(details)) continue;
+                        var path = attachment.Groups["inline"].Value.Trim();
+                        if (path.Length == 0) path = details.Split('\n').Select(line => line.Trim()).FirstOrDefault(line => line.Length > 0) ?? "";
+                        Add(path);
+                    }
+                }
+                foreach (var entry in obj) Visit(entry.Value, entry.Key);
+            }
             else if (value is JsonArray array) { foreach (var item in array) Visit(item, key); }
             else if (value is JsonValue scalar && scalar.TryGetValue<string>(out var text))
             {
