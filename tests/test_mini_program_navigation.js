@@ -132,6 +132,30 @@ test('我的页扫码授权后切到我的设备且不自动发送任务或电�
   settings.onUnload(); delete global.getCurrentPages;
 });
 
+test('我的页登录账号后进入我的设备，空账号也不直接打开控制页面', async () => {
+  for (const listed of [devices, []]) {
+    const storage = {}, runtime = api(storage), calls = [], navigation = [];
+    runtime.getRandomValues = options => options.success({randomValues: new Uint8Array(32).fill(17).buffer});
+    runtime.arrayBufferToBase64 = buffer => Buffer.from(buffer).toString('base64');
+    runtime.switchTab = options => navigation.push(options.url);
+    runtime.navigateTo = options => navigation.push(options.url);
+    runtime.request = options => {
+      calls.push(options);
+      options.success({statusCode: 200, data: options.url.endsWith('/account/login')
+        ? {...session, account: {id: '00000000-0000-0000-0000-000000000020', username: 'alice'}} : listed});
+    };
+    const settings = page('settings', runtime); settings.visible = true;
+    settings.setData({accountUrlDraft: session.url, loginUsername: 'alice'});
+    settings.accountPassword = 'navigation test passphrase';
+    await settings.loginAccount();
+    assert.deepEqual(navigation, [ROUTES.devices]);
+    assert.equal(settings.data.devices.length, listed.length);
+    assert.equal(settings.accountPassword, '');
+    assert.deepEqual(calls.map(call => call.url), [session.url + '/api/v2/account/login', session.url + '/api/v2/devices']);
+    settings.onUnload();
+  }
+});
+
 test('点击设备卡片把同一台电脑传给设备详情与 Codex，失去设备后不会切换控制目标', async () => {
   const storage = {[CLIENT_KEY]: {...session}}, runtime = api(storage), navigation = [], calls = [];
   runtime.navigateTo = options => navigation.push(options.url);
