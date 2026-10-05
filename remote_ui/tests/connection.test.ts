@@ -40,6 +40,19 @@ describe('LanPower browser relay lifecycle', () => {
     client = new RemoteConnection()
   })
   afterEach(() => { client.stop(); vi.useRealTimers(); vi.unstubAllGlobals() })
+  it('uses cryptographic request IDs on an HTTP LAN origin without randomUUID', async () => {
+    const getRandomValues = vi.fn((bytes: Uint8Array) => { bytes.fill(0xab); return bytes })
+    vi.stubGlobal('crypto', {getRandomValues})
+    vi.stubGlobal('location', {protocol:'http:', host:'192.168.1.2:8080'})
+    client.connect('computer-one'); const socket = FakeSocket.sockets[0]!
+    expect(socket.url).toBe('ws://192.168.1.2:8080/api/v2/remote/client/computer-one')
+    const request = client.request('lanpower/bootstrap', {})
+    const id = socket.sent[0].payload.id
+    expect(getRandomValues).toHaveBeenCalledOnce()
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    socket.receive({type:'rpc', payload:{id, result:{library:{data:[]}}}})
+    await expect(request).resolves.toEqual({library:{data:[]}})
+  })
   it('keeps credentials out of the URL and never resends a disconnected mutation', async () => {
     client.connect('computer-one')
     const socket = FakeSocket.sockets[0]!

@@ -27,6 +27,9 @@ public sealed class CodexRemoteTests
         Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.Parse("{\"type\":\"rpc\",\"type\":\"ping\"}"));
         Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.Parse(new string('a', CodexRemoteProtocol.MaxFrame + 1)));
         Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.Id(CodexRemoteProtocol.Parse("{\"id\":true}")));
+        Assert.AreEqual("lanpower/status", CodexRemoteProtocol.ValidateRequest(Request("lanpower/status", new() { ["fast"] = true })));
+        Assert.AreEqual("lanpower/bootstrap", CodexRemoteProtocol.ValidateRequest(Request("lanpower/bootstrap", new() { ["threadId"] = "chat", ["archived"] = false, ["limit"] = 50 })));
+        Assert.Throws<InvalidDataException>(() => CodexRemoteProtocol.ValidateRequest(Request("lanpower/status", new() { ["fast"] = "true" })));
     }
 
     [TestMethod]
@@ -116,6 +119,32 @@ public sealed class CodexRemoteTests
             await runtime.HandleAsync(new JsonObject { ["id"] = pending["id"]!.DeepClone(), ["result"] = new JsonObject { ["decision"] = "decline" } }, CancellationToken.None);
             await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await Assert.ThrowsAsync<IOException>(() => runtime.HandleAsync(Request("thread/start", new() { ["cwd"] = path, ["model"] = "fixture-exit" }), CancellationToken.None));
+        }
+        finally { Directory.Delete(path, true); }
+    }
+
+    [TestMethod]
+    public async Task BootstrapReturnsReadOnlyFirstScreenAndDefersControlConfirmation()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "LanPowerRemoteTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        try
+        {
+            await using var runtime = new RemoteRuntime(() => new(true, [path], FakeExecutable(), AutoDiscover: false));
+            await runtime.OpenAsync(CancellationToken.None);
+            var bootstrap = (await runtime.HandleAsync(Request("lanpower/bootstrap", new() {
+                ["threadId"] = "thread-test", ["limit"] = 50 }), CancellationToken.None))!["result"]!.AsObject();
+            Assert.IsTrue(bootstrap["status"]!["fast"]!.GetValue<bool>());
+            Assert.IsFalse(bootstrap["status"]!["loggedIn"]!.GetValue<bool>());
+            Assert.AreEqual("thread-test", bootstrap["thread"]!["id"]!.GetValue<string>());
+            Assert.AreEqual(0, bootstrap["thread"]!["turns"]!.AsArray().Count);
+            Assert.AreEqual("fixture", bootstrap["models"]![0]!["id"]!.GetValue<string>());
+            Assert.IsNotNull(bootstrap["library"]!["data"]);
+            var status = (await runtime.HandleAsync(Request("lanpower/status"), CancellationToken.None))!["result"]!;
+            Assert.IsFalse(status["fast"]!.GetValue<bool>());
+            Assert.IsTrue(status["loggedIn"]!.GetValue<bool>());
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.HandleAsync(Request("lanpower/bootstrap",
+                new() { ["threadId"] = "outside-test" }), CancellationToken.None));
         }
         finally { Directory.Delete(path, true); }
     }

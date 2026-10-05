@@ -48,6 +48,7 @@ class Runtime {
     if(scope)scope.check();this.calls.push({method,params:clone(params)});if(this.overrides[method])return this.overrides[method](params,scope);
     const thread=this.threads.find(row=>row.id===params.threadId);
     if(method==='lanpower/status')return {sharedControl:true,desktopControl:true,queueSupported:true,chatSupported:true,submissionReceipts:true,targetedHistoryActions:true,loggedIn:true,projects:[{name:'LanPower',path:root}],activeTurns:this.active,pendingApprovals:this.approvals,lanpowerRevision:this.revision,library:{revision:1,preferences:defaultPreferences()}};
+    if(method==='lanpower/bootstrap')return {status:{sharedControl:true,desktopControl:true,queueSupported:true,chatSupported:true,submissionReceipts:true,targetedHistoryActions:true,loggedIn:true,projects:[{name:'LanPower',path:root}],activeTurns:this.active,pendingApprovals:this.approvals,lanpowerRevision:this.revision,library:{revision:1,preferences:defaultPreferences()}},models:[{id:'m-a',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}],defaultReasoningEffort:'medium'},{id:'m-b',supportedReasoningEfforts:[{reasoningEffort:'high'}],defaultReasoningEffort:'high'}],planSupported:true,library:{data:this.threads.map(row=>({...row,turns:undefined})),pinned:[],nextCursor:null,revision:1}};
     if(method==='model/list')return {data:[{id:'m-a',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}],defaultReasoningEffort:'medium'},{id:'m-b',supportedReasoningEfforts:[{reasoningEffort:'high'}],defaultReasoningEffort:'high'}]};
     if(method==='collaborationMode/list')return {data:[{mode:'plan'}]};
     if(method==='thread/list')return {data:this.threads.map(row=>({...row,turns:undefined})),nextCursor:null};
@@ -85,6 +86,28 @@ class Runtime {
   async decide(id,result){this.calls.push({method:'decide',params:{id,result}});this.approvals=this.approvals.filter(row=>row.id!==id);}
 }
 async function setup(t){const runtime=new Runtime(),c=new CodexController(runtime);t.after(()=>c.dispose());c.deviceId='pc-a';c.state='runtime_ready';await c.restore();await c.selectThread('a');return {c,runtime};}
+test('bootstrap 内的首屏聊天直接展示，完整状态确认前不开放控制', async t => {
+  const {c, runtime} = await setup(t); c.onState('disconnected'); c.state = 'runtime_ready';
+  const before = runtime.calls.filter(row => row.method === 'thread/read').length;
+  const status = await runtime.request('lanpower/status'); let confirm;
+  runtime.overrides['lanpower/bootstrap'] = async () => ({status: {...status, fast: true, loggedIn: false}, models: [],
+    library: {data: [], pinned: [], stale: true, refreshing: true}, thread: clone({...runtime.threads[0], lanpowerRevision: runtime.revision})});
+  runtime.overrides['lanpower/status'] = () => new Promise(resolve => {confirm = () => resolve(status);});
+  await c.restore(); assert.equal(c.current.id, 'a'); assert.equal(c.synced, true); assert.equal(c.canControl, false);
+  assert.equal(runtime.calls.filter(row => row.method === 'thread/read').length, before, '不重复读取 bootstrap 已附带的聊天');
+  assert.equal(c.threads.length, 2, '后台目录尚未准备好时保留原列表');
+  confirm(); await tick(); assert.equal(c.canControl, true);
+});
+test('旧 Host 不支持 bootstrap 时恢复为分步加载', async t => {
+  const {c, runtime} = await setup(t); c.onState('disconnected'); c.state = 'runtime_ready';
+  runtime.overrides['lanpower/bootstrap'] = async () => {throw Object.assign(new Error('旧 Host'), {code: 'unsupported_method'});};
+  await c.restore(); assert.equal(c.bootstrapSupported, false); assert.equal(c.current.id, 'a'); assert.equal(c.canControl, true);
+});
+test('目录预热中的空页不删除缓存条目，也不核验尚未完成的索引', async t => {
+  const {c, runtime} = await setup(t); c.libraryCatalog = true;
+  runtime.overrides['lanpower/library/list'] = async () => ({data: [], pinned: [], stale: true, refreshing: true});
+  await c.loadThreads(); assert.equal(c.threads.length, 2); assert.ok(!runtime.calls.some(row => row.method === 'lanpower/library/check'));
+});
 test('恢复原窗口模型、思考强度、计划能力与项目',async t=>{const {c}=await setup(t);assert.equal(c.canControl,true);assert.deepEqual(effectiveSettings(c.threadSettings),{model:'m-a',effort:'medium',mode:'default'});assert.equal(c.planSupported,true);assert.equal(c.projects[0].path,root);});
 test('未发送参数不被轮询覆盖，成功发送后恢复继承',async t=>{const {c,runtime}=await setup(t);c.chooseSetting('model','m-b');c.chooseSetting('mode','plan');await c.refreshCurrent();assert.equal(effectiveSettings(c.threadSettings).model,'m-b');c.input('开始任务');await c.submit();const call=runtime.calls.find(row=>row.method==='turn/start');assert.equal(call.params.model,'m-b');assert.equal(call.params.effort,'high');assert.equal(call.params.mode,'plan');assert.equal(c.receipt.state,'accepted');assert.deepEqual(c.threadSettings.overrides,{});});
 test('不同聊天和电脑隔离草稿、附件与参数',async t=>{const {c}=await setup(t);c.input('A 的草稿');c.addFile(root+'\\README.md');c.addSkill({name:'check',path:root+'\\skill'});c.chooseSetting('mode','plan');await c.selectThread('b');c.input('B 的草稿');assert.equal(c.draft.files.length,0);await c.selectThread('a');assert.equal(c.draft.text,'A 的草稿');assert.equal(c.draft.files.length,1);assert.equal(effectiveSettings(c.threadSettings).mode,'plan');c.chooseDevice('pc-b');assert.equal(c.draft.text,'');assert.equal(c.current,null);assert.equal(c.threads.length,0);});
@@ -96,7 +119,7 @@ test('晚到的读取结果不覆盖实时新任务',async t=>{const {c,runtime}
 test('旧任务结束通知不停止较新的活动任务',async t=>{const {c}=await setup(t);c.activeTurns.set('a','newer');c.onEvent({method:'turn/completed',params:{threadId:'a',lanpowerRevision:2,turn:{id:'older',status:'completed',items:[]}}});assert.equal(c.activeTurn,'newer');});
 test('旧电脑的延迟响应不能渗入新电脑',async t=>{const {c,runtime}=await setup(t);let release;runtime.overrides['thread/read']=()=>new Promise(resolve=>{release=()=>resolve({thread:clone(runtime.threads[1])});});const read=c.selectThread('b');await tick();c.chooseDevice('pc-b');release();await read;assert.equal(c.current,null);assert.equal(c.threadId,'');assert.equal(c.messages().messages.length,0);});
 test('后台清空审批和控制，保留未发草稿且不重发',async t=>{const {c,runtime}=await setup(t);c.input('尚未发送');c.approvals.set('1',{id:1,method:'item/fileChange/requestApproval',params:{threadId:'a'}});c.onState('disconnected');assert.equal(c.canControl,false);assert.equal(c.approvals.size,0);assert.equal(c.draft.text,'尚未发送');c.state='runtime_ready';await c.restore();assert.equal(c.draft.text,'尚未发送');assert.equal(runtime.calls.filter(row=>row.method==='turn/start').length,0);});
-test('状态恢复失败时保留缓存但不开放控制',async t=>{const {c,runtime}=await setup(t);c.onState('disconnected');runtime.overrides['lanpower/status']=async()=>{throw new Error('无法读取原窗口');};c.state='runtime_ready';await c.restore();assert.ok(c.current);assert.equal(c.canControl,false);assert.equal(c.recovering,false);});
+test('状态恢复失败时保留缓存但不开放控制',async t=>{const {c,runtime}=await setup(t);c.onState('disconnected');runtime.overrides['lanpower/status']=async()=>{throw new Error('无法读取原窗口');};runtime.overrides['lanpower/bootstrap']=async()=>{throw new Error('无法读取原窗口');};c.state='runtime_ready';await c.restore();assert.ok(c.current);assert.equal(c.canControl,false);assert.equal(c.recovering,false);});
 test('桌面只读与未完成恢复时不允许发送或停止',async t=>{const {c,runtime}=await setup(t);c.sharedControl=false;c.current.control='desktop';c.input('只读');await c.submit();assert.equal(c.canControl,false);assert.equal(runtime.calls.some(row=>row.method==='turn/start'),false);c.sharedControl=true;c.recovering=true;assert.equal(c.canControl,false);});
 test('模型与历史接口按能力分页，过大历史自动减小范围',async()=>{const limits=[],client={paceHistory:async()=>{},request:async(method,params)=>{limits.push(params.historyLimit);if(params.historyLimit>2)throw Object.assign(new Error(),{code:'result_too_large'});return {thread:{id:'a'}};}};assert.equal((await readThread(client,'a',new ReadScope())).thread.id,'a');assert.deepEqual(limits,[8,4,2]);});
 test('大量聊天分页不再在 200 条截断',async t=>{const {c,runtime}=await setup(t);c.threads=[];runtime.overrides['thread/list']=async params=>{const page=Number(params.cursor||0);return {data:Array.from({length:50},(_,index)=>({id:String(page*50+index),name:'任务',cwd:root})),nextCursor:page<5?String(page+1):null};};await c.loadThreads();for(let index=0;index<5;index++)await c.loadThreads(true);assert.equal(c.threads.length,300);assert.equal(c.listCursor,'');});

@@ -1,6 +1,6 @@
 # CodexDock 项目名称与定位
 
-项目名称为 **CodexDock**，原名称为 **LanPower**。本项目以 Codex 远程开发与会话控制为主，附带电脑电源管理；当前 Windows / Cloud / Web 源码版本为 `1.21.1`，微信小程序为 `3.2.3`，配套 Wake Gateway 为 `2.1.2`。
+项目名称为 **CodexDock**，原名称为 **LanPower**。本项目以 Codex 远程开发与会话控制为主，附带电脑电源管理；当前 Windows / Cloud / Web 源码版本为 `1.24.9`，微信小程序为 `3.6.14`，配套 Wake Gateway 为 `2.1.2`。
 
 ## 主功能与配套功能
 
@@ -19,7 +19,7 @@
 | Web / PWA 页面与微信小程序 | CodexDock |
 | Python 分发包与新命令入口 | `codexdock-cloud` |
 | Web 工程包 | `codexdock-web` |
-| 本机新版本 Docker 镜像 | `codexdock-cloud:1.21.1-dev.1` |
+| 本机新版本 Docker 镜像 | `codexdock-cloud:1.24.9-dev.1` |
 
 后续功能介绍、需求安排与验收优先围绕 CodexDock；电源控制和网关文档明确标记为配套或兼容内容。历史版本记录、旧版附件和原有技术标识按实际情况保留，避免把旧记录误写成当前验收结果。
 

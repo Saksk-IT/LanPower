@@ -83,7 +83,9 @@ async function main() {
         const {id,method,params}=frame.payload;
         if(!method){approvals=approvals.filter(request=>request.id!==id);setImmediate(()=>s.frame({type:'rpc',payload:{method:'serverRequest/resolved',params:{requestId:id}}}));return;}
         calls.push({method,params});let result={};
-        if(method==='lanpower/status')result={sharedControl:true,desktopControl:true,submissionReceipts:true,queueSupported:true,chatSupported:true,loggedIn:true,projects:[{name:'LanPower',path:root}],pendingApprovals:approvals,activeTurns:active?[{threadId:'a',turnId:active}]:[]};
+        const status={sharedControl:true,desktopControl:true,submissionReceipts:true,queueSupported:true,chatSupported:true,loggedIn:true,projects:[{name:'LanPower',path:root}],pendingApprovals:approvals,activeTurns:active?[{threadId:'a',turnId:active}]:[]};
+        if(method==='lanpower/status')result=status;
+        if(method==='lanpower/bootstrap')result={status,models:[{id:'m-a',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}]}],planSupported:true,library:{data:threads.map(thread=>({...thread,turns:undefined})),pinned:[],nextCursor:null,revision:0}};
         if(method==='thread/list')result={data:threads.map(thread=>({...thread,turns:undefined})),nextCursor:null};
         if(method==='model/list')result={data:[{id:'m-a',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}]}]};
         if(method==='collaborationMode/list')result={data:[{mode:'plan'}]};
@@ -100,14 +102,15 @@ async function main() {
       });pageSockets.push(socket);latestSocket=socket;
       setImmediate(()=>{socket.openHandler();socket.frame({type:'state',state:'runtime_ready'});});return socket;
     }};
-  const page={...global.definition,data:clone(global.definition.data)};let maxPayload=0;
-  page.setData=changes=>{const size=Buffer.byteLength(JSON.stringify(changes));maxPayload=Math.max(size,maxPayload);assert.ok(size<1048576,'native setData exceeds 1 MiB');Object.assign(page.data,changes);};
+  let maxPayload=0;
+  const makePage=()=>{const value={...global.definition,data:clone(global.definition.data)};value.setData=changes=>{const size=Buffer.byteLength(JSON.stringify(changes));maxPayload=Math.max(size,maxPayload);assert.ok(size<1048576,'native setData exceeds 1 MiB');Object.assign(value.data,changes);};return value;};
+  let page=makePage();
   try{
     page.onLoad();page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering&&page.controller.threads.length===2);
     await until(()=>page.data.ready&&page.data.recent.length===2&&page.data.groups.length===1);
     assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.data.homeOrder,'project');assert.equal(page.data.homeMenu,false);
     assert.deepEqual(page.data.recent.map(row=>row.id),['a','b']);assert.equal(page.data.groups[0].threads.length,2);
-    assert.equal(calls.filter(call=>call.method==='thread/list').length,1,'首次进入自动读取列表，无需切换排序');
+    assert.equal(calls.filter(call=>call.method==='lanpower/bootstrap').length,1,'首次进入通过一次 bootstrap 恢复首屏，不再串行读取多组列表');
     await page.readThread('a');page.paint();assert.equal(page.data.selectedModel,'m-a');assert.equal(page.data.canControl,true);
     const albumBytes=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXdwAAAAASUVORK5CYII=','base64')).buffer;
     wx.getFileSystemManager=()=>({unlink:()=>{},readFile:options=>options.success({data:albumBytes})});
@@ -117,7 +120,7 @@ async function main() {
     page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);assert.equal(page.controller.draft.images[0].src,'/tmp/album.png');
     page.removeAttachment({currentTarget:{dataset:{kind:'images',index:0}}});
     page.input({detail:{value:'请优化布局'}});await page.send();assert.equal(calls.filter(call=>call.method==='turn/start').length,1);
-    await page.controller.refreshCurrent();page.paint();assert.equal(page.data.canInterrupt,true);assert.equal(page.controller.rows.filter(row=>row.kind==='user'&&row.text==='请优化布局').length,1);
+     await until(()=>!page.controller.syncing);await page.controller.refreshCurrent();page.paint();assert.equal(page.data.canInterrupt,true);assert.equal(page.controller.rows.filter(row=>row.kind==='user'&&row.text==='请优化布局').length,1);
     page.chooseSendMode({currentTarget:{dataset:{mode:'queue'}}});page.input({detail:{value:'结束后检查'}});await page.send();assert.equal(calls.filter(call=>call.method==='thread/queue/add').length,1);assert.equal(page.data.queue.length,1);
     page.chooseSendMode({currentTarget:{dataset:{mode:'steer'}}});page.input({detail:{value:'只改输入栏'}});await page.send();assert.equal(calls.find(call=>call.method==='turn/steer').params.expectedTurnId,'active');assert.equal(calls.filter(call=>call.method==='turn/start').length,1);
     page.input({detail:{value:'A 未发的内容'}});await page.readThread('b');assert.equal(page.controller.draft.text,'');page.input({detail:{value:'B 未发的内容'}});await page.readThread('a');assert.equal(page.controller.draft.text,'A 未发的内容');
@@ -131,7 +134,7 @@ async function main() {
     page.setData({view:'chat'});page.navigate({currentTarget:{dataset:{page:'help'}}});
     assert.equal(auxiliary,'/pages/help/help?computer=pc-a');assert.equal(page.controller,originalController);assert.equal(page.controller.threadId,'a');
     page.controller.notify('等待返回刷新');
-    page.onHide();assert.equal(page.connection.opened,false);assert.equal(page.controller.draft.text,'A 未发的内容');
+    page.onHide();assert.equal(page.connection.opened,true,'短暂切后台保留连接，返回时恢复原窗口状态');assert.equal(page.controller.draft.text,'A 未发的内容');
     threads[0].name='返回后自动更新的聊天';page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);
     await until(()=>page.data.ready&&page.data.title===threads[0].name&&page.data.recent.some(row=>row.name===threads[0].name));
     page.input({detail:{value:'返回后继续编辑草稿'}});await until(()=>page.data.prompt==='返回后继续编辑草稿');
@@ -141,9 +144,14 @@ async function main() {
     page.chooseDevice(page.data.devices[1]);stale();await oldRead;readDelay=null;assert.equal(page.controller.current,null);assert.equal(page.data.messages.length,0);
     const {saveDeviceSelection,selectedDevice}=require('../mini_program/utils/device-selection');
     assert.equal(selectedDevice(wx,page.client),'pc-b');page.onHide();saveDeviceSelection(wx,page.client,page.data.devices,'pc-a');page.onShow();await until(()=>page.controller.deviceId==='pc-a'&&page.controller.ready&&!page.controller.recovering);
-    assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.controller.current,null);await page.readThread('a');assert.equal(page.controller.draft.text,'A 未发的内容');assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
+    assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.controller.current.id,'a','返回同一台电脑可先恢复本机快照');await page.readThread('a');assert.equal(page.controller.draft.text,'A 未发的内容');assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
     assert.equal(Object.keys(storage).filter(key=>/thread|prompt|approval|history/.test(key)).length,0);assert.ok(maxPayload<1048576);
-  }finally{page.onUnload();}
+    const retainedController=page.controller, socketCount=pageSockets.length, bootstrapCount=calls.filter(call=>call.method==='lanpower/bootstrap').length;
+    page.onUnload();assert.equal(retainedController.ready,true,'返回设备首页卸载页面时仍保留短期 Cloud 会话');
+    page=makePage();page.onLoad({computer:'pc-a'});assert.equal(page.controller,retainedController);assert.equal(page.data.view,'chat');assert.equal(page.controller.current.id,'a');assert.equal(page.controller.canControl,false,'重新进入先确认完整状态');
+    page.onShow();await until(()=>page.controller.canControl&&page.data.deviceName==='开发电脑');
+    assert.equal(pageSockets.length,socketCount,'重新进入同一电脑复用原连接');assert.equal(calls.filter(call=>call.method==='lanpower/bootstrap').length,bootstrapCount);assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
+  }finally{page.onUnload();require('../mini_program/utils/codex/session-cache').discardRetainedSession();}
   console.log('小程序原生页面与传输：首次列表自动显示、返回后自动刷新、授权、回执、草稿、队列/引导/停止、单次审批、长内容、后台恢复及电脑隔离检查通过');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

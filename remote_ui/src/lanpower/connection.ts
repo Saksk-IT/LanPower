@@ -1,5 +1,6 @@
 import { RpcFragments } from './fragments'
 import { requestFrames } from './requestFrames'
+import { createUuid } from './uuid'
 export type RpcEvent = { id?: string | number; method: string; params?: any }
 type Pending = { method?: string; resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; cleanup?: () => void }
 
@@ -109,7 +110,7 @@ export class RemoteConnection {
   request<T = any>(method: string, params: any = {}, signal?: AbortSignal): Promise<T> {
     if (signal?.aborted) return Promise.reject(new DOMException('已取消读取。', 'AbortError'))
     if (this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new RemoteError('not_sent', '连接尚未就绪。'))
-    const id = crypto.randomUUID()
+    const id = createUuid()
     const data = JSON.stringify({ type: 'rpc', payload: { id, method, params } })
     const socket = this.socket
     return new Promise((resolve, reject) => {

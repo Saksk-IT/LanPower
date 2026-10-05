@@ -143,5 +143,5 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-files/* --clobber
           else
-            gh release create "$RELEASE_TAG" release-files/* --verify-tag --title "LanPower $RELEASE_TAG" --notes-file docs/release-notes.md
+            gh release create "$RELEASE_TAG" release-files/* --verify-tag --title "CodexDock $RELEASE_TAG" --notes-file docs/release-notes.md
           fi

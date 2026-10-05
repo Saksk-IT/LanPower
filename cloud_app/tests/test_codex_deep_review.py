@@ -33,6 +33,9 @@ def test_validation_rejection_is_correlated_and_does_not_touch_another_page(remo
 
 def test_targeted_history_and_metadata_methods_keep_strict_fields():
     def check(method, params): return validate_request({"id": "rpc", "method": method, "params": params})
+    assert check("lanpower/status", {"fast": True}) == "lanpower/status"
+    assert check("lanpower/bootstrap", {"threadId": "chat", "archived": False, "limit": 50}) == "lanpower/bootstrap"
+    with pytest.raises(ProtocolError): check("lanpower/status", {"fast": "true"})
     assert check("lanpower/history/action", {"threadId": "chat", "turnId": "turn-1", "expectedTailTurnId": "turn-180", "action": "fork"})
     assert check("lanpower/library/list", {"query": "项目", "archived": False, "refresh": True, "limit": 50})
     assert check("lanpower/library/check", {"threadIds": ["chat-150"], "archived": False})

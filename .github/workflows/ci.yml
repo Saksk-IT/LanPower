@@ -80,6 +80,14 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+      - name: Install Codex Web test dependencies
+        working-directory: remote_ui
+        run: npm ci
+      - name: Codex Web unit tests and type checks
+        working-directory: remote_ui
+        run: |
+          npm test
+          npx vue-tsc --noEmit
       - name: Cloud relay tests
         run: python -m unittest discover -s cloud_remote/tests -v
       - name: Install Cloud Web dependencies
@@ -108,6 +116,8 @@ jobs:
         run: node tests/test_mini_program_codex.js
       - name: Mini program Codex state and native features
         run: node --test tests/test_mini_program_codex_state.js
+      - name: Codex shell cache privacy and retained session tests
+        run: node --test tests/test_codex_shell_cache.js
       - name: Mini program Codex multi-page transport
         run: node tests/test_mini_program_codex_multi_page.js
       - name: Cloud live status UI tests

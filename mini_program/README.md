@@ -2,7 +2,9 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-当前小程序版本 **3.6.13**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.13.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+当前小程序版本 **3.6.14**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.14.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+
+`3.6.14` 在 Cloud/公网路径先复用设备范围内的摘要外壳，再通过 `lanpower/bootstrap` 补读首屏聊天；完整状态、队列、模型和目录在后台恢复。短暂返回首页或卸载页面会在应用内存保留 Codex 连接 60 秒，再进入时复用；超时、切换身份/电脑或授权失效才释放。存储缓存不保存正文、附件、凭据或授权信息；局域网直连时序保持原样。详见 [首屏与重复进入性能](../docs/codex-remote-loading-performance.md)。
 
 小程序 `3.6.12` 将紧凑输入区的单行文字向上微调约 2px，同时保持输入框中心、加号、上下文圆圈和模型仪表盘对齐。配套 Windows / Cloud / Web 为 `1.24.7`。见 [输入区与会话状态](../docs/codex-mini-composer-status.md)。
 
@@ -14,7 +16,7 @@
 
 `3.6.5` 支持开发版本机 HTTP 账号登录，测试地址与统一账号输入框均提示 `http://电脑局域网IP:8080`，保存测试地址时同步账号登录地址，Codex 自动使用 WS。本机导入包带有重新生成的最小开发设置，关闭开发者工具的 URL 校验，不复制用户原私有配置或真实 AppID。手机预览仍需开启调试，无需安装本机证书。详见 [局域网联调](../docs/local-lan-access.md)。
 
-在仓库根目录运行 `python scripts/package-mini-program-local.py` 可重新生成本机 HTTP 导入包。导入后在「我的」页底部确认版本 `3.6.13`；开发版统一账号地址应显示 HTTP 提示。
+在仓库根目录运行 `python scripts/package-mini-program-local.py` 可重新生成本机 HTTP 导入包。导入后在「我的」页底部确认版本 `3.6.14`；开发版统一账号地址应显示 HTTP 提示。
 
 `3.6.6` 的搜索与命令共同使用原生 Codex 活动组，地球图标、单行网页摘要和内部滚动列表替代独立搜索卡片。按搜索开始/完成事件更新状态，历史缺少单项状态时不套用整轮运行状态；完整详情保留。同时修复聊天容器超出屏幕而遮挡正文两侧的问题，长路径、代码、列表与表格在阅读宽度内换行。见 [网页搜索与阅读宽度](../docs/codex-web-search-ui.md)。
 

@@ -13,7 +13,7 @@ public static class CodexRemoteProtocol
     public const string WebSocketProtocol = "lanpower.codex.v1";
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["lanpower/status"] = [], ["lanpower/session/release"] = ["threadId"], ["model/list"] = ["cursor", "limit"],
+        ["lanpower/status"] = ["fast"], ["lanpower/bootstrap"] = ["threadId", "archived", "limit"], ["lanpower/session/release"] = ["threadId"], ["model/list"] = ["cursor", "limit"],
         ["lanpower/permissions/set"] = ["threadId", "permissionMode"],
         ["lanpower/chat/start"] = ["model"], ["skills/list"] = ["cwd", "cursor", "limit", "refresh"], ["lanpower/automations/list"] = [],
         ["lanpower/files/list"] = ["cwd", "path", "cursor"], ["lanpower/files/read"] = ["cwd", "path"],
@@ -143,7 +143,7 @@ public static class CodexRemoteProtocol
         if (method == "thread/rollback" && (args["numTurns"] is not JsonValue turns ||
             !turns.TryGetValue<int>(out var turnCount) || turnCount is < 1 or > 100000))
             throw new InvalidDataException("invalid_params");
-        foreach (var name in new[] { "includeTurns", "archived", "refresh" })
+        foreach (var name in new[] { "includeTurns", "archived", "refresh", "fast" })
             if (args.ContainsKey(name) && (args[name] is not JsonValue value || !value.TryGetValue<bool>(out _)))
                 throw new InvalidDataException("invalid_params");
         if (method is "turn/start" or "turn/steer" or "thread/queue/add" or "thread/queue/update")

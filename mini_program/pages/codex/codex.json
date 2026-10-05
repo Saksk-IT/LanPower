@@ -1,7 +1,7 @@
 {
-  "navigationStyle": "custom",
   "navigationBarBackgroundColor": "@codexBackground",
   "navigationBarTextStyle": "@codexTextStyle",
   "backgroundColor": "@codexBackground",
-  "disableScroll": true
+  "disableScroll": true,
+  "navigationStyle": "custom"
 }

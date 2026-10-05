@@ -17,7 +17,7 @@ from cloud_app.app.auth import current_session
 
 MAX_FRAME = 1024 * 1024
 FIELDS = {
-    "lanpower/status": set(),
+    "lanpower/status": {"fast"}, "lanpower/bootstrap": {"threadId", "archived", "limit"},
     "lanpower/chat/start": {"model"}, "skills/list": {"cwd", "cursor", "limit", "refresh"}, "lanpower/automations/list": set(),
     "lanpower/files/list": {"cwd", "path", "cursor"}, "lanpower/files/read": {"cwd", "path"},
     "lanpower/files/search": {"cwd", "query"},
@@ -161,6 +161,7 @@ def validate_request(payload: dict) -> str:
     if method in {"skills/list", "plugin/list"} and params.get("limit", 24) > 24:
         raise ProtocolError()
     if "historyLimit" in params and (type(params["historyLimit"]) is not int or not 1 <= params["historyLimit"] <= 8): raise ProtocolError()
+    if "fast" in params and type(params["fast"]) is not bool: raise ProtocolError()
     if "submissionId" in params and (not isinstance(params["submissionId"], str) or not 1 <= len(params["submissionId"]) <= 100): raise ProtocolError()
     if method == "lanpower/submission/read" and not {"threadId", "submissionId"} <= params.keys(): raise ProtocolError()
     if method == "lanpower/history/item/read" and (not isinstance(params.get("threadId"), str) or not isinstance(params.get("reference"), str) or not 1 <= len(params["reference"]) <= 100 or type(params.get("offset")) is not int or not 0 <= params["offset"]): raise ProtocolError()

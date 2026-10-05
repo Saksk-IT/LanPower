@@ -2,7 +2,9 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.24.8`，小程序为 `3.6.13`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
+Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.24.9`，小程序为 `3.6.14`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
+
+Windows Host `1.24.9` 在原生 Runtime 初始化后立即进入可连接状态，项目发现和完整聊天目录转入后台预热，并提供 `lanpower/bootstrap` 的快速首屏数据。读操作仍遵守原窗口快照、授权范围和只读历史规则；本轮不改变 LAN Direct 的时序。详见 [首屏与重复进入性能](../docs/codex-remote-loading-performance.md)。
 
 ## 更新与兼容记录
 

@@ -1,6 +1,6 @@
 # 构建与发布
 
-当前公开整套发布仍为 `v1.6.1`；未发布源码版本为 Windows / Cloud `1.8.0`、小程序 `2.0.6`、Wake Gateway `2.1.2`。本轮仅更新本机 Docker 和 Windows 应用，不同步远程仓库；各硬件场景的实机边界仍以验收文档为准。
+本次同步与整套发布采用 `v1.24.9`：Windows / Cloud / Web `1.24.9`、小程序 `3.6.14`、Wake Gateway `2.1.2`。源码同步到 `main`，同版本标签触发 CI、Windows 与小程序资源、Gateway 和 GHCR 镜像发布。远程云服务器部署与微信真机、5G 和硬件场景仍按人工验收安排执行。
 
 2026-10-01：将此前本地累积更新整理为公开发布，更新组件版本、README、发布说明和资源清单。推送 `main` 触发 CI；推送版本标签触发验证、Release 与 GHCR 发布。
 
@@ -14,7 +14,7 @@ python scripts/validate-public-files.py
 
 检查 Git 暂存区的私有路径、AppID、私钥、常见凭据、真实网卡地址，检查主分支提交邮箱使用 GitHub noreply 地址，以及网关配置示例和旧小程序 WOL 默认值。公开示例只使用脚本中规定的演示 MAC、地址和 Cloud URL，凭据保留 `REPLACE_` 占位符。CI 也执行该检查；本地运行配置、设备凭据、恢复码和含环境信息的原稿由 `.gitignore` 排除。此检查不能替代对源码和提交记录的个人信息审查。
 
-MAC 检查匹配完整地址，避免把较长 SVG 坐标串中的片段误判为网卡地址。公开文件检查的 5 项回归覆盖私有路径、凭据脱敏、演示地址、SVG 坐标和暂存区内容，确保工作区覆盖文件不能隐藏已经暂存的私密内容。
+MAC 检查匹配完整地址，避免把较长 SVG 坐标串中的片段误判为网卡地址。公开内容与网页资源的 11 项回归覆盖私有路径、凭据脱敏、演示地址、SVG 坐标、暂存区内容和构建资源完整性，确保工作区覆盖文件不能隐藏已经暂存的私密内容。
 
 ## 本地生成产物
 
@@ -37,7 +37,7 @@ Windows 构建环境需要 .NET 10 SDK、Go 1.27.1 和 Inno Setup 6。在仓库�
 
 产品版本以根目录 `VERSION` 为准，必须与 Windows 程序版本、Cloud 包版本及运行时版本一致。小程序和网关保持独立组件版本，协议仍为 2（网关兼容协议 1）。构建前提交公开改动，小程序包通过 `git archive HEAD mini_program` 生成；本地忽略的预览配置不会进入包。
 
-便携包使用固定文件白名单：服务、桌面组件、用户 Codex Host、安装脚本（含 `install-diagnostics.ps1`）、打开入口及说明，共 23 个文件。包内 `FILES.sha256` 校验 18 个安装组件；外部 `SHA256SUMS.txt` 校验整个 ZIP。包内不含 Codex CLI、Codex Home、登录文件、运行时配置、设备凭据、配对码、数据库、日志或调试符号。`AGENTS.md`、`auth.json`、`tokens.json`、`codex-remote.json` 和 `.codex/` 同时由公开文件检查排除。安装脚本使用 UTF-8 BOM，支持 Windows PowerShell 5.1。
+便携包使用固定文件白名单：服务、桌面组件、用户 Codex Host、备用 CodexServer、安装脚本（含 `install-diagnostics.ps1` 与 `codex-startup.ps1`）、打开入口及说明，共 25 个文件。包内 `FILES.sha256` 校验 20 个安装组件；外部 `SHA256SUMS.txt` 校验整个 ZIP。包内不含 Codex CLI、Codex Home、登录文件、运行时配置、设备凭据、配对码、数据库、日志或调试符号。`AGENTS.md`、`auth.json`、`tokens.json`、`codex-remote.json` 和 `.codex/` 同时由公开文件检查排除。安装脚本使用 UTF-8 BOM，支持 Windows PowerShell 5.1。
 
 安装便携包时，先解压再运行 `Install.cmd`，安装完成后用 `Open.cmd` 打开桌面端。安装会将程序复制到受保护的 `Program Files\LanPower`，服务不会从普通用户可修改的解压目录运行。已有 Setup 安装建议继续用同类安装器升级；配置保留在 `ProgramData\LanPower`。包内哈希不能证明下载来源，应同时核对正式发布页提供的整个文件校验值。
 
@@ -60,7 +60,7 @@ dotnet run --project windows/LanPower.Tests -c Release -- "$env:TEMP/LanPower-po
 
 - 手动运行默认只构建和保存工作流产物，不上传 Release 或 GHCR。
 - 发布仅在版本标签触发，或手动选择版本标签并明确开启 `publish` 时执行。
-- 发布标签必须与根目录 `VERSION`、Windows 和 Cloud 版本一致；当前源码的候选标签为 `v1.21.1`，尚未创建或推送。分支和错误版本会被拒绝。
+- 发布标签必须与根目录 `VERSION`、Windows 和 Cloud 版本一致；当前源码对应 `v1.24.9`。分支和错误版本会被拒绝。
 - Windows 文件和 Cloud 镜像均构建、验证成功后，才进入上传步骤。Cloud 镜像保存为 `ghcr.io/<仓库所有者小写>/lanpower-cloud:<产品版本>` 和 `sha-<源码提交>`，不覆盖 `latest`。
 - Release 只上传五个明确列出的文件；说明来自 `docs/release-notes.md`。已有相同版本 Release 时更新对应附件。
 

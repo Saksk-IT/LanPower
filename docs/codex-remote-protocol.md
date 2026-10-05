@@ -1,6 +1,6 @@
 # Codex Remote Relay 协议 v1
 
-适用于 CodexDock Windows / Cloud / Web 1.21.0 与小程序 3.2.0。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
+适用于 CodexDock Windows / Cloud / Web 1.24.9 与小程序 3.6.14，首屏接口对旧 Host 保留分步读取回退。Relay 子协议保持 v1，电源与设备协议继续为 v2；这条开发链路不写入现有电源命令队列，也不改变 LAN / Gateway 行为。额度、上下文和能力状态规则见 [原生状态说明](codex-native-status.md)。
 
 ## 认证与连接
 
@@ -15,7 +15,7 @@
 
 网页和小程序可以同时连接同一电脑，手机不需要 Cookie 或 Origin。旧手机的空权限列表只兼容既有电源操作，不赋予 Codex；新增/修改授权时勾选 `codex`，同时保留读取状态所需的 `status`。修改权限需要所属账户的浏览器 CSRF 表单，不轮换手机凭据。权限关闭或授权撤销在连接复核时生效。
 
-小程序沿用 CloudClient 的长期凭据续期，在短期访问凭据到期前重新连接；切后台关闭 SocketTask，前台重新读取状态、历史及待审批。退避 1–30 秒，旧连接回调按代次隔离；任务和决定均不自动重发。正文不进入手机本地存储，富文本仅生成固定节点，不解释 HTML。
+小程序沿用 CloudClient 的长期凭据续期，在短期访问凭据到期前重新连接；切后台或页面卸载后在应用内存短暂保留连接 60 秒，同一账号/Cloud/电脑重建页面时复用，超时或切换身份后释放。前台重新读取状态、历史及待审批，完整状态确认前不开放控制。退避 1–30 秒，旧连接回调按代次隔离；任务和决定均不自动重发。正文不进入手机本地存储，富文本仅生成固定节点，不解释 HTML。
 
 ## 外层消息
 
@@ -53,6 +53,8 @@
 | 方法 | 允许参数 |
 |---|---|
 | `lanpower/status` | 无；Host 返回项目/聊天目录、登录布尔值、活动 Thread/Turn、最近 Diff、待审批、实际控制能力、`capabilityPaging` 及 `library` |
+| `lanpower/status`（快速） | `fast`；只返回首屏所需的项目、缓存偏好、活动摘要和能力标记，不在该请求中刷新账号、审批或完整目录；完整状态随后补读 |
+| `lanpower/bootstrap` | `threadId`, `archived`, `limit`；一次返回快速状态、第一页模型、协作模式、第一页聊天目录，可附带选中 Thread 的只读内容 |
 | `lanpower/session/release` | `threadId`；只释放本地授权范围内的闲置远程会话 |
 | `lanpower/chat/start` | `model`；仅自动发现与共享控制启用时，在当前用户 Documents/Codex 下新建独立聊天 |
 | `lanpower/library/update` | `revision`, `preferences`；电脑端收纳状态的版本检查与原子更新 |
@@ -93,6 +95,12 @@
 | `lanpower/history/item/read` | `threadId`, `reference`（1–100 字符）, `offset`（非负 UTF-16 字符偏移）；读取本机会话绑定的临时引用 |
 
 请求必须是 `{id, method, params}`。ID 为 1–100 字符字符串或 JavaScript 安全整数；limit 为 1–50。input 为非空列表：`{type:"text",text}`、`{type:"image",url:"data:image/...;base64,..."}`（png/jpeg/webp/gif）及 `{type:"skill",name,path}`。不设文字长度、图片大小/数量、技能大小/数量上限，不压缩、不裁剪；拒绝无效 Unicode 与无效图片格式。共享/原窗口发送技能前，Host 验证其与当前授权会话原生目录中的启用项相符。Cloud、Service 和 Host 分别检查方法/参数；Host 校验实际 Thread cwd，过滤列表中的未授权项目。`initialize/initialized` 与 `account/read` 由 Host 内部调用，账户结果仅返回登录布尔值；不能由浏览器直通。
+
+### 1.24.9 首屏 bootstrap 与后台目录预热
+
+`lanpower/bootstrap` 是 Cloud 路径的首屏聚合读取接口，不创建、恢复或订阅会话。Host 返回的 `status.fast:true` 只代表快速快照，`loggedIn:false` 不代表已登出；客户端必须等待后续完整 `lanpower/status` 确认账号和控制能力。`threadId` 存在时，附带的 `thread` 仍遵守只读历史、项目授权和原生快照规则。
+
+Host 在 `runtime_ready` 后后台发现项目并建立活跃/归档目录。目录第一页可以带 `stale:true, refreshing:true`，客户端应继续展示已有外壳或缓存，并在刷新完成后重读；目录未准备好时不能用空页覆盖旧列表。查询和归档筛选仍通过同一授权范围，缓存只保存摘要与组织元数据。
 
 Cloud 已识别有效 RPC 编号后的方法/参数校验失败，返回关联响应 `{id,error:{code:-32602,message:"<固定类别>",data:{notSent:true}}}`，不进入路由与电脑派发。客户端立即显示未发送并保留草稿；帧结构或编号本身无效仍使用外层错误。断线、超时和已派发请求继续沿用回执查询，不推断未执行。
 

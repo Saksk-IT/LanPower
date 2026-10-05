@@ -15,6 +15,8 @@ const {fileTarget, documentPages} = require('../../utils/codex/document');
 const {homePreferences, homeLibrary, quotaSummary} = require('../../utils/codex/home');
 const {DEFAULT_NAVIGATION, navigationLayout} = require('../../utils/codex/navigation-layout');
 const {selectedDevice, saveDeviceSelection} = require('../../utils/device-selection');
+const {readShellSnapshot, writeShellSnapshot} = require('../../utils/codex/shell-cache');
+const {retainSession, takeRetainedSession} = require('../../utils/codex/session-cache');
 const {openPage, returnToDevice} = require('../../utils/navigation');
 const HOME_KEY = 'lanpower_codex_home';
 const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2';
@@ -60,22 +62,36 @@ Page({
     this.applyTheme(); this.paint();
   },
   installClient(client) {
-    if (this.controller) this.controller.dispose(); if (this.images) this.images.clear(); if (this.client) this.client.close();
-    this.client = client; this.imagePaths.clear(); this.deviceLoading = false; this.themeKey = storageKey(wx, THEME_KEY); this.inputKey = storageKey(wx, INPUT_KEY);
+    if (this.controller) this.persistShell(); if (this.remoteSession) this.remoteSession.dispose();
+    this.client = client; this.shellScope = storageKey(wx, 'lanpower_codex_shell_v1') + ':' + encodeURIComponent(client && client.session && client.session.url || '') + ':' + encodeURIComponent(client && client.session && client.session.client_id || 'anon'); this.imagePaths.clear(); this.deviceLoading = false; this.themeKey = storageKey(wx, THEME_KEY); this.inputKey = storageKey(wx, INPUT_KEY);
     const input = wx.getStorageSync(this.inputKey) || {}; this.themeMode = wx.getStorageSync(this.themeKey) || 'system';
     this.setData({authorized: !!client, devices: [], devicesLoaded: false, deviceLoading: false, deviceUnavailable: false, deviceId: '', deviceName: '选择开发电脑', view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', prompt: '', messages: [], draftImages: [], draftSkills: [], draftFiles: [],
       themeMode: ['light', 'dark', 'system'].includes(this.themeMode) ? this.themeMode : 'system', sendMode: input.mode === 'steer' ? 'steer' : 'queue', sendWithEnter: !!input.enter});
     this.loadHomePreferences();
-    this.connection = new CodexConnection({wxApi: wx, cloud: client, state: state => { this.controller.onState(state); if (state !== 'runtime_ready') { this.images.clear(); this.imagePaths.clear(); } }, event: event => this.controller.onEvent(event)});
-    this.controller = new CodexController(this.connection, () => this.schedulePaint()); this.images = new ImageCache(wx, this.connection);
+    const preferred = this.targetDevice || (client && selectedDevice(wx, client)) || '';
+    let session = takeRetainedSession(this.shellScope + ':computer:' + preferred);
+    if (session && client) { session.client.session = client.session; client.close(); this.client = session.client; session.controller.statusFresh = false; }
+    else {
+      session = {client};
+      session.connection = new CodexConnection({wxApi: wx, cloud: client,
+        state: state => { session.controller.onState(state); if (state !== 'runtime_ready') { session.images.clear(); if (session.owner) session.owner.imagePaths.clear(); } },
+        event: event => session.controller.onEvent(event)});
+      session.controller = new CodexController(session.connection, () => { if (session.owner) session.owner.schedulePaint(); });
+      session.images = new ImageCache(wx, session.connection);
+      session.dispose = () => { session.owner = null; session.controller.dispose(); session.images.clear(); if (session.client) session.client.close(); };
+    }
+    this.remoteSession = session; session.owner = this;
+    this.connection = session.connection; this.controller = session.controller; this.images = session.images;
+    if (this.controller.threadId) this.setData({view: 'chat', deviceId: this.controller.deviceId});
   },
   onShow() {
     this.updateNavigation();
-    this.visible = true; this.clearTimers();
+    this.visible = true; this.clearTimers(); clearTimeout(this.suspendTimer); this.suspendTimer = null;
     const latest = CloudClient.load(wx);
     if (!latest || !this.client || latest.storageKey !== this.client.storageKey || latest.session.client_id !== this.client.session.client_id || latest.session.refresh_token !== this.client.session.refresh_token) { this.preferredDevice = ''; this.installClient(latest); this.applyTheme(); }
     else this.client.session = latest.session;
     if (this.client) void this.loadDevices();
+    if (this.controller && this.controller.ready) { void this.controller.refreshCurrent(); void this.controller.refreshStatus(); void this.controller.loadThreads(); void this.controller.queryReceipt(); }
     this.poll = setInterval(() => { if (!this.visible || !this.controller.ready) return; void this.controller.refreshCurrent(); void this.controller.refreshStatus(); void this.controller.loadThreads(); void this.controller.queryReceipt(); void this.loadDevices(false); }, 30000);
     this.clockTimer = setInterval(() => { if (this.visible && this.controller.activeTurn) this.setData({elapsed: this.controller.duration()}); }, 1000);
     this.paint();
@@ -84,12 +100,28 @@ Page({
   onResize() { this.updateNavigation(); },
   clearTimers() {
     clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer);
+    clearTimeout(this.shellSaveTimer);
     this.paintTimer = null;
     clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer);
   },
-  onHide() { this.visible = false; this.deviceListRun = (this.deviceListRun || 0) + 1; this.deviceLoading = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false, deviceLoading: false}); this.paint(); },
-  onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },
-  schedulePaint() { if (this.unloaded) return; if (this.chatUpdating) { this.chatPaintPending = true; return; } if (this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
+  persistShell() { if (this.shellScope && this.controller && this.controller.deviceId) writeShellSnapshot(wx, this.shellScope, this.controller.shellSnapshot()); },
+  onHide(force = false) {
+    this.visible = false; this.deviceListRun = (this.deviceListRun || 0) + 1; this.deviceLoading = false; this.clearTimers(); clearTimeout(this.suspendTimer);
+    this.persistShell();
+    const suspend = () => { if (this.visible || this.unloaded) return; this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.suspendTimer = null; };
+    if (force) suspend(); else this.suspendTimer = setTimeout(suspend, 60000);
+    this.setData({keyboardHeight: 0, sheet: '', homeMenu: false, deviceLoading: false}); this.paint();
+  },
+  onUnload() {
+    this.visible = false; this.unloaded = true; this.clearTimers(); clearTimeout(this.suspendTimer); this.persistShell();
+    const session = this.remoteSession; session.owner = null;
+    if (this.client && this.controller.deviceId && !['revoked', 'forbidden', 'reauthorize', 'update_required'].includes(this.controller.state))
+      retainSession(this.shellScope + ':computer:' + this.controller.deviceId, session);
+    else session.dispose();
+    if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged);
+    this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []});
+  },
+  schedulePaint() { if (this.unloaded) return; clearTimeout(this.shellSaveTimer); this.shellSaveTimer = setTimeout(() => this.persistShell(), 1000); if (this.chatUpdating) { this.chatPaintPending = true; return; } if (this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
   applyChatData(patch) {
     if (!Object.keys(patch).length) return Promise.resolve();
     if (typeof wx === 'undefined' || !wx.createSelectorQuery) { this.setData(patch); return Promise.resolve(); }
@@ -138,7 +170,7 @@ Page({
       ...contextIndicator(usage, this.data.theme),
       changes: {...changes, files: changes.files.slice(this.changeOffset, this.changeOffset + 40).map((file, index) => ({path: file.path, kind: file.kind, added: file.added, removed: file.removed, index: this.changeOffset + index}))}, changesPages, changesPage: this.changeOffset / 40 + 1,
       settingsHint: Object.keys(c.threadSettings.overrides).length ? '已选择下次新任务参数；排队和引导沿用当前任务。' : '', taskState: c.liveLabel(), elapsed: c.duration(), plan: c.overlay.plan,
-      syncLabel: c.recovering || c.loadingThread ? '正在恢复原窗口状态' : !c.ready ? '显示历史缓存' : c.syncFailed ? '同步未完成 · 显示缓存' : c.lastSync ? '最近同步 ' + new Date(c.lastSync).toLocaleTimeString('zh-CN', {hour12: false}) : '',
+      syncLabel: c.recovering || c.loadingThread ? '正在恢复原窗口状态' : c.shellStale ? '先显示列表快照 · 正在同步' : !c.ready ? '显示历史缓存' : c.syncFailed ? '同步未完成 · 显示缓存' : c.lastSync ? '最近同步 ' + new Date(c.lastSync).toLocaleTimeString('zh-CN', {hour12: false}) : '',
       controlHint: c.threadArchived ? '已归档，恢复后可继续' : c.canControl ? c.desktopControl ? '原 Codex 窗口' : c.sharedControl ? '备用共享窗口' : '本机 Codex' : c.current && c.current.control === 'desktop' && !c.sharedControl ? '桌面占用 · 只读' : '',
       receiptState: receipt && receipt.state || '', receiptLabel: receipt ? {sending: '正在等待电脑回执', accepted: '原窗口已接受', failed: '发送失败，输入已恢复', uncertain: '发送结果待确认，请先查询回执'}[receipt.state] : '', queryingReceipt: c.queryingReceipt,
       queue, approvals, approval, responding: c.responding, sheet};
@@ -207,7 +239,7 @@ Page({
     finally { if (client === this.client && run === this.deviceListRun) { this.deviceLoading = false; this.setData({deviceLoading: false}); } }
   },
   showDevice(device) { this.setData({deviceId: device.device_id, deviceName: device.name, deviceIndex: Math.max(0, this.data.devices.findIndex(row => row.device_id === device.device_id)), wakeAvailable: device.state === 'offline' && device.wake_available, powerText: ({online: 'Windows 在线', offline: 'Windows 离线', transitioning: '正在执行电源操作'})[device.state] || '电脑状态未知'}); },
-  chooseDevice(device) { if (device && this.targetDevice && device.device_id !== this.targetDevice) return; this.detailText = ''; this.detailIndex = 0; this.images.clear(); this.imagePaths.clear(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.controller.chooseDevice(device ? device.device_id : ''); this.setData({view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', detailText: '', approval: null, keyboardHeight: 0, deviceId: device ? device.device_id : '', deviceName: device ? device.name : '设备不可用', wakeAvailable: false}); saveDeviceSelection(wx, this.client, this.data.devices, device && device.device_id); this.loadHomePreferences(); if (device) this.showDevice(device); this.paint(); },
+  chooseDevice(device) { if (device && this.targetDevice && device.device_id !== this.targetDevice) return; this.persistShell(); this.detailText = ''; this.detailIndex = 0; this.images.clear(); this.imagePaths.clear(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.controller.chooseDevice(device ? device.device_id : ''); const snapshot = device && readShellSnapshot(wx, this.shellScope, device.device_id); if (snapshot) this.controller.hydrateShell(snapshot); this.setData({view: snapshot && snapshot.threadId ? 'chat' : 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', detailText: '', approval: null, keyboardHeight: 0, deviceId: device ? device.device_id : '', deviceName: device ? device.name : '设备不可用', wakeAvailable: false}); saveDeviceSelection(wx, this.client, this.data.devices, device && device.device_id); this.loadHomePreferences(); if (device) this.showDevice(device); this.paint(); },
   selectDevice(event) { this.chooseDevice(this.data.devices[Number(event.detail.value)]); },
   reconnect() { if (this.controller.deviceId) this.connection.connect(this.controller.deviceId); },
   async wake() { if (!this.client || this.data.waking || !this.data.wakeAvailable) return; const client = this.client, id = this.controller.deviceId; if (!await modal({title: '唤醒开发电脑', content: `尝试唤醒“${this.data.deviceName}”，电脑上线且 Windows 用户登录后才能继续 Codex。`}) || client !== this.client || id !== this.controller.deviceId || !this.visible || this.data.waking || !this.data.wakeAvailable) return; this.setData({waking: true}); try { await client.call(`/api/v2/devices/${encodeURIComponent(id)}/commands`, 'POST', {action: 'wake'}); if (client === this.client && id === this.controller.deviceId) this.controller.notify('唤醒请求已发送，电脑登录后会自动连接。'); } catch (error) { this.controller.notify(error.message); } finally { this.setData({waking: false}); } },

@@ -13,7 +13,7 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 ## 开始使用 Codex Remote
 
-1. 安装当前源码构建的 [Windows 应用](windows/README.md)，并启动自己的 [Cloud](cloud_app/README.md)。公开旧版安装包尚不包含当前 Codex Remote 功能。
+1. 从 [v1.24.9 发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.24.9) 下载 [Windows 应用](windows/README.md)，并启动自己的 [Cloud](cloud_app/README.md)。发布资源包括安装器、便携包、小程序公开源码包、ARM64 Gateway 与 SHA-256 清单。
 2. 在 Windows「远程连接」填写 Cloud 地址并登录账号，电脑自动加入账号。在当前 Windows 用户下打开并登录 Codex，启用 Codex Remote 并保存项目授权。
 3. 点击「连接原 Codex 窗口」，在 Cloud 的「Codex Remote」选择同一电脑和聊天。若本机连接接口尚未开启，按应用提示手动开启。
 4. 在小程序「我的 / 连接与设置」登录同一 Cloud 的同一账号，直接显示电脑并进入 Codex。已有 Passkey 用户先在网页「设置 → 统一账号」设置密码；原扫码方式继续兼容。
@@ -38,9 +38,11 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.24.8` |
-| 微信小程序 | `3.6.13` |
+| Windows 应用 / 安装器、Cloud、Web | `1.24.9` |
+| 微信小程序 | `3.6.14` |
 | Wake Gateway（配套组件） | `2.1.2` |
+
+`1.24.9` / 小程序 `3.6.14` 分层优化 Cloud 和公网 Codex Remote 的首屏、重复进入和浏览器刷新：Host 先返回可用 Runtime，网页/小程序先显示安全的摘要外壳，再后台补齐完整状态、模型、队列与聊天目录；小程序短暂返回首页会复用连接。保留本机与局域网 IP 网页入口，并修复 HTTP IP 的浏览器兼容问题。局域网直连路径本轮保持原时序，便于与电脑端 Codex 对照。详见 [首屏与重复进入性能](docs/codex-remote-loading-performance.md)。
 
 小程序 `3.6.12` 将紧凑输入区的单行文字向上微调约 2px，同时保持输入框中心、加号、上下文圆圈和模型仪表盘对齐。配套 Windows / Cloud / Web 为 `1.24.7`。见 [输入区与会话状态](docs/codex-mini-composer-status.md)。
 
@@ -70,9 +72,9 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 小程序 `3.5.0` 底部只保留 **我的设备 / 我的**。默认显示已连接设备，点击进入设备详情，执行电源操作或进入该设备的 **Codex 控制**；授权、连接设置和帮助集中在“我的”。详情和控制页固定对应点击的设备，设备被移除时停止控制并提示返回列表。Windows / Cloud / Web 同步版本为 `1.23.1`。路径与使用流程见 [小程序页面结构](docs/mini-program-navigation.md)。
 
-小程序 `3.4.3` 修复用户图片缩略图、圆环模型与强度滑动、向下展开和滚动自动加载；工作记录分项折叠，文件改动采用透明背景的悬浮气泡，移除底部模型文字。配套 Windows / Cloud / Web 为 `1.22.4`。说明与编译预览见 [会话阅读修复](docs/codex-mini-conversation-fixes.md)。
-
 小程序 `3.4.2` 移除 Codex 首页、会话页重复的「Codex Remote」导航标题。菜单、搜索、返回和聊天操作直接置于顶部，按状态栏和微信胶囊位置避让；长标题截断，浅深色、键盘与弹出菜单继续适配。导入包及检查范围见 [顶部导航](docs/codex-mini-navigation.md)。
+
+小程序 `3.4.3` 修复用户图片缩略图、圆环模型与强度滑动、向下展开和滚动自动加载；工作记录分项折叠，文件改动采用透明背景的悬浮气泡，移除底部模型文字。配套 Windows / Cloud / Web 为 `1.22.4`。说明与编译预览见 [会话阅读修复](docs/codex-mini-conversation-fixes.md)。
 
 Windows / Cloud `1.22.1` 修复启动、休眠恢复和网络中断后偶发需要重新配对：续期支持安全重试，访问凭据过期时自动续期，保留原设备身份与授权。完整修复需两端同时更新；原因、兼容与验证见 [自动恢复连接](docs/windows-cloud-recovery.md)。
 
@@ -180,7 +182,7 @@ CodexDock 的主要用途是远程使用 Windows 电脑上的 Codex，电源管�
 
 ## 快速开始
 
-开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.7-dev.1`。
+开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.9-dev.1`。
 
 1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。

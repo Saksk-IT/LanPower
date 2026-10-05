@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-Windows / Cloud / Web `1.24.2`，小程序 `3.6.7`，本机镜像 `codexdock-cloud:1.24.2-dev.1`。本机与局域网入口已改为 HTTP / WS，局域网配置 `1.1.0`。使用原 `lanpower-dev` 项目与数据卷，账号、设备身份和授权继续保留。
+Windows / Cloud / Web `1.24.9`，小程序 `3.6.14`，本机镜像 `codexdock-cloud:1.24.9-dev.1`。本机与局域网入口使用 HTTP / WS，局域网配置 `1.1.0`。使用原 `lanpower-dev` 项目与数据卷，账号、设备身份和授权继续保留。
 
 ```powershell
 ./deploy/docker/start-dev.ps1
@@ -12,6 +12,20 @@ Invoke-RestMethod http://localhost:8080/healthz
 Windows 更新至 `1.24.0` 后，管理员运行 `./deploy/docker/switch-windows-dev-http.ps1`，只迁移本机旧 HTTPS 8443 连接到 HTTP 8080。脚本先用原授权验证目标 Cloud，再备份加密凭据并保存新地址；设备编号和长期授权保留。电脑新登录直接填写 `http://localhost:8080`。详细手机、扫码与防火墙步骤见 [局域网访问指南](local-lan-access.md)。
 
 登录密码继续使用 `deploy/docker/private/dev-login.txt`，哈希仍在 `.env.dev`；已存在文件不改写密码。每次启动通过 SQLite backup API 备份并校验原数据库，不删除数据或证书卷。`LANPOWER_ALLOW_LOCAL_HTTP=true` 仅在本机开发 Compose 中启用，HTTP 来源限制为明确配置的 localhost、回环与私有 IPv4；网页保留来源、CSRF、HttpOnly 和 SameSite 校验。
+
+## 首屏、重复进入与刷新 1.24.9 / 3.6.14（2026-10-06）
+
+Codex Remote 采用 Host 后台预热、一次 bootstrap、安全摘要缓存和当前聊天优先读取。网页刷新先恢复摘要，小程序返回首页卸载后在应用内存保留同一电脑连接 60 秒；完整状态确认后才开放控制。只读历史与任务回执继续使用真实原窗口接口，详细边界见 [加载性能说明](codex-remote-loading-performance.md)。原有小程序 Markdown 文件链接与文档预览保留。
+
+修复本轮部署漏带局域网覆盖配置造成 IP 端口拒绝连接的问题，沿用已保存的 `deploy/docker/private/dev-network.env` 和 `compose.dev.lan.yml`；localhost 与原局域网 IP 的 8080 监听、允许来源、原防火墙范围均保留。另修复 HTTP IP 页面不提供 `crypto.randomUUID` 而无法发送 Codex 请求的问题。今后本机更新必须同时检查 localhost 和已登记 IP 的页面、健康接口与登录；仅用户明确要求仅本机访问时使用 `-LocalOnly`。
+
+本机 Cloud / Caddy 健康，两个入口均返回 `1.24.9`。SQLite backup API 升级前后完整性均为 `ok`、外键错误 0，24 张有主键表的原有标识保留，原数据卷和私有配置沿用。运行源码固定挂载本轮快照，未覆盖生产数据库。
+
+Windows 在原安装目录就地更新为 `1.24.9.0`，安装器退出码 0，Service、Desktop、Host 和版本化备用服务四组件与构建哈希一致；两份稳定配置文件、原设备身份、长期授权和官方 Codex 进程保留，Service 运行并通过实际浏览器连接原窗口。安装包为 `windows/out/CodexDockSetup-1.24.9-x64.exe`；小程序导入包为 `windows/out/CodexDock-mini-program-3.6.14.zip`，使用占位 AppID 与最小本机 URL 校验设置。
+
+Web 类型检查与 101 项单元测试、Windows 145 项、Cloud 远程中继 55 项与版本兼容 9 项、小程序状态 36 项、缓存 3 项及文档预览 3 项检查通过。原生页面回归包含返回首页后的卸载与重新创建，验证连接和控制器复用、没有重复 bootstrap 或任务写入；WCC/WCSC 编译布局覆盖 320/390/430px。真实浏览器分别通过局域网 IP 和 localhost 登录、15 条聊天目录、打开聊天与手动刷新后恢复，脚本资源哈希一致，浏览器与 RPC 错误均为 0；只执行读取，没有发送任务或 `thread/resume`。检查、快照和备份位于忽略目录 `private/codex-loading-1.24.9`。
+
+本轮未优化 LAN Direct，未推送仓库或部署远程服务器；微信真机、5G、公网延迟和实际交互速度仍需人工验收。
 
 ## 原生网页搜索与正文宽度 1.24.1 / 3.6.6（2026-10-06）
 

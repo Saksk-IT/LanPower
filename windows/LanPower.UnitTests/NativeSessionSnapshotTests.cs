@@ -9,6 +9,26 @@ namespace LanPower.UnitTests;
 public class NativeSessionSnapshotTests
 {
     [TestMethod]
+    public void CatalogMetadataDoesNotParseColdHistoryOrExposeCachedBodies()
+    {
+        WithSession((id, file, root) =>
+        {
+            Append(file, "turn_context", new() { ["turn_id"] = "turn", ["model"] = "fixture" });
+            Append(file, "event_msg", new() { ["type"] = "task_started", ["turn_id"] = "turn" });
+            Append(file, "event_msg", new() { ["type"] = "user_message", ["message"] = "private body" });
+            Assert.IsNull(NativeSessionSnapshot.Read(id, file, root, cachedMetadataOnly: true));
+            Assert.IsNotNull(NativeSessionSnapshot.Read(id, file, root)!["turns"]);
+            var metadata = NativeSessionSnapshot.Read(id, file, root, cachedMetadataOnly: true)!;
+            Assert.AreEqual("fixture", metadata["settings"]!["model"]!.GetValue<string>());
+            Assert.IsNull(metadata["turns"]); Assert.DoesNotContain("private body", metadata.ToJsonString());
+            Assert.IsNull(NativeSessionSnapshot.Read(id, file, Path.GetTempPath(), cachedMetadataOnly: true));
+            Append(file, "event_msg", new() { ["type"] = "task_complete", ["turn_id"] = "turn" });
+            Assert.IsNull(NativeSessionSnapshot.Read(id, file, root, cachedMetadataOnly: true));
+            Assert.AreEqual("idle", NativeSessionSnapshot.Read(id, file, root)!["live"]!["state"]!.GetValue<string>());
+        });
+    }
+
+    [TestMethod]
     public void LiveDesktopProgressSurvivesHistoricalInterruptAndUpdatesWithoutResume()
     {
         WithSession((id,file,root) =>

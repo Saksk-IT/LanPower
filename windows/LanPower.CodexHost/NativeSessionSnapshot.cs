@@ -10,9 +10,9 @@ public static class NativeSessionSnapshot
 {
     private const int TailBytes = 4 * 1024 * 1024;
     private const int LineBytes = 1024 * 1024;
-    private static readonly Dictionary<string, (long Length, DateTime Write, JsonObject Value)> Cache = new();
+    private static readonly Dictionary<string, (long Length, DateTime Write, string Workspace, JsonObject Value)> Cache = new();
 
-    public static JsonObject? Read(string id, string? path, string cwd)
+    public static JsonObject? Read(string id, string? path, string cwd, bool cachedMetadataOnly = false)
     {
         if (!Guid.TryParse(id, out _)) return null;
         try
@@ -23,13 +23,18 @@ public static class NativeSessionSnapshot
             if (path is null || !SafePath(path, root, id)) return null;
             var info = new FileInfo(path);
             lock (Cache)
-                if (Cache.TryGetValue(path, out var cached) && cached.Length == info.Length && cached.Write == info.LastWriteTimeUtc)
+                if (Cache.TryGetValue(path, out var cached) && cached.Length == info.Length && cached.Write == info.LastWriteTimeUtc &&
+                    cached.Workspace.Equals(CodexHostSettings.Canonical(cwd), StringComparison.OrdinalIgnoreCase))
                 {
-                    var copy = (JsonObject)cached.Value.DeepClone();
-                    if (copy["turns"]?.AsArray().LastOrDefault()?["status"]?.GetValue<string>() == "inProgress")
+                    var copy = cachedMetadataOnly ? new JsonObject { ["live"] = cached.Value["live"]?.DeepClone(),
+                        ["settings"] = cached.Value["settings"]?.DeepClone() } : (JsonObject)cached.Value.DeepClone();
+                    if (cached.Value["turns"]?.AsArray().LastOrDefault()?["status"]?.GetValue<string>() == "inProgress")
                         copy["live"]!["state"] = CodexProjects.DesktopOwns(id) ? "running" : "unknown";
                     return copy;
                 }
+            // A catalog row needs metadata, not a cold parse of each chat's history. The selected
+            // chat still takes the full read-only path below and populates the cache naturally.
+            if (cachedMetadataOnly) return null;
             using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             using (var header = new StreamReader(file, Encoding.UTF8, false, 4096, true))
             {
@@ -150,7 +155,7 @@ public static class NativeSessionSnapshot
             {
                 if (Cache.Count >= 32) Cache.Remove(Cache.Keys.First());
                 // Ownership is dynamic even when the file is unchanged, so cache only parsed history.
-                Cache[path] = (info.Length, info.LastWriteTimeUtc, (JsonObject)snapshot.DeepClone());
+                Cache[path] = (info.Length, info.LastWriteTimeUtc, CodexHostSettings.Canonical(cwd), (JsonObject)snapshot.DeepClone());
             }
             return snapshot;
         }
