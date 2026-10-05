@@ -4,6 +4,7 @@ const {diffSummary} = require('../codex-format');
 const {webSearchView} = require('./web-search');
 const {fileChangeSummary, fileChangeView} = require('./file-changes');
 const {parseUserEnvelope, attachmentSourceKey, mergeAttachmentImages} = require('./user-content');
+const {markdownBlocks, markdownLinks} = require('./document');
 const isRunning = status => ['inProgress', 'in_progress', 'running'].includes(status);
 function activitySummary(members) {
   // Match remote_ui/src/lanpower/conversationPresentation.ts, including single commands.
@@ -138,8 +139,13 @@ function conversationWindow(rows, offset = null, imageView = () => '', limit = 3
       files: (row.activityType === 'file' && !row.expanded ? [] : row.files || []).map((file, index) => ({path: file.path, label: file.label || file.path, kind: file.kind || '',
         kindLabel: file.kindLabel || '', movedToPath: file.movedToPath || '', added: file.added || 0, removed: file.removed || 0, index})),
       fileListHeight: row.activityType === 'file' ? Math.min(320, (row.files || []).length * 36) : 0,
-      links: ['assistant', 'user'].includes(row.kind) ? Array.from(String(row.text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]})) : []};
-    if (row.kind === 'assistant' || ['reasoning', 'plan'].includes(row.kind) && row.expanded) value.nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
+      links: [], blocks: []};
+    if (row.kind === 'assistant' || row.kind === 'user' || ['reasoning', 'plan'].includes(row.kind) && row.expanded) {
+      const nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
+      if (['assistant', 'user'].includes(row.kind)) value.links = markdownLinks(nodes);
+      if (row.kind === 'assistant' && value.links.length) value.blocks = markdownBlocks(nodes);
+      else if (row.kind !== 'user') value.nodes = nodes;
+    }
     const size = utf8Length(JSON.stringify(value)); if (bytes + size > 380000) break;
     bytes += size; selected.push(value);
   }

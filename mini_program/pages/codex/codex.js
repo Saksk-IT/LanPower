@@ -11,6 +11,7 @@ const {permissionOptions, permissionLabels, permissionMode} = require('../../uti
 const {ImageCache} = require('../../utils/codex/resources');
 const {capabilityStatus} = require('../../utils/codex/native-status');
 const {projectName} = require('../../utils/codex-format');
+const {fileTarget, documentPages} = require('../../utils/codex/document');
 const {homePreferences, homeLibrary, quotaSummary} = require('../../utils/codex/home');
 const {DEFAULT_NAVIGATION, navigationLayout} = require('../../utils/codex/navigation-layout');
 const {selectedDevice, saveDeviceSelection} = require('../../utils/device-selection');
@@ -45,7 +46,7 @@ Page({
     catalogKind: 'skill', catalogQuery: '', catalogRows: [], catalogLoading: false, catalogError: '', catalogHasMore: false, catalogCwdIndex: 0, catalogPage: 1, catalogHasPrevious: false,
     quotaRows: [], quotaLoading: false, quotaReason: '连接电脑后读取原生额度。', contextText: '', contextReason: '尚未收到原生用量通知。',
     fileState: {files: [], cwd: '', directory: '.', cursor: '', selected: null, breadcrumbs: []}, fileHasPrevious: false, fileHasNext: false,
-    detailTitle: '', detailText: '', detailPage: 1, detailPages: 1, detailKind: '', sendWithEnter: false, wakeAvailable: false, powerText: '', waking: false},
+    detailTitle: '', detailText: '', detailBlocks: [], detailPage: 1, detailPages: 1, detailKind: '', sendWithEnter: false, wakeAvailable: false, powerText: '', waking: false},
   onLoad(options = {}) {
     this.updateNavigation();
     this.visible = false; this.unloaded = false; this.follow = true; this.imagePaths = new Map(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; this.recentOffset = 0; this.catalogLimit = 30; this.fileOffset = 0;
@@ -424,7 +425,7 @@ Page({
     this.showDetail('命令详情', [state, row.cwd ? `工作目录：${row.cwd}` : '', typeof row.exitCode === 'number' ? `退出码：${row.exitCode}` : '',
       `\n命令\n${row.command || '命令内容不可用'}`, `\n输出\n${row.text || (state === '正在运行' ? '等待命令输出…' : '没有命令输出')}`].filter(Boolean).join('\n'), 'code');
   },
-  showDetail(title, text, kind = '') { this.detailText = String(text || ''); this.detailIndex = 0; this.setData({sheet: 'detail', detailTitle: title, detailKind: kind}); this.paintDetail(); },
+  showDetail(title, text, kind = '') { this.detailText = String(text || ''); this.detailDocumentPages = []; this.detailIndex = 0; this.setData({sheet: 'detail', detailTitle: title, detailKind: kind, detailBlocks: []}); this.paintDetail(); },
   paintDetail() {
     if (this.data.detailKind === 'diff') {
       const pages = Math.max(1, this.diffPages.length); this.detailIndex = Math.max(0, Math.min(this.detailIndex, pages - 1));
@@ -432,12 +433,31 @@ Page({
     }
     const pages = Math.max(1, Math.ceil(this.detailText.length / 6000)); this.detailIndex = Math.max(0, Math.min(this.detailIndex, pages - 1)); let start = this.detailIndex * 6000, end = (this.detailIndex + 1) * 6000; if (/[\uDC00-\uDFFF]/.test(this.detailText[start] || '')) start--; if (/[\uDC00-\uDFFF]/.test(this.detailText[end] || '')) end--; this.setData({detailText: this.detailText.slice(start, end), detailDiffLines: [], detailPage: this.detailIndex + 1, detailPages: pages});
   },
-  detailPage(event) { this.detailIndex += Number(dataOf(event).direction); this.paintDetail(); },
+  detailPage(event) { this.detailIndex += Number(dataOf(event).direction); if (this.data.detailKind === 'document') this.paintDocumentDetail(); else this.paintDetail(); },
+  paintDocumentDetail() { const pages = this.detailDocumentPages || []; this.detailIndex = Math.max(0, Math.min(this.detailIndex, Math.max(0, pages.length - 1))); const page = pages[this.detailIndex] || {content: '', blocks: []}; this.setData({detailText: page.content || '', detailBlocks: page.blocks || [], detailPage: this.detailIndex + 1, detailPages: Math.max(1, pages.length)}); },
   copyDetail() { this.copyText(this.detailText); },
   copyRow(event) { const row = this.controller.rows.find(value => value.key === dataOf(event).key); if (row) this.copyText(row.text); },
   copy() { const row = this.controller.rows.filter(value => value.kind === 'assistant').pop(); if (row) this.copyText(row.text); this.closeSheet(); },
   copyText(text) { if (wx.setClipboardData) wx.setClipboardData({data: String(text || ''), success: () => this.controller.notify('已复制。'), fail: () => this.controller.notify('复制未完成，可以在完整内容中分段选取。')}); },
-  openLink(event) { const target = dataOf(event).target; if (/^(https?:|codex:)/i.test(target)) this.copyText(target); else this.openFiles({currentTarget: {dataset: {path: target.replace(/:\d+(?::\d+)?$/, '')}}}); },
+  async openLink(event) {
+    const {target, base} = dataOf(event), link = fileTarget(target, base);
+    if (!link) return this.controller.notify('链接格式无效。');
+    if (link.external) return this.copyText(link.target);
+    const c = this.controller, cwd = c.current && c.current.cwd;
+    if (!cwd || !c.ready) return c.notify('请先连接电脑并选择项目。');
+    if (!/\.(?:md|markdown|mdown)$/i.test(link.target)) return this.openFiles({currentTarget: {dataset: {path: link.target}}});
+    const token = c.key + ':' + c.epoch + ':' + c.selection, run = this.documentOpenRun = (this.documentOpenRun || 0) + 1;
+    await c.resources.open(cwd, link.target);
+    if (run !== this.documentOpenRun || token !== c.key + ':' + c.epoch + ':' + c.selection || !this.visible) return;
+    const file = c.resources.state.selected;
+    if (!file) return c.notify(c.resources.state.error || '文件读取失败。');
+    const content = typeof file.content === 'string' ? file.content : '';
+    this.detailText = file.binary ? `此文件为二进制文件，无法在小程序内渲染。\n\n路径：${file.path}` : content;
+    this.detailDocumentPages = file.binary ? [{content: this.detailText, blocks: []}] : documentPages(content, /\.(?:md|markdown|mdown)$/i.test(file.path || link.target));
+    this.detailIndex = 0;
+    this.setData({sheet: 'detail', detailTitle: file.path || link.target, detailKind: 'document', detailBlocks: [], detailText: '', detailPage: 1, detailPages: this.detailDocumentPages.length});
+    this.paintDocumentDetail();
+  },
   imageLoadKey(key, index) { return this.controller.key + ':' + this.controller.epoch + ':' + key + ':' + index; },
   queueImagePreviews() {
     if (!this.visible || !this.images || !this.controller.ready || this.data.view !== 'chat') return;

@@ -1,3 +1,20 @@
+<template name="markdownParts">
+  <block wx:for="{{parts}}" wx:key="index">
+    <button wx:if="{{item.kind === 'link'}}" class="cr-inline-link" data-target="{{item.target}}" data-base="{{base}}" bindtap="openLink">{{item.text}}</button>
+    <text wx:else class="cr-markdown-inline cr-markdown-{{item.kind}}" selectable="true">{{item.text}}</text>
+  </block>
+</template>
+
+<template name="markdownBlocks">
+  <block wx:for="{{blocks}}" wx:key="index" wx:for-item="block">
+    <text wx:if="{{block.kind === 'code'}}" class="cr-document-code" selectable="true">{{block.text}}</text>
+    <view wx:elif="{{block.kind === 'rule'}}" class="cr-document-rule"></view>
+    <view wx:elif="{{block.kind === 'list'}}" class="cr-document-list"><view wx:for="{{block.rows}}" wx:key="index" wx:for-item="row" class="cr-document-list-row"><text class="cr-document-list-marker">{{row.marker}}</text><view class="cr-document-list-content"><template is="markdownParts" data="{{parts: row.parts, base: base}}"/></view></view></view>
+    <view wx:elif="{{block.kind === 'table'}}" class="cr-document-table"><view wx:for="{{block.rows}}" wx:key="index" wx:for-item="row" class="cr-document-table-row"><view wx:for="{{row.cells}}" wx:key="index" wx:for-item="cell" class="cr-document-table-cell {{cell.heading ? 'is-heading' : ''}}"><template is="markdownParts" data="{{parts: cell.parts, base: base}}"/></view></view></view>
+    <view wx:else class="cr-document-paragraph cr-document-{{block.kind}}"><template is="markdownParts" data="{{parts: block.parts, base: base}}"/></view>
+  </block>
+</template>
+
 <template name="conversationRow">
   <view wx:if="{{message.kind !== 'work' || message.visible}}" id="{{message.domId}}" class="cr-message cr-message-{{message.kind}} {{message.kind === 'user' && message.images.length ? 'cr-user-images' : ''}} {{message.kind === 'user' && (message.images.length || message.files.length) ? 'cr-user-attachments' : ''}} {{message.kind === 'user' && message.images.length === 1 ? 'cr-user-one-image' : ''}}">
         <view wx:if="{{message.kind === 'work' && message.turnId === activeTurnId && running && elapsed && !approvals.length && !interrupting && beginningIndex < 0}}" class="cr-work-elapsed"><text>已处理 {{elapsed}}</text></view>
@@ -39,13 +56,13 @@
             <view wx:if="{{message.files.length}}" class="cr-user-files"><button wx:for="{{message.files}}" wx:key="path" class="cr-user-file" data-path="{{item.path}}" aria-label="查看文件 {{item.label}}" bindtap="openFiles"><view class="cr-ui-icon cr-ui-file"></view><text>{{item.label}}</text></button></view>
             <text wx:if="{{message.text}}" class="cr-message-text" selectable="true">{{message.text}}</text>
           </view>
-          <rich-text wx:elif="{{message.kind === 'assistant'}}" class="cr-markdown" nodes="{{message.nodes}}" user-select="true"/>
+          <view wx:elif="{{message.kind === 'assistant'}}" class="cr-markdown"><template wx:if="{{message.blocks.length}}" is="markdownBlocks" data="{{blocks: message.blocks}}"/><rich-text wx:else nodes="{{message.nodes}}" user-select="true"/></view>
           <view wx:elif="{{message.kind === 'reasoning' || message.kind === 'plan'}}" class="cr-reasoning"><button class="cr-reasoning-toggle" data-key="{{message.key}}" data-turn="{{message.turnId}}" aria-expanded="{{message.expanded}}" catchtap="toggleRow" mark:activitykey="{{message.key}}" mark:activityaction="toggle" mark:activityturn="{{message.turnId}}"><view class="cr-native-icon {{message.kind === 'reasoning' ? 'cr-native-reasoning' : 'cr-native-file-diff'}}"></view><text class="cr-row-label">{{message.label}}</text><view class="cr-native-chevron {{message.expanded ? 'is-open' : ''}}"></view></button><rich-text wx:if="{{message.expanded}}" class="cr-reasoning-detail" nodes="{{message.nodes}}" user-select="true"/></view>
           <text wx:else class="cr-message-text" selectable="true">{{message.text}}</text>
           <view wx:if="{{message.kind !== 'user' && message.images.length}}" class="cr-inline-images"><button class="cr-image-toggle" data-key="{{message.key}}" aria-expanded="{{message.imagesExpanded}}" bindtap="toggleImageRow"><view class="cr-ui-icon cr-ui-photo"></view><text>图片 {{message.images.length}} 张图片</text><text class="cr-image-chevron">{{message.imagesExpanded ? '⌄' : '›'}}</text></button><view wx:if="{{message.imagesExpanded}}" class="cr-message-images cr-image-previews"><button wx:for="{{message.images}}" wx:key="key" wx:for-item="image" wx:for-index="imageIndex" class="cr-image-button" data-key="{{message.key}}" data-index="{{imageIndex}}" bindtap="viewImage"><image wx:if="{{image.src}}" src="{{image.src}}" mode="aspectFit"/><text wx:else>▧ {{image.label}}</text></button></view></view>
           <view wx:if="{{message.skills.length}}" class="cr-message-tags"><text wx:for="{{message.skills}}" wx:key="path" class="cr-tag">✧ {{item.name}}</text></view>
           <button wx:if="{{message.kind !== 'user' && (message.kind !== 'activity' || message.expanded)}}" wx:for="{{message.files}}" wx:key="path" class="cr-file-link" data-path="{{item.path}}" bindtap="openFiles">▤ {{item.label}}</button>
-          <view wx:if="{{(message.kind === 'assistant' || message.kind === 'user') && message.links.length}}" class="cr-message-tags"><button wx:for="{{message.links}}" wx:key="target" class="cr-text cr-link" data-target="{{item.target}}" bindtap="openLink">↗ {{item.label}}</button></view>
+          <view wx:if="{{message.kind === 'user' && message.links.length}}" class="cr-message-tags"><button wx:for="{{message.links}}" wx:key="target" class="cr-text cr-link" data-target="{{item.target}}" bindtap="openLink">↗ {{item.label}}</button></view>
           <button wx:if="{{message.hasMoreText && message.kind !== 'activity'}}" class="cr-text" data-key="{{message.key}}" bindtap="openDetail">查看完整内容</button>
           <view wx:if="{{message.showActions}}" class="cr-message-actions"><button class="cr-text" data-key="{{message.key}}" bindtap="copyRow">复制</button><button wx:if="{{canControl && !running && beginningIndex < 0}}" class="cr-text" data-action="fork" data-turn="{{message.turnId}}" bindtap="threadAction">分支</button><button wx:if="{{message.kind === 'user' && canControl && !running && beginningIndex < 0}}" class="cr-text" data-action="rollback" data-turn="{{message.turnId}}" bindtap="threadAction">回退</button></view>
         </block>
@@ -219,6 +236,7 @@
           </view>
           <text wx:if="{{!detailDiffLines.length}}" class="cr-feature-note">此文件未提供差异内容。</text>
         </block>
+        <block wx:elif="{{detailKind === 'document'}}"><view wx:if="{{detailBlocks.length}}" class="cr-document-detail"><template is="markdownBlocks" data="{{blocks: detailBlocks, base: detailTitle}}"/></view><text wx:else class="cr-detail-text" selectable="true">{{detailText}}</text></block>
         <text wx:else class="cr-detail-text {{detailKind === 'activity' || detailKind === 'code' ? 'cr-code' : ''}}" selectable="true">{{detailText}}</text>
       </scroll-view>
       <view wx:if="{{detailPages > 1}}" class="cr-pagination"><button class="cr-text" disabled="{{detailPage <= 1}}" data-direction="-1" bindtap="detailPage">上一页</button><text>{{detailPage}} / {{detailPages}}</text><button class="cr-text" disabled="{{detailPage >= detailPages}}" data-direction="1" bindtap="detailPage">下一页</button></view><button class="cr-primary" bindtap="copyDetail">复制完整内容</button>

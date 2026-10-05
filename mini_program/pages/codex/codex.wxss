@@ -118,6 +118,27 @@
 .cr-message-text,.cr-detail-text { display:block;white-space:pre-wrap;font-size:15px;line-height:1.75; }
 .cr-assistant-label { font-size:11px;font-weight:600;color:var(--cr-muted);margin:0 0 5px; }
 .cr-markdown { font-size:15px;line-height:1.75; }
+.cr-markdown-inline { display:inline;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere; }
+.cr-markdown-strong,.cr-document-heading { font-weight:600; }
+.cr-markdown-em { font-style:italic; }
+.cr-markdown-del { text-decoration:line-through; }
+.cr-markdown-code { font-family:monospace;background:rgba(128,128,128,.12);padding:1px 4px;border-radius:4px; }
+.codex-page button.cr-inline-link { display:inline;width:auto;min-height:0;padding:0;margin:0;border:0;border-radius:0;background:transparent;color:#1769d1;font-size:inherit;font-weight:400;line-height:inherit;text-align:left;text-decoration:underline;word-break:break-word;vertical-align:baseline; }
+.codex-page.cr-dark button.cr-inline-link { color:#73adff; }
+.cr-document-paragraph { display:block;min-height:8px;margin:4px 0;white-space:normal;word-break:break-word;overflow-wrap:anywhere; }
+.cr-document-heading { margin:12px 0 6px; }
+.cr-document-quote { border-left:3px solid var(--cr-line);padding-left:10px; }
+.cr-document-list { display:block;margin:8px 0;padding-left:4px; }
+.cr-document-list-row { display:flex;align-items:flex-start;margin:4px 0; }
+.cr-document-list-marker { width:24px;flex:0 0 24px; }
+.cr-document-list-content { flex:1;min-width:0; }
+.cr-document-code { display:block;margin:8px 0;padding:10px 12px;background:rgba(128,128,128,.1);border-radius:9px;font-family:monospace;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere; }
+.cr-document-rule { display:block;border-top:1px solid var(--cr-line);margin:12px 0; }
+.cr-document-table { display:block;width:100%;margin:10px 0;overflow-x:auto; }
+.cr-document-table-row { display:flex;min-width:100%; }
+.cr-document-table-cell { flex:1;min-width:0;padding:6px;border:1px solid var(--cr-line);word-break:break-word;overflow-wrap:anywhere; }
+.cr-document-table-cell.is-heading { font-weight:600; }
+.cr-document-detail { font-size:15px;line-height:1.75; }
 .cr-message-actions { display:flex;gap:4px;margin-top:5px; }.cr-message-actions .cr-text { font-size:10px;min-height:30px;padding:5px 8px; }
 .codex-page button.cr-work-row { width:100%;justify-content:space-between;padding:4px 0;min-height:28px;color:var(--cr-muted);font-size:11px; }
 .cr-message-work { margin-bottom:7px; }

@@ -20,13 +20,16 @@ function utf8Length(text) {
 }
 function textNode(text) { return {type: 'text', text}; }
 function inline(text) {
-  const nodes = [], pattern = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|\*([^*]+)\*|~~([^~]+)~~/g;
+  const nodes = [], pattern = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(((?:[^()]|\([^()]*\))*)\)|\*([^*]+)\*|~~([^~]+)~~/g;
   let offset = 0, match;
   while ((match = pattern.exec(text))) {
     if (match.index > offset) nodes.push(textNode(text.slice(offset, match.index)));
     if (match[1]) nodes.push({name: 'strong', children: [textNode(match[1])]});
     else if (match[2]) nodes.push({name: 'code', attrs: {style: 'background:rgba(128,128,128,.12);padding:2px 4px;border-radius:4px;white-space:normal;word-break:break-all;overflow-wrap:anywhere;'}, children: [textNode(match[2])]});
-    else if (match[3]) nodes.push(textNode(match[3] + ' (' + match[4] + ')'));
+    else if (match[3]) {
+      const target = require('./codex/document').linkTarget(match[4]);
+      nodes.push(target ? {name: 'span', link: {label: match[3], target: target.target}, children: [textNode(match[3])]} : textNode(match[3]));
+    }
     else if (match[5]) nodes.push({name: 'em', children: [textNode(match[5])]});
     else nodes.push({name: 'del', children: [textNode(match[6])]});
     offset = pattern.lastIndex;
@@ -34,7 +37,7 @@ function inline(text) {
   if (offset < text.length) nodes.push(textNode(text.slice(offset)));
   return nodes;
 }
-// Text nodes only: model output cannot insert HTML, images, scripts or active links.
+// Model output cannot insert HTML, images, scripts or active URLs. Native handlers open validated link data.
 function markdown(text) {
   const nodes = [], lines = String(text || '').split('\n');
   let code = null, list = null;
