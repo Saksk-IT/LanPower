@@ -1,8 +1,10 @@
 # CodexDock 微信小程序
 
-小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。连接页负责设备选择与授权，电脑电源控制和局域网旧版入口作为配套功能。当前小程序源码版本为 `3.3.0`，配套 Windows / Cloud / Web 为 `1.22.0`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
+小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。连接页负责设备选择与授权，电脑电源控制和局域网旧版入口作为配套功能。当前小程序源码版本为 `3.3.1`，配套 Windows / Cloud / Web 为 `1.22.1`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
 
 ## 更新与兼容记录
+
+小程序 `3.3.1` 增加开发版「测试连接」，扫码前可读取 Cloud 健康信息，并区分微信域名拦截、HTTPS 证书、网络权限和超时。手机拒绝 `localhost`、回环 IP 的测试地址和授权二维码，模拟器仍可使用；已有开发、正式授权与缓存保留。连接本机 Docker 的完整步骤见 [局域网小程序联调](../docs/local-lan-access.md#微信小程序连接本机-docker)。本机导入包为 `windows/out/CodexDock-mini-program-3.3.1.zip`。
 
 小程序 `3.3.0` 优化 Codex Remote 会话内容页：活动、公开思考摘要、工作状态和图片分别折叠，原生图片预览支持缩放与多图切换；固定输入栏、高级模型设置、智能强度、批准菜单、相机/照片/文件、聊天菜单、更改摘要和电脑文件选择对话框按 iOS 参考重新布局。批准状态来自电脑确认，沿用网页权限接口。导入包为 `windows/out/CodexDock-mini-program-3.3.0.zip`，说明与实现预览见 [会话页面](../docs/codex-mini-conversation.md)。
 

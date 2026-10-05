@@ -3,6 +3,7 @@ const {parsePairingLink} = require('../../utils/pairing');
 const {broadcastWake, makeMagicPacket} = require('../../utils/wol');
 const {VERSION} = require('../../utils/version');
 const {environment, developmentCloud, setDevelopmentCloud, storageKey} = require('../../utils/environment');
+const {testDevelopmentCloud} = require('../../utils/cloud-connectivity');
 
 const LOCAL_KEY = 'lanpower_device_lan_v2';
 const CACHE_KEY = 'lanpower_device_cache_v2';
@@ -24,7 +25,7 @@ Page({
     networkType: 'unknown', networkText: '检测网络', statusClass: 'idle', wakeHint: '先连接并选择电脑',
     canControl: false, canWake: false, busy: false, feedback: '', feedbackKind: 'info', wakeDirty: false,
     mac: '', broadcast: '255.255.255.255', version: VERSION,
-    environmentLabel: '正式版', development: false, developmentCloud: '', cloudUrlDraft: ''},
+    environmentLabel: '正式版', development: false, developmentCloud: '', cloudUrlDraft: '', testingCloud: false},
 
   onLoad(options = {}) {
     this.wakeDrafts = {};
@@ -42,13 +43,14 @@ Page({
     if (['home', 'connect', 'help'].includes(options.tab)) this.setData({activeTab: options.tab});
   },
   loadConnection() {
+    this.connectionTestSerial = (this.connectionTestSerial || 0) + 1;
     const current = environment(wx), url = developmentCloud(wx);
     this.lanStorageKey = storageKey(wx, LOCAL_KEY);
     this.cacheKey = storageKey(wx, CACHE_KEY);
     this.client = CloudClient.load(wx);
     this.local = wx.getStorageSync(this.lanStorageKey) || {};
     this.route = ''; this.wakeRoute = '';
-    this.setData({environmentLabel: current.label, development: current.development, developmentCloud: url, cloudUrlDraft: url,
+    this.setData({environmentLabel: current.label, development: current.development, developmentCloud: url, cloudUrlDraft: url, testingCloud: false,
       connected: !!this.client, cloudHost: this.client ? this.client.session.url.replace(/^https?:\/\//, '') : '',
       cloudStatusText: this.client ? '已保存授权' : '未授权', cloudState: 'idle', needsReauthorize: false,
       devices: [], selectedId: '', selectedIndex: 0, device: '选择一台电脑', devicesLoaded: false,
@@ -64,11 +66,29 @@ Page({
       this.syncPairing();
     }
   },
-  editCloudUrl(event) { this.setData({cloudUrlDraft: event.detail.value}); },
+  editCloudUrl(event) {
+    this.connectionTestSerial = (this.connectionTestSerial || 0) + 1;
+    this.setData({cloudUrlDraft: event.detail.value, testingCloud: false});
+  },
+  async testCloudConnection() {
+    if (!environment(wx).development || this.data.busy || this.data.updatingList || this.data.testingCloud) return;
+    const draft = this.data.cloudUrlDraft;
+    const serial = this.connectionTestSerial = (this.connectionTestSerial || 0) + 1;
+    this.setData({testingCloud: true});
+    try {
+      const result = await testDevelopmentCloud(wx, draft);
+      if (serial !== this.connectionTestSerial || !environment(wx).development) return;
+      this.notify(`已连接 Cloud ${result.version}。请保存 ${result.url}，并在同一地址的网页生成手机授权二维码。`, 'success');
+    } catch (error) {
+      if (serial === this.connectionTestSerial && environment(wx).development) this.notify(error.message, 'error');
+    } finally {
+      if (serial === this.connectionTestSerial) this.setData({testingCloud: false});
+    }
+  },
   saveDevelopmentCloud() { this.changeDevelopmentCloud(this.data.cloudUrlDraft); },
   clearDevelopmentCloud() { this.changeDevelopmentCloud(''); },
   changeDevelopmentCloud(value) {
-    if (!environment(wx).development || this.data.busy || this.data.updatingList) return;
+    if (!environment(wx).development || this.data.busy || this.data.updatingList || this.data.testingCloud) return;
     try {
       const previous = developmentCloud(wx), url = setDevelopmentCloud(wx, value);
       this.setData({developmentCloud: url, cloudUrlDraft: url});
@@ -90,10 +110,11 @@ Page({
     this.refresh(); this.timer = setInterval(() => this.refresh(), 5000);
   },
   onHide() {
+    this.connectionTestSerial = (this.connectionTestSerial || 0) + 1;
     this.visible = false; clearInterval(this.timer); this.serial = (this.serial || 0) + 1;
     this.refreshAgain = false;
     this.route = ''; this.wakeRoute = '';
-    this.setData({canControl: false, canWake: false});
+    this.setData({canControl: false, canWake: false, testingCloud: false});
   },
   onUnload() {
     this.onHide();

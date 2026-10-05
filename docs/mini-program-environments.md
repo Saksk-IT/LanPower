@@ -1,6 +1,6 @@
 # 微信小程序开发版与正式版
 
-小程序 `2.1.1` 使用同一份 `mini_program` 源码，根据微信返回的运行环境区分开发版、体验版和正式版，不需要手工改源码或复制两份项目。
+小程序 `3.3.1` 使用同一份 `mini_program` 源码，根据微信返回的运行环境区分开发版、体验版和正式版，不需要手工改源码或复制两份项目。
 
 | 微信运行环境 | Cloud 地址 | 手机授权、电脑缓存与局域网配对 |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ Cloud 地址只填写协议、主机与可选端口，例如 `https://localhost:
 
 手机的 `localhost` 指向手机自己。真机测试需要电脑与手机连接同一 Wi-Fi，并使用手机可达的电脑局域网地址或测试域名。
 
-当前默认 Docker 开发入口只绑定电脑回环地址 `127.0.0.1:8443`，因此不能直接把 `localhost` 改成电脑 IP。真机测试前需另外配置可从局域网访问的 Cloud 入口，同时让测试 Cloud 的 `LANPOWER_PUBLIC_URL` 与该访问地址一致，再重新生成授权二维码。保持原开发数据卷、身份与登录配置。正式服务器无需改动。
+当前 Docker 启动脚本默认保留 `127.0.0.1:8443`，并为选定物理网卡增加局域网 HTTPS 入口、IP 证书、浏览器来源白名单与限定网段的防火墙规则。在开发版连接页填写脚本输出的局域网 HTTPS 地址，先点「测试连接」；随后在**同一局域网地址的 Cloud 网页**重新生成授权二维码，不能扫描 `localhost` 网页生成的码。`LANPOWER_PUBLIC_URL` 保留原本机入口，局域网来源由 `LANPOWER_ADDITIONAL_ORIGINS` 明确配置；数据卷、身份与登录配置沿用。完整的手机证书、微信调试和网络检查见 [局域网访问指南](local-lan-access.md#微信小程序连接本机-docker)。
 
 当前 Cloud 平台要求 `LANPOWER_PUBLIC_URL` 使用 HTTPS。因此，本仓库 Cloud 的扫码测试请使用 HTTPS 入口；开发版对局域网 HTTP 的支持适用于已有对应 HTTP 授权二维码的测试服务，不能通过修改小程序地址让默认 Docker 入口自动变成 HTTP。
 
@@ -40,6 +40,7 @@ Cloud 地址只填写协议、主机与可选端口，例如 `https://localhost:
 
 ```text
 node tests/test_mini_program_environments.js
+node tests/test_mini_program_cloud_connectivity.js
 node tests/test_mini_program.js
 node tests/test_mini_program_v2.js
 node tests/test_mini_program_codex.js

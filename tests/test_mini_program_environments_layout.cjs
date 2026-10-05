@@ -12,7 +12,7 @@ const styles = ['app.wxss', ...routes.map(route => route + '.wxss')];
 for (const [index, file] of styles.entries()) {
   execFileSync(path.join(compiler, 'wcsc.exe'), ['-js', '-o', path.join(output, 'style-' + index + '.js'), file], {cwd: mini});
 }
-const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 'utils/cloud.js', 'utils/pairing.js',
+const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/pairing.js',
   'utils/wol.js', 'pages/cloud/cloud.js'].map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
 
 (async () => {
@@ -72,6 +72,7 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 
         model.onLoad({tab: 'connect'});
       }, {sources});
       assert.equal(await page.locator('.development-settings').count(), 1);
+      assert.equal(await page.locator('wx-button').filter({hasText: /^测试连接$/}).count(), 1);
       await page.locator('#development-cloud input').fill('https://localhost:8443');
       await page.locator('wx-button').filter({hasText: /^保存测试地址$/}).click();
       assert.equal(await page.evaluate(() => connectionPage.data.developmentCloud), 'https://localhost:8443');

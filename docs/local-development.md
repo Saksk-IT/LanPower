@@ -1,10 +1,10 @@
 # 本机 Docker 开发环境
 
-当前产品名称为 **CodexDock**，以 Codex Remote 远程开发与会话控制为主，电源管理和唤醒为配套能力。Windows / Cloud / Web `1.22.0`、小程序 `3.3.0`，本机镜像 `codexdock-cloud:1.22.0-dev.1`；名称与兼容标识见 [项目定位](project-identity.md)。历史功能与各轮真实验证见下方记录。
+当前产品名称为 **CodexDock**，以 Codex Remote 远程开发与会话控制为主，电源管理和唤醒为配套能力。Windows / Cloud / Web `1.22.1`、小程序 `3.3.1`，本机镜像 `codexdock-cloud:1.22.1-dev.1`；名称与兼容标识见 [项目定位](project-identity.md)。历史功能与各轮真实验证见下方记录。
 
 默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
 
-应用源码版本为 `1.22.0`，小程序 `3.3.0`，本地部署配置版本为 `1.22.0-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.22.1`，小程序 `3.3.1`，本地部署配置版本为 `1.22.1-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
 
 ## 本机 1.21.1 项目更名与定位（2026-10-05）
 

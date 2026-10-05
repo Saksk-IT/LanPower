@@ -1,6 +1,6 @@
 # CodexDock Windows 应用
 
-Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.22.0`，小程序为 `3.2.3`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
+Windows 应用连接当前用户的原 Codex 窗口，为网页和微信小程序提供远程开发、会话状态、审批与队列控制。用户 Host 负责 Codex 接入，后台 Service 负责 Cloud 中继；局域网电源接口与远程唤醒配置为配套能力。当前 Windows / Cloud / Web 源码版本为 `1.22.1`，小程序为 `3.3.1`。使用见 [Codex Remote 指南](../docs/codex-remote.md)，现有安装与数据路径见 [名称约定](../docs/project-identity.md)。
 
 ## 更新与兼容记录
 
@@ -32,7 +32,7 @@ Codex Remote 已解除单控制页面限制：多个网页和小程序可同时�
 
 ## Codex Remote
 
-Setup 和便携包包含用户 Host 及 `CodexServer/1.22.0/LanPower.CodexServer.exe`。保存远程授权后，优先点击「连接原 Codex 窗口」。若使用「打开备用共享窗口」，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 CodexDock Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
+Setup 和便携包包含用户 Host 及 `CodexServer/1.22.1/LanPower.CodexServer.exe`。保存远程授权后，优先点击「连接原 Codex 窗口」。若使用「打开备用共享窗口」，官方桌面和 Host 连接同一个经认证的本机服务。桌面使用独立界面配置目录，Codex Home 与登录保持当前用户的设置。共享服务只绑定回环地址，不增加 Windows 入站防火墙规则；版本化安装目录避免升级覆盖正在运行的共享服务，安装器关闭范围仅包含 CodexDock Service/Desktop/Host。未启用共享时兼容原独立会话与交还路径。
 
 本地授权保存在 `%LOCALAPPDATA%\LanPower\codex-remote.json`，不限制普通本机目录数量，拒绝 UNC、符号链接和目录联接。关闭授权立即断开远程访问；共享模式保留桌面任务，独立模式结束自有执行进程。共享凭据仅通过当前用户管道传递，私有目录仅允许当前用户及 SYSTEM 访问。浏览器断线不重发任务，重新连接读取活动编号、历史、队列与审批。完整步骤见 [Codex Remote](../docs/codex-remote.md)。
 

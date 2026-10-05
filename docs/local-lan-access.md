@@ -14,6 +14,22 @@ iPhone/iPad 安装证书描述文件后，还需在“设置 → 通用 → 关�
 
 原有 Passkey 仍绑定 `localhost`，请在本机原入口使用；局域网 IP 入口使用开发密码。其他设备的 `localhost` 指向设备自身，不能用它访问这台电脑。微信开发版可在“连接 → 开发版 Cloud 地址”填写局域网 HTTPS 地址；手机真机微信是否接受此开发证书，需要按微信开发环境要求单独验收。
 
+## 微信小程序连接本机 Docker
+
+小程序 `3.3.1` 的开发版连接页提供「测试连接」。这个操作只读取 Cloud `/healthz`，可以在扫码前检查手机是否能连接，不保存或切换授权，也不消耗授权二维码。
+
+开发者工具的模拟器使用电脑的网络与开发设置；手机使用自己的网络和证书校验。电脑能访问 `localhost` 或信任开发 CA，不代表手机或微信也可以。按以下顺序联调：
+
+1. 运行 `./deploy/docker/start-dev.ps1`，让电脑与手机位于同一局域网。手机填写脚本输出的 `https://<电脑局域网 IP>:8443`；手机不能填写 `localhost`、`127.0.0.1` 或 `::1`，这些地址指向手机自身。
+2. 在手机浏览器打开同一 HTTPS 地址。不能打开时，先检查 Wi-Fi、VPN、本地网络权限、路由器访客网络或客户端隔离，以及电脑是否仍使用脚本配置的 IP。开发 CA 的导入方法见上方；iOS 导入后还需开启完全信任。浏览器通过证书校验仍不代表微信一定接受该 CA。
+3. 使用微信开发版手机预览，在小程序右上角菜单打开调试，然后退出并重新进入。开发者工具「不校验合法域名、TLS 与 HTTPS 证书」的本地设置需要在手机上单独核查；该操作用于开发联调。正式版与体验版使用合法 HTTPS/WSS 域名和有效证书。
+4. 在「连接 → 开发版 Cloud 地址」填写局域网 HTTPS 地址，先点「测试连接」，再保存。检测区分域名拦截、TLS 证书、网络权限和超时；若微信仍拒绝开发 CA，请使用微信接受的有效证书与测试域名，不要改用 HTTP 绕过本项目的 HTTPS 授权要求。
+5. 在电脑浏览器也打开**相同的局域网 HTTPS 地址**并登录，在「已授权客户端」生成新的手机授权二维码。使用 `localhost` 网页生成的二维码携带 `localhost`，手机不能使用；只改手机输入框不能改写二维码。扫码成功后再进入 Codex 页面。
+
+开发版授权按 Cloud 地址隔离。由模拟器的 `localhost` 切换到局域网 IP 后，需要在该 IP 入口重新授权；原入口的开发授权与正式版授权保留。旧的 `localhost` 授权在手机上不会被发送到手机自身，仍可供模拟器使用。
+
+网络校验与调试行为见 [微信网络说明](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html) 和 [腾讯小程序网络说明](https://intl.cloud.tencent.com/zh/document/product/1219/61745#%E8%B7%B3%E8%BF%87%E5%9F%9F%E5%90%8D%E6%A0%A1%E9%AA%8C)。正式发布的项目配置继续开启域名校验。以上是联调步骤，微信真机连通、WSS 和扫码需在手机实际验证。
+
 ## 地址变化与关闭局域网入口
 
 多块物理网卡同时联网时，明确指定目标地址：
@@ -33,5 +49,7 @@ Windows PowerShell 5.1 启动、基础与局域网 Compose 配置、Caddy 配置
 本机实际通过正常证书校验访问两个 HTTPS 入口，并完成现有开发账号登录、四个授权页面访问和退出；直接 IP 访问的证书名称检查通过。从局域网路由器实际使用公开开发 CA 校验 HTTPS，健康接口返回 `1.15.2`。原登录文件、私有环境配置和开发 CA 逐字节保留，SQLite 完整性与外键检查通过，九张身份及配置表的主键与引用保留。手机浏览器及微信真机由用户继续验收。
 
 ## 实现参考
+
+小程序 `3.3.1` 的自动检查覆盖手机回环地址拦截、旧授权保留、无凭据的健康检测、微信网络错误分类，以及编辑地址、切到后台或切换环境后的迟到响应。连接页通过微信 WCC/WCSC 编译与 320/390/430px 布局检查；Cloud 来源与版本相关 25 项检查通过。这些检查不等同于手机真机网络、扫码、WSS 或电源动作验收。
 
 多个明确 HTTPS 站点及 IP 客户端的默认 TLS 名称按 [Caddy 配置说明](https://caddyserver.com/docs/caddyfile/concepts#addresses) 与 [default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni) 配置。端口只发布到选定宿主机地址，见 [Docker 端口发布说明](https://docs.docker.com/engine/network/port-publishing/)。Windows 规则使用明确的本机地址、远端网段和网卡范围，见 [New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)。

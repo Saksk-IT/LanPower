@@ -69,10 +69,12 @@
     <view wx:if="{{development}}" class="setting-card development-settings">
       <view class="setting-heading"><view class="setting-heading-copy"><view class="setting-title">开发版 Cloud 地址</view><view class="setting-copy">填写本机或测试服务器地址。开发版授权与正式版独立保存。</view></view><view class="setting-state warning-text">开发版</view></view>
       <label class="field-label" for="development-cloud">测试 Cloud 地址</label>
-      <input id="development-cloud" value="{{cloudUrlDraft}}" bindinput="editCloudUrl" placeholder="https://localhost:8443" maxlength="300" disabled="{{busy || updatingList}}" />
-      <view class="field-help">模拟器可使用 localhost；手机请使用电脑的局域网地址，并连接同一 Wi-Fi。</view>
-      <button class="outline-button compact-button" bindtap="saveDevelopmentCloud" disabled="{{busy || updatingList || !cloudUrlDraft}}">保存测试地址</button>
-      <button wx:if="{{developmentCloud}}" class="text-button centered-button" bindtap="clearDevelopmentCloud" disabled="{{busy || updatingList}}">清空地址，下次扫码选择</button>
+      <input id="development-cloud" value="{{cloudUrlDraft}}" bindinput="editCloudUrl" placeholder="https://电脑局域网IP:8443" maxlength="300" disabled="{{busy || updatingList || testingCloud}}" />
+      <view class="field-help">手机请填电脑的局域网 HTTPS 地址，并连接同一 Wi-Fi。模拟器可使用 localhost。</view>
+      <button class="outline-button compact-button" bindtap="testCloudConnection" loading="{{testingCloud}}" disabled="{{busy || updatingList || testingCloud || !cloudUrlDraft}}">测试连接</button>
+      <button class="outline-button compact-button" bindtap="saveDevelopmentCloud" disabled="{{busy || updatingList || testingCloud || !cloudUrlDraft}}">保存测试地址</button>
+      <button wx:if="{{developmentCloud}}" class="text-button centered-button" bindtap="clearDevelopmentCloud" disabled="{{busy || updatingList || testingCloud}}">清空地址，下次扫码选择</button>
+      <view class="setting-copy">手机预览须单独核查微信调试设置和证书。授权二维码也要在填写地址的网页生成。</view>
       <view class="setting-copy">保存后请扫描该测试 Cloud 生成的手机授权码。换地址会切换授权和电脑列表。</view>
     </view>
     <view class="setting-card">

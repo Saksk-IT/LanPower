@@ -19,6 +19,24 @@ function localHost(host) {
   return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
+function assertReachableCloud(url, wxApi) {
+  let platform = '';
+  for (const name of ['getDeviceInfo', 'getSystemInfoSync']) {
+    try {
+      if (typeof wxApi[name] === 'function') platform = String(wxApi[name]().platform || '').toLowerCase();
+    } catch (_) {}
+    if (platform) break;
+  }
+  if (!['ios', 'android', 'ohos', 'harmony'].includes(platform)) return;
+  const host = /^https?:\/\/([a-z0-9.-]+|\[::1\])(?::[0-9]+)?$/i.exec(url);
+  const hostname = host && host[1].toLowerCase();
+  if (hostname && (hostname === 'localhost' || hostname === '[::1]' || /^127\./.test(hostname))) {
+    const error = new Error('手机上的 localhost / 127.0.0.1 指向手机自己。请填写电脑的局域网 HTTPS 地址，并在该地址的网页生成授权二维码。');
+    error.code = 'CLOUD_LOOPBACK';
+    throw error;
+  }
+}
+
 function cloudOrigin(value, wxApi) {
   const match = /^(https?):\/\/([a-z0-9.-]+|\[::1\])(?::([0-9]{1,5}))?$/i.exec(value || '');
   if (!match || (match[3] && (+match[3] < 1 || +match[3] > 65535))) throw new Error('Cloud 地址无效，请只填写协议、主机和端口');
@@ -45,6 +63,7 @@ function setDevelopmentCloud(wxApi, value) {
   if (!environment(wxApi).development) throw new Error('只有开发版可以修改测试 Cloud 地址');
   const input = String(value || '').trim();
   const url = input ? cloudOrigin(input.replace(/\/+$/, ''), wxApi) : '';
+  if (url) assertReachableCloud(url, wxApi);
   if (url) wxApi.setStorageSync(DEVELOPMENT_CLOUD_KEY, url);
   else wxApi.removeStorageSync(DEVELOPMENT_CLOUD_KEY);
   return url;
@@ -56,4 +75,5 @@ function storageKey(wxApi, key, url) {
   return name === 'trial' ? key + ':trial' : key;
 }
 
-module.exports = {environment, cloudOrigin, developmentCloud, setDevelopmentCloud, storageKey, DEVELOPMENT_CLOUD_KEY};
+module.exports = {environment, cloudOrigin, developmentCloud, setDevelopmentCloud, storageKey, localHost,
+  assertReachableCloud, DEVELOPMENT_CLOUD_KEY};

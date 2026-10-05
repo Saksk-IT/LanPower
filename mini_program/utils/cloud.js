@@ -1,6 +1,7 @@
 const CLIENT_KEY = 'lanpower_client_v2';
 const {VERSION, PROTOCOL_VERSION} = require('./version');
-const {cloudOrigin, environment, developmentCloud, setDevelopmentCloud, storageKey} = require('./environment');
+const {cloudOrigin, environment, developmentCloud, setDevelopmentCloud, storageKey, assertReachableCloud} = require('./environment');
+const {cloudConnectionError} = require('./cloud-connectivity');
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 
@@ -15,7 +16,9 @@ function parseCloudPairing(value, wxApi) {
   if (parts.length !== 2 || !/^[A-Za-z0-9_-]{43}$/.test(parts[1])) {
     throw new Error('请扫描 Cloud 的“已授权客户端”页面生成的二维码');
   }
-  return {url: cloudOrigin(parts[0], wxApi), code: parts[1]};
+  const url = cloudOrigin(parts[0], wxApi);
+  assertReachableCloud(url, wxApi);
+  return {url, code: parts[1]};
 }
 
 function validTokens(data) {
@@ -29,9 +32,12 @@ function savedSession(url, data) {
 }
 
 function request(wxApi, url, method, data, token) {
-  return new Promise((resolve, reject) => wxApi.request({url, method, data, timeout: 10000,
+  return new Promise((resolve, reject) => {
+    assertReachableCloud(url.replace(/^(https?:\/\/[^/]+).*$/, '$1'), wxApi);
+    wxApi.request({url, method, data, timeout: 10000,
     header: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})},
-    success: resolve, fail: () => reject(new Error('连接失败，请检查网络和 Cloud 地址'))}));
+    success: resolve, fail: reason => reject(cloudConnectionError(wxApi, url, reason))});
+  });
 }
 
 class CloudClient {
@@ -63,6 +69,7 @@ class CloudClient {
 
   static async enroll(wxApi, pairing) {
     const url = cloudOrigin(pairing.url, wxApi);
+    assertReachableCloud(url, wxApi);
     if (!/^[A-Za-z0-9_-]{43}$/.test(pairing.code || '')) throw new Error('Cloud 授权码无效，请重新扫码');
     const target = developmentCloud(wxApi);
     if (target && target !== url) throw new Error('授权码与测试 Cloud 地址不同，请在该测试 Cloud 生成授权二维码');

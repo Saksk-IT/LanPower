@@ -8,7 +8,7 @@ const output = path.join(root, 'private/mini-codex-3.0'); fs.mkdirSync(output, {
 for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pages/codex/codex.wxml']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'app-wxss.js'), 'app.wxss']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'codex-wxss.js'), 'pages/codex/codex.wxss']]]) execFileSync(path.join(compiler, file), args, {cwd: mini});
-const modules = ['utils/version.js', 'utils/environment.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'utils/codex-fragments.js', 'pages/codex/codex.js', ...fs.readdirSync(path.join(mini, 'utils/codex')).filter(file => file.endsWith('.js')).map(file => 'utils/codex/' + file)];
+const modules = ['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'utils/codex-fragments.js', 'pages/codex/codex.js', ...fs.readdirSync(path.join(mini, 'utils/codex')).filter(file => file.endsWith('.js')).map(file => 'utils/codex/' + file)];
 const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
 
 (async () => {
