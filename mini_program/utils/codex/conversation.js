@@ -3,16 +3,14 @@ const {timestamp} = require('./model');
 const {diffSummary} = require('../codex-format');
 const isRunning = status => ['inProgress', 'in_progress', 'running'].includes(status);
 function activitySummary(members) {
-  const counts = {command: 0, read: 0, list: 0, search: 0, file: 0, tool: 0};
-  for (const member of members) counts[member.action || 'tool']++;
-  const parts = [];
-  if (counts.read) parts.push(`已读取 ${counts.read} 个文件`);
-  if (counts.list) parts.push(`已列出 ${counts.list} 个目录`);
-  if (counts.search) parts.push(`已执行 ${counts.search} 次搜索`);
-  if (counts.file) parts.push(`已修改 ${counts.file} 组文件`);
-  if (counts.command) parts.push(`已运行 ${counts.command} 条命令`);
-  if (counts.tool) parts.push(`已调用 ${counts.tool} 个工具`);
-  return parts.join('，');
+  // Match remote_ui/src/lanpower/conversationPresentation.ts, including single commands.
+  const commands = members.filter(member => member.activityType === 'command');
+  const hasFiles = members.some(member => member.activityType === 'file');
+  const running = commands.some(member => isRunning(member.status));
+  const failed = commands.some(member => member.status === 'failed' || member.status === 'completed' && typeof member.exitCode === 'number' && member.exitCode !== 0);
+  const stopped = commands.some(member => ['interrupted', 'declined'].includes(member.status));
+  return {label: running ? '正在运行命令' : hasFiles ? commands.length ? '编辑了文件，运行了命令' : '编辑了文件' : '运行了命令',
+    icon: hasFiles ? 'file-pencil' : 'terminal', failed, notice: failed ? '含失败命令' : stopped ? '含停止或拒绝的命令' : ''};
 }
 function commandAction(item) {
   const actions = item.commandActions || [], action = actions.length === 1 ? actions[0] : null;
@@ -66,11 +64,11 @@ function itemRow(item, turn, index) {
   if (item.type === 'agentMessage') return {...row, kind: 'assistant', text: item.text || '', phase: item.phase || '', images: Array.from(String(item.text || '').matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)).map(match => match[1])};
   if (item.type === 'reasoning') {
     const text = (item.summary || []).map(part => typeof part === 'string' ? part : part && part.text || '').filter(Boolean).join('\n\n');
-    return {...row, kind: 'reasoning', icon: 'spark', label: isRunning(row.status) ? '正在思考' : '思考摘要', text};
+    return text ? {...row, kind: 'reasoning', label: '思考过程', text} : null;
   }
   if (item.type === 'plan') return {...row, kind: 'plan', label: '计划', text: item.text || ''};
-  if (item.type === 'commandExecution') return {...row, ...commandAction({...item, status: row.status}), command: item.command || '', text: item.aggregatedOutput || '', exitCode: item.exitCode, cwd: item.cwd || ''};
-  if (item.type === 'fileChange') return {...row, action: 'file', icon: 'file', label: `${isRunning(row.status) ? '正在修改' : '已修改'} ${(item.changes || []).length} 个文件`, files: (item.changes || []).map(c => ({path: c.path, label: c.path, kind: typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type || '', diff: c.diff || ''})), text: (item.changes || []).map(c => `${c.path}\n${c.diff || ''}`).join('\n\n')};
+  if (item.type === 'commandExecution') return {...row, activityType: 'command', ...commandAction({...item, status: row.status}), command: item.command || '', text: item.aggregatedOutput || '', exitCode: item.exitCode, cwd: item.cwd || ''};
+  if (item.type === 'fileChange') return {...row, activityType: 'file', action: 'file', icon: 'file', label: `${isRunning(row.status) ? '正在修改' : '已修改'} ${(item.changes || []).length} 个文件`, files: (item.changes || []).map(c => ({path: c.path, label: c.path, kind: typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type || '', diff: c.diff || ''})), text: (item.changes || []).map(c => `${c.path}\n${c.diff || ''}`).join('\n\n')};
   if (item.type === 'lanpowerLargeItem') return {...row, kind: 'large', reference: item.reference, characters: item.characters, label: item.wholeTurn ? '读取完整这一轮' : '读取完整内容', text: `${item.characters || 0} 字符，点击继续读取`};
   if (['imageGeneration', 'image_generation'].includes(item.type)) {
     const result = typeof item.result === 'string' ? item.result.trim() : '', source = !result ? '' : /^(data:|https?:|file:|[A-Za-z]:[\\/]|\/)/.test(result) ? result : `data:image/png;base64,${result.replace(/\s/g, '')}`;
@@ -98,19 +96,20 @@ function projectConversation(thread, expandedTurns = new Set(), expandedActiviti
     if (!finals.length && !phaseAware && last && last.kind === 'assistant') finals.push(last);
     const finalIds = new Set([...finals, ...normalized.filter(row => row.imageAction === 'generate' && row.images.length)].map(row => row.key));
     const foldable = turn.status === 'completed' && finalIds.size && normalized.some(row => row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key));
+    const toolbarAnswer = normalized.filter(row => row.kind === 'assistant' && (!foldable || finalIds.has(row.key))).pop();
+    normalized.forEach(row => { row.showActions = row.kind === 'user' || row === toolbarAnswer; });
     const start = timestamp(turn.startedAt), end = timestamp(turn.completedAt), duration = turn.durationMs !== undefined ? turn.durationMs : start && end ? end - start : undefined;
-    const work = {key: `work:${turn.id}`, kind: 'work', turnId: turn.id, turnIndex: index, text: duration !== undefined ? `用时 ${elapsed(duration / 1000)}` : turn.status === 'inProgress' ? '正在工作' : turn.status === 'interrupted' ? '已停止' : '工作过程', summary: activitySummary(normalized.filter(row => row.kind === 'activity')), foldable: !!foldable, expanded: expandedTurns.has(turn.id), images: [], files: [], skills: []};
+    const work = {key: `work:${turn.id}`, kind: 'work', turnId: turn.id, turnIndex: index, text: duration !== undefined ? `用时 ${elapsed(duration / 1000)}` : turn.status === 'inProgress' ? '正在工作' : turn.status === 'interrupted' ? '已停止' : '查看工作过程', visible: duration !== undefined || !!foldable || isRunning(turn.status) && !!start || turn.status === 'interrupted', foldable: !!foldable, expanded: expandedTurns.has(turn.id), images: [], files: [], skills: []};
     let inserted = false;
     for (let position = 0; position < normalized.length;) {
       const row = normalized[position];
       if (!inserted && row.kind !== 'user') { rows.push(work); inserted = true; }
       if (foldable && !expandedTurns.has(turn.id) && row.kind !== 'user' && row.kind !== 'large' && !finalIds.has(row.key)) { position++; continue; }
-      if (row.kind !== 'activity') { rows.push({...row, expanded: row.kind === 'imageActivity' ? expandedImages.has(row.key) : expandedActivities.has(row.key), imagesExpanded: row.kind === 'user' || expandedImages.has(row.key)}); position++; continue; }
+      if (!row.activityType || row.activityType === 'file' && !row.files.length) { rows.push({...row, expanded: row.kind === 'imageActivity' ? expandedImages.has(row.key) : expandedActivities.has(row.key), imagesExpanded: row.kind === 'user' || expandedImages.has(row.key)}); position++; continue; }
       const members = [];
-      while (position < normalized.length && normalized[position].kind === 'activity') members.push(normalized[position++]);
-      const key = `activity:${row.key}`, failed = members.some(m => m.status === 'failed' || typeof m.exitCode === 'number' && m.exitCode !== 0);
-      if (members.length === 1) { rows.push({...row, expanded: expandedActivities.has(row.key), failed}); continue; }
-      rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', icon: members.some(member => member.action === 'search') ? 'search' : row.icon || 'terminal', label: members.some(member => isRunning(member.status)) ? '正在工作 · ' + activitySummary(members) : activitySummary(members), text: '', count: members.length, expanded: expandedActivities.has(key), failed});
+      while (position < normalized.length && normalized[position].activityType && (normalized[position].activityType !== 'file' || normalized[position].files.length)) members.push(normalized[position++]);
+      const key = `activity:${row.key}`, summary = activitySummary(members);
+      rows.push({...row, key, itemId: '', command: '', files: [], kind: 'activityGroup', ...summary, text: '', count: members.length, expanded: expandedActivities.has(key)});
       if (expandedActivities.has(key)) rows.push(...members.map(member => ({...member, expanded: expandedActivities.has(member.key), failed: member.status === 'failed' || typeof member.exitCode === 'number' && member.exitCode !== 0})));
     }
     if (!inserted) rows.push(work);
@@ -123,10 +122,10 @@ function previewText(text, limit = 2600) {
   value = value.slice(0, limit); if (/[\uD800-\uDBFF]$/.test(value)) value = value.slice(0, -1); return value;
 }
 // Raw history is retained in the controller. Only the visible projection crosses setData.
-function conversationWindow(rows, offset = null, imageView = () => '') {
+function conversationWindow(rows, offset = null, imageView = () => '', limit = 36) {
   const latest = offset === null, from = latest ? Math.max(0, rows.length - 36) : Math.max(0, Math.min(offset, Math.max(0, rows.length - 1)));
   let selected = [], bytes = 0, start = from;
-  const candidates = rows.slice(from, from + 36);
+  const candidates = rows.slice(from, from + limit);
   for (const row of (latest ? candidates.slice().reverse() : candidates)) {
     const visibleText = !['activity', 'reasoning', 'plan'].includes(row.kind) || row.expanded;
     const text = visibleText ? previewText(row.text) : '', value = {...row, text, hasMoreText: visibleText && text.length < String(row.text || '').length,
@@ -136,7 +135,7 @@ function conversationWindow(rows, offset = null, imageView = () => '') {
       images: (row.images || []).map((source, index) => ({key: row.key + ':img:' + index, src: imageView(row.key, index), label: '查看图片'})),
       files: (row.files || []).map(file => ({path: file.path, label: file.label || file.path, kind: file.kind || ''})),
       links: Array.from(String(row.text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '').matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)).map(match => ({label: match[1], target: match[2]}))};
-    if (row.kind === 'assistant') value.nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
+    if (row.kind === 'assistant' || ['reasoning', 'plan'].includes(row.kind) && row.expanded) value.nodes = markdown(text.replace(/!\[[^\]]*\]\([^)]+\)/g, ''));
     const size = utf8Length(JSON.stringify(value)); if (bytes + size > 380000) break;
     bytes += size; selected.push(value);
   }

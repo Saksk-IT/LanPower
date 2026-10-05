@@ -46,13 +46,13 @@ test('电脑设置通知兼容 threadSettings，模型草稿和其他聊天权�
 });
 test('单条命令和思考摘要默认折叠，全文保留且长命令不会撑大投影',()=>{
   const thread={turns:[{id:'t',status:'inProgress',items:[{id:'think',type:'reasoning',summary:['**检查布局**','只显示公开摘要']},{id:'cmd',type:'commandExecution',command:'node check '+ '界'.repeat(50000),aggregatedOutput:'完整输出',status:'completed',exitCode:1}]}]};
-  const before=JSON.stringify(thread),rows=projectConversation(thread);assert.equal(rows.find(row=>row.kind==='reasoning').expanded,false);assert.equal(rows.find(row=>row.kind==='activity').expanded,false);assert.equal(rows.find(row=>row.kind==='activity').failed,true);
-  const expanded=projectConversation(thread,new Set(),new Set(['t:think','t:cmd']));assert.equal(expanded.find(row=>row.key==='t:cmd').text,'完整输出');assert.equal(expanded.find(row=>row.key==='t:think').expanded,true);
+  const before=JSON.stringify(thread),rows=projectConversation(thread);assert.equal(rows.find(row=>row.kind==='reasoning').expanded,false);assert.equal(rows.find(row=>row.kind==='activityGroup').expanded,false);assert.equal(rows.find(row=>row.kind==='activityGroup').failed,true);
+  const expanded=projectConversation(thread,new Set(),new Set(['activity:t:cmd','t:think','t:cmd']));assert.equal(expanded.find(row=>row.key==='t:cmd').text,'完整输出');assert.equal(expanded.find(row=>row.key==='t:think').expanded,true);
   assert.ok(Buffer.byteLength(JSON.stringify(conversationWindow(expanded)))<1048576);assert.equal(JSON.stringify(thread),before);
 });
 test('命令按原生活动提示区分读取、目录、搜索；精简上下文独立显示',()=>{
   const thread={turns:[{id:'t',status:'inProgress',items:[{id:'read',type:'commandExecution',command:'read',commandActions:[{type:'read',name:'README.md'}],status:'completed'},{id:'list',type:'commandExecution',commandActions:[{type:'listFiles',path:'docs'}]},{id:'search',type:'webSearch',query:'布局'},{id:'compact',type:'contextCompaction'}]}]};
-  const rows=projectConversation(thread);assert.match(rows.find(row=>row.kind==='activityGroup').label,/读取 1 个文件.*列出 1 个目录.*1 次搜索/);assert.equal(rows.find(row=>row.kind==='compaction').label,'已精简上下文');
+  const rows=projectConversation(thread,new Set(),new Set(['activity:t:read']));assert.equal(rows.find(row=>row.kind==='activityGroup').label,'正在运行命令');assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='read'));assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='list'));assert.ok(rows.some(row=>row.kind==='activity'&&row.action==='search'));assert.equal(rows.find(row=>row.kind==='compaction').label,'已精简上下文');
 });
 test('更改摘要按最后一次有更改的任务读取，原生 diff 不重复累计',()=>{
   const thread={turns:[{id:'old',items:[{type:'fileChange',changes:[{path:'old.js',diff:'+ old'}]}]},{id:'current',diff:'--- a/new.js\n+++ b/new.js\n-old\n+new\n+next',items:[{type:'fileChange',changes:[{path:'new.js',diff:'-old\n+new\n+next'}]}]}]};

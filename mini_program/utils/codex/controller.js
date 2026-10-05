@@ -36,7 +36,7 @@ class CodexController {
     if (this.historyScope) this.historyScope.cancel(); if (this.contentScope) this.contentScope.cancel();
     this.historyScope = null; this.contentScope = null; this.contentReader = null; this.contentRun = (this.contentRun || 0) + 1; this.restoringContent = false; clearTimeout(this.contentRetry);
     this.historyCursor = ''; this.historySeen = new Set(); this.beginning = null; this.beginningIndex = -1; this.historyProgress = ''; this.historyResume = false; this.readingHistory = false;
-    this.windowOffset = null; this.windowKey = ''; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.expandedImages = new Set(); this.contentProgress = {}; this.contentFailures = new Map(); this.rows = [];
+    this.windowOffset = null; this.windowKey = ''; this.windowSize = 36; this.expandedTurns = new Set(); this.expandedActivities = new Set(); this.expandedImages = new Set(); this.contentProgress = {}; this.contentFailures = new Map(); this.rows = [];
   }
   resetDevice() {
     this.nativeUsage.reset(); this.capabilityPaging = false; this.resources.paging = false;
@@ -394,24 +394,32 @@ class CodexController {
   messages(imageView) {
     this.rows = projectConversation(this.current, this.expandedTurns, this.expandedActivities, this.expandedImages);
     if (this.windowOffset !== null && this.windowKey) { const index = this.rows.findIndex(row => row.key === this.windowKey); if (index >= 0) this.windowOffset = index; }
-    const view = conversationWindow(this.rows, this.windowOffset, imageView);
+    const view = conversationWindow(this.rows, this.windowOffset, imageView, this.windowSize);
     this.windowKey = this.windowOffset === null ? '' : view.messages[0] && view.messages[0].key || '';
     return view;
   }
   holdWindow() { const view = this.messages(); this.windowOffset = view.windowStart; this.windowKey = view.messages[0] && view.messages[0].key || ''; }
-  setWindow(offset) { this.windowOffset = offset; this.windowKey = ''; }
+  setWindow(offset, size = 36) { this.windowOffset = offset; this.windowKey = ''; this.windowSize = size; }
   toggleImageRow(key) { if (!this.rows.some(row => row.key === key && row.images && row.images.length)) return; this.holdWindow(); if (this.expandedImages.has(key)) this.expandedImages.delete(key); else this.expandedImages.add(key); this.emit(); }
   toggleRow(key, turnId) { this.holdWindow(); const work = key.startsWith('work:'), set = work ? this.expandedTurns : this.expandedActivities, value = work ? turnId : key; if (set.has(value)) set.delete(value); else set.add(value); this.emit(); }
   async earlier() {
-    const view = this.messages(); if (view.windowStart > 0) { this.setWindow(Math.max(0, view.windowStart - 24)); this.emit(); return; }
+    const view = this.messages();
+    // Like the web render window, prepend without removing the already rendered tail.
+    if (view.windowStart > 0) { const start = Math.max(0, view.windowStart - 24); this.setWindow(start, view.messages.length + view.windowStart - start); this.emit(); return; }
     if (!this.ready || !this.historyCursor || this.readingHistory || this.beginningIndex >= 0) return;
     const e = this.epoch, s = this.selection, scope = this.historyScope = new ReadScope(); this.readingHistory = true; this.emit();
     try { const page = await readPage(this.connection, this.threadId, this.historyCursor, scope); if (!this.valid(e, s)) return; const cursor = advanceCursor(this.historyCursor, page.nextCursor, this.historySeen), existing = new Set(this.current.turns.map(turn => turn.id)); this.current.turns = [...(page.data || []).slice().reverse().filter(turn => !existing.has(turn.id)), ...this.current.turns]; this.historyCursor = cursor;
-      const rows = projectConversation(this.current, this.expandedTurns, this.expandedActivities, this.expandedImages), anchor = rows.findIndex(row => row.key === (view.messages[0] && view.messages[0].key)); this.setWindow(Math.max(0, anchor - 24)); }
+      const rows = projectConversation(this.current, this.expandedTurns, this.expandedActivities, this.expandedImages), anchor = rows.findIndex(row => row.key === (view.messages[0] && view.messages[0].key)), start = Math.max(0, anchor - 24); this.setWindow(start, view.messages.length + Math.max(0, anchor - start)); }
     catch (failure) { if (this.valid(e, s) && failure.code !== 'CANCELLED') this.notify(failure.message); }
     finally { if (this.valid(e, s)) { this.readingHistory = false; this.emit(); void this.restoreContent(); } }
   }
-  laterWindow() { const view = this.messages(); this.setWindow(view.windowEnd >= view.totalMessages ? null : Math.min(view.windowStart + Math.max(1, view.messages.length - 12), Math.max(0, view.totalMessages - 36))); this.emit(); }
+  laterWindow() {
+    const view = this.messages(); if (!view.hasWindowAfter) return;
+    // Retain the head while appending. Only rotate a byte-full bridge window on an actual downward gesture.
+    if (view.messages.length >= this.windowSize) this.setWindow(view.windowStart, this.windowSize + 24);
+    else this.setWindow(view.windowStart + Math.max(1, view.messages.length - 12));
+    this.emit();
+  }
   latest() { this.resetHistory(); if (this.current) this.current.turns = []; this.emit(); return this.refreshCurrent(); }
   async jumpToBeginning() {
     if (!this.ready || !this.threadId || this.readingHistory) return;
@@ -424,7 +432,7 @@ class CodexController {
     if (!this.ready || !this.beginning || this.beginningIndex <= 0 || this.readingHistory) return;
     const e = this.epoch, s = this.selection, index = this.beginningIndex - 1, scope = this.historyScope = new ReadScope(); this.readingHistory = true; this.emit();
     const view = this.messages();
-    try { const page = await readPage(this.connection, this.threadId, this.beginning.pages[index], scope); if (!this.valid(e, s)) return; this.current.turns = mergeHistory(this.current.turns, (page.data || []).slice().reverse()); this.beginningIndex = index; this.setWindow(view.windowStart + Math.max(1, view.messages.length - 12)); }
+    try { const page = await readPage(this.connection, this.threadId, this.beginning.pages[index], scope); if (!this.valid(e, s)) return; this.current.turns = mergeHistory(this.current.turns, (page.data || []).slice().reverse()); this.beginningIndex = index; this.setWindow(view.windowStart, view.messages.length + 24); }
     catch (failure) { if (this.valid(e, s) && failure.code !== 'CANCELLED') this.notify(failure.message); }
     finally { if (this.valid(e, s)) { this.readingHistory = false; this.emit(); void this.restoreContent(); } }
   }

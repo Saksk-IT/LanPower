@@ -97,7 +97,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
               return request.all?[...document.querySelectorAll(request.selector)].map(value):value(document.querySelector(request.selector));
             })))};return query;
         };
-        model.setData = changes => {
+        model.setData = (changes, callback) => {
           if (new TextEncoder().encode(JSON.stringify(changes)).length >= 1048576) throw new Error('setData 超过 1 MiB');
           let changed=false;
           for (const [key, value] of Object.entries(changes)) {
@@ -105,6 +105,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
             for (const part of parts.slice(0, -1)) object = object[part];if(JSON.stringify(object[parts.at(-1)])!==JSON.stringify(value))changed=true;object[parts.at(-1)] = value;
           }
           if(changed)window.crRender(changes);
+          if(callback)queueMicrotask(callback);
         };
         model.onLoad(); model.follow = true; model.visible = true;
         const c = model.controller; c.state = 'runtime_ready'; c.deviceId = 'pc-a'; c.sharedControl = true; c.desktopControl = true; c.queueSupported = true; c.chatSupported = true; c.planSupported = true;
@@ -169,11 +170,13 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         if(measure.panel){assert.ok(measure.panel.top>=measure.page.top-1,name+JSON.stringify(measure));assert.ok(measure.panel.bottom<=measure.page.bottom+1,name+JSON.stringify(measure));}
       }
       await geometry('conversation');
+      const chatHeight=await page.locator('.cr-chat-scroll').evaluate(e=>e.clientHeight);
+      await page.evaluate(()=>crPage.setData({showJump:true}));assert.equal(await page.locator('.cr-chat-scroll').evaluate(e=>e.clientHeight),chatHeight,'悬浮按钮不得改变聊天区域高度');await page.evaluate(()=>crPage.setData({showJump:false}));
       assert.equal(await page.locator('.cr-model-pill').count(),0,'输入框上方不应再显示模型与强度');
       const bubble=await page.evaluate(()=>{const area=document.querySelector('.cr-composer-area'),pill=document.querySelector('.cr-changes-pill'),scroll=document.querySelector('.cr-chat-scroll');return {background:getComputedStyle(area).backgroundColor,pointerEvents:getComputedStyle(area).pointerEvents,overlaps:scroll.getBoundingClientRect().bottom>pill.getBoundingClientRect().bottom};});
       assert.equal(bubble.background,'rgba(0, 0, 0, 0)','文件气泡外层必须透明');assert.equal(bubble.pointerEvents,'none','气泡外围应允许正文触摸滚动');assert.equal(bubble.overlaps,true,'正文应延伸至悬浮气泡后方');
       assert.equal(await page.locator('.cr-activity-detail').count(),0);assert.equal(await page.locator('.cr-reasoning-detail').count(),0);assert.equal(await page.locator('.cr-image-previews').count(),0);
-      await page.locator('.cr-activity-group').first().click();assert.equal(await page.locator('.cr-message-activity').count(),4);await page.locator('.cr-activity-toggle').first().click();assert.equal(await page.locator('.cr-activity-detail').count(),1);assert.ok((await page.locator('.cr-activity-detail').textContent()).includes('文件内容已读取'));await geometry('command-expanded');
+      await page.locator('.cr-activity-group').first().click();assert.equal(await page.locator('.cr-message-activity').count(),3);await page.locator('.cr-activity-toggle').first().click();assert.equal(await page.locator('.cr-activity-detail').count(),1);assert.ok((await page.locator('.cr-activity-detail').textContent()).includes('文件内容已读取'));await geometry('command-expanded');
       await page.locator('.cr-reasoning-toggle').click();assert.equal(await page.locator('.cr-reasoning-detail').count(),1);await page.locator('.cr-image-toggle').click();assert.equal(await page.evaluate(()=>crImageReads),1);await page.locator('.cr-image-button').click();assert.equal(await page.evaluate(()=>crImageOpened.length),1);
       await page.locator('.cr-live').click();assert.equal(await page.locator('.cr-live-work .cr-plan').count(),1);await geometry('work-expanded');
       await page.evaluate(()=>crResetConversation());await page.locator('.cr-context-button').click();await geometry('advanced');
@@ -212,11 +215,23 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       const upperAnchor=await page.evaluate(()=>{const scroll=document.querySelector('.cr-chat-scroll');scroll.scrollTop=20;const viewport=scroll.getBoundingClientRect(),row=[...document.querySelectorAll('.cr-message')].find(row=>row.getBoundingClientRect().bottom>viewport.top+1),anchor={id:row.id,top:row.getBoundingClientRect().top-viewport.top};scroll.dispatchEvent(new Event('scroll'));return anchor;});
       await page.waitForFunction(start=>crPage.data.windowStart<start&&!crPage.chatUpdating,historyStart);
       const anchorTop=await page.evaluate(id=>document.getElementById(id).getBoundingClientRect().top-document.querySelector('.cr-chat-scroll').getBoundingClientRect().top,upperAnchor.id);assert.ok(Math.abs(anchorTop-upperAnchor.top)<=2,'向上加载应保持阅读位置');
-      const earlierStart=await page.evaluate(()=>crPage.data.windowStart);
-      const lowerAnchor=await page.evaluate(()=>{const scroll=document.querySelector('.cr-chat-scroll');scroll.scrollTop=scroll.scrollHeight-scroll.clientHeight-20;const viewport=scroll.getBoundingClientRect(),row=[...document.querySelectorAll('.cr-message')].find(row=>row.getBoundingClientRect().bottom>viewport.top+1),anchor={id:row.id,top:row.getBoundingClientRect().top-viewport.top};scroll.dispatchEvent(new Event('scroll'));return anchor;});
-      await page.waitForFunction(start=>crPage.data.windowStart>start&&!crPage.chatUpdating,earlierStart);
-      const lowerTop=await page.evaluate(id=>document.getElementById(id).getBoundingClientRect().top-document.querySelector('.cr-chat-scroll').getBoundingClientRect().top,lowerAnchor.id);assert.ok(Math.abs(lowerTop-lowerAnchor.top)<=2,'向下加载应保持阅读位置');
+      const retained=await page.evaluate(()=>({start:crPage.data.windowStart,end:crPage.data.windowEnd,keys:crPage.data.messages.map(row=>row.key)}));
+      await page.evaluate(()=>crPage.reachedBottom());assert.equal(await page.evaluate(()=>crPage.data.windowStart),retained.start,'定位产生的底部事件不能读回后续页');assert.equal(await page.evaluate(()=>crPage.follow),false);
+      await page.evaluate(()=>{const scroll=document.querySelector('.cr-chat-scroll');scroll.scrollTop=scroll.scrollHeight-scroll.clientHeight-20;scroll.dispatchEvent(new Event('scroll'));});
+      await page.waitForFunction(()=>crPage.follow&&!crPage.chatUpdating).catch(async error=>{console.error(await page.evaluate(()=>{const s=document.querySelector('.cr-chat-scroll');return {follow:crPage.follow,intent:crPage.scrollIntent,expected:crPage.expectedScrollTop,last:crPage.lastScrollTop,top:s.scrollTop,height:s.scrollHeight,client:s.clientHeight,after:crPage.data.hasWindowAfter,start:crPage.data.windowStart,end:crPage.data.windowEnd,updating:!!crPage.chatUpdating};}));throw error;});
+      assert.deepEqual(await page.evaluate(()=>crPage.data.messages.map(row=>row.key)),retained.keys,'上下阅读不应删除原来渲染的尾部');
       assert.equal(await page.locator('.cr-chat-scroll .cr-load-more').count(),0);await geometry('automatic-history');
+      await page.evaluate(()=>{
+        const c=crPage.controller;c.resetHistory();c.activeTurns.set('a','reference');c.overlay={label:'正在思考',plan:[],error:''};crPage.follow=false;
+        const command=(id,exitCode=0)=>({id,type:'commandExecution',status:'completed',command:'check public-fixture',aggregatedOutput:'检查完成',exitCode});
+        const files=id=>({id,type:'fileChange',status:'completed',changes:[{path:'public-fixture.md',diff:'+校验记录'}]});
+        c.current.turns=[{id:'reference',status:'inProgress',items:[{id:'intro',type:'agentMessage',phase:'commentary',text:'我会对照原版聊天页面核对资源，检查脚本和样式是否一致。'},files('file1'),command('cmd1'),{id:'image1',type:'imageView',path:'C:/Fixture/reference1.png'},{id:'image2',type:'imageView',path:'C:/Fixture/reference2.png'},command('cmd2'),{id:'middle',type:'agentMessage',phase:'commentary',text:'资源和界面检查已完成。输入框、按钮、命令图标与手机宽度的显示均已核对。'},files('file2'),command('failed',1),{id:'result',type:'agentMessage',phase:'commentary',text:'继续核对聊天页面的实际显示，确认折叠状态和阅读位置保持稳定。'},command('cmd3'),{id:'image3',type:'imageView',path:'C:/Fixture/reference3.png'},files('file3'),command('cmd4')]}];crPage.paint();
+      });
+      assert.deepEqual(await page.locator('.cr-activity-group').allTextContents(),['编辑了文件，运行了命令','运行了命令','编辑了文件，运行了命令含失败命令','运行了命令','编辑了文件，运行了命令']);
+      assert.equal(await page.locator('.cr-image-toggle').count(),3);assert.equal(await page.locator('.cr-native-images').count(),3);assert.equal(await page.locator('.cr-live-label').textContent(),'正在思考');
+      assert.equal(await page.locator('.cr-work-summary').count(),0);assert.equal(await page.locator('.cr-activity-detail,.cr-image-previews').count(),0);
+      const chevrons=await page.locator('.cr-activity-group').evaluateAll(rows=>rows.map(row=>{const label=row.querySelector('.cr-row-label').getBoundingClientRect(),chevron=row.querySelector('.cr-native-chevron').getBoundingClientRect();return chevron.left-label.right;}));assert.ok(chevrons.filter((_,index)=>index!==2).every(gap=>gap>=7&&gap<=10),'折叠箭头应紧随摘要文字');
+      await geometry('web-reference-collapsed');
       await page.evaluate(()=>{crResetConversation();crPage.follow=false;});
       for(const sheet of ['options','permissions','attachments','menu','files']){await page.evaluate(sheet=>{crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.setData({sheet});},sheet);await geometry('dark-'+sheet);}
       assert.deepEqual(errors,[]);await context.close();

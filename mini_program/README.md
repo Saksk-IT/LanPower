@@ -2,7 +2,9 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-当前小程序版本 **3.6.3**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.3.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+当前小程序版本 **3.6.4**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.4.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+
+`3.6.4` 直接沿用云端聊天页的命令/文件分组、图片与公开思考摘要折叠样式，修复上滑被拉回底部、历史换页反向触发和悬浮按钮挤动正文。原有内容在上滑后保留，慢网络返回按最新阅读位置补偿，流式更新仅更新变化的消息行。详见 [会话滚动与云端组件对齐](../docs/codex-mini-chat-parity.md)。
 
 `3.6.3` 修复“Codex → 设备详情 → Codex”的返回循环。设备状态不再覆盖微信页面路径；Codex 返回原设备详情，详情的原生返回再进入“我的设备”。旧导航留下的重复页面或直达控制页也会恢复正确的层级，加载前和设备失去授权时仍保留原目标。完整路径与验证见 [连续返回修复](../docs/mini-program-navigation.md#363-连续返回修复2026-10-06)。
 

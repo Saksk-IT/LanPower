@@ -23,7 +23,7 @@ test('折叠命令与思考不显示全文入口，展开后保持完整原始�
   const value={turns:[{id:'t',status:'inProgress',items:[{id:'r',type:'reasoning',summary:[{text:'公开摘要'.repeat(3000)}],content:['不能显示的私有内容']},{id:'c',type:'commandExecution',command:'check',aggregatedOutput:'输出'.repeat(9000)}]}]};
   const before=JSON.stringify(value),closed=conversationWindow(projectConversation(value));
   assert.ok(closed.messages.filter(row=>['activity','reasoning'].includes(row.kind)).every(row=>!row.text&&!row.hasMoreText));
-  const expanded=projectConversation(value,new Set(),new Set(['t:c','t:r']));assert.equal(expanded.find(row=>row.key==='t:c').text.length,18000);assert.ok(conversationWindow(expanded).messages.find(row=>row.key==='t:r').hasMoreText);assert.equal(JSON.stringify(value),before);
+  const expanded=projectConversation(value,new Set(),new Set(['activity:t:c','t:c','t:r']));assert.equal(expanded.find(row=>row.key==='t:c').text.length,18000);assert.ok(conversationWindow(expanded).messages.find(row=>row.key==='t:r').hasMoreText);assert.equal(JSON.stringify(value),before);
 });
 test('展开超过一个显示窗口的工作过程时标题及窗口开头保持原位',async t=>{
   const working={id:'long',status:'completed',items:[{id:'u',type:'userMessage',content:[{type:'text',text:'任务'}]},...Array.from({length:80},(_,i)=>({id:'r'+i,type:'reasoning',summary:['摘要 '+i]})),{id:'a',type:'agentMessage',phase:'final_answer',text:'完成'}]};
@@ -31,13 +31,68 @@ test('展开超过一个显示窗口的工作过程时标题及窗口开头保�
   const before=c.messages();await page.toggleRow({currentTarget:{dataset:{key:'work:long',turn:'long'}}});const after=c.messages();
   assert.equal(after.messages[0].key,before.messages[0].key);assert.ok(after.messages.some(row=>row.key==='work:long'));assert.equal(page.follow,false);assert.notEqual(page.data.scrollTarget,'chat-end');assert.equal(c.current.turns.at(-1).items.length,82);
 });
-test('向上和向下滚动自动切换窗口，并阻止重复历史读取',async t=>{
+test('上滑保留原窗口尾部，合成底部事件不反向换页，历史读取去重',async t=>{
   const {c,page}=setup(t,Array.from({length:60},(_,i)=>turn(String(i)))),initial=page.data.windowStart;
+  const tail=page.data.messages.map(row=>row.key),end=page.data.windowEnd;
   page.lastScrollTop=220;page.chatScroll({detail:{scrollTop:80}});await new Promise(resolve=>setImmediate(resolve));assert.ok(page.data.windowStart<initial);
-  await page.reachedBottom();assert.ok(page.data.windowStart>initial-24);assert.equal(page.follow,false);
+  assert.equal(page.data.windowEnd,end);assert.ok(tail.every(key=>page.data.messages.some(row=>row.key===key)));
+  const earlier=page.data.windowStart;await page.reachedBottom();assert.equal(page.data.windowStart,earlier);assert.equal(page.follow,false);
   c.setWindow(0);page.paint();c.historyCursor='older';let release,reads=0;
   c.connection.request=()=>{reads++;return new Promise(done=>release=done);};const pending=page.earlier();await new Promise(resolve=>setImmediate(resolve));await page.earlier();assert.equal(reads,1);
   release({data:[turn('before')],nextCursor:null});await pending;assert.equal(c.current.turns[0].id,'before');assert.equal(c.historyCursor,'');
+});
+test('细小连续上滑也立即停止跟随，手势在刷新完成前取消到底部定位',async t=>{
+  const {page}=setup(t);page.lastScrollTop=300;
+  for(const top of [297,294,291])page.chatScroll({detail:{scrollTop:top}});
+  assert.equal(page.follow,false);assert.equal(page.data.scrollTarget,'');
+  page.follow=true;const paint=page.paint();page.chatTouchStart({touches:[{clientY:200}]});await paint;
+  page.chatTouchMove({touches:[{clientY:205}]});assert.equal(page.follow,false);assert.equal(page.scrollIntent,'earlier');assert.notEqual(page.data.scrollTarget,'chat-end');
+});
+test('只有实际向下阅读才追加后续窗口，并保留已经显示的开头',async t=>{
+  const {c,page}=setup(t,Array.from({length:60},(_,i)=>turn(String(i))));c.setWindow(0);page.follow=false;page.paint();
+  const keys=page.data.messages.map(row=>row.key),end=page.data.windowEnd;page.lastScrollTop=200;page.scrollIntent='earlier';
+  await page.reachedBottom();assert.equal(page.data.windowEnd,end);
+  page.chatScroll({detail:{scrollTop:500}});await page.reachedBottom();assert.equal(page.data.windowStart,0);assert.ok(page.data.windowEnd>end);assert.ok(keys.every(key=>page.data.messages.some(row=>row.key===key)));
+});
+test('命令与文件按云端规则分组，单条也收起，图片和说明切断分组',()=>{
+  const command=(id,status='completed',exitCode=0)=>({id,type:'commandExecution',status,exitCode,command:'verify',aggregatedOutput:'output'});
+  const file={id:'file',type:'fileChange',changes:[{path:'public.js',diff:'+change'}]};
+  const value={turns:[{id:'t',status:'inProgress',items:[file,command('c'),{id:'view',type:'imageView',path:'C:/Fixture/screen.png'},command('failure','completed',1),{id:'comment',type:'agentMessage',phase:'commentary',text:'继续检查'},command('running','inProgress'),{id:'public',type:'reasoning',summary:['**公开摘要**']},{id:'private',type:'reasoning',content:['private-only']}]}]};
+  const before=JSON.stringify(value),rows=projectConversation(value),groups=rows.filter(row=>row.kind==='activityGroup');
+  assert.deepEqual(groups.map(row=>row.label),['编辑了文件，运行了命令','运行了命令','正在运行命令']);assert.deepEqual(groups.map(row=>row.count),[2,1,1]);
+  assert.equal(groups[0].icon,'file-pencil');assert.equal(groups[1].notice,'含失败命令');assert.ok(groups.every(row=>!row.expanded));assert.equal(rows.filter(row=>row.kind==='activity').length,0);
+  assert.equal(rows.find(row=>row.kind==='imageActivity').expanded,false);assert.equal(rows.find(row=>row.kind==='reasoning').label,'思考过程');assert.ok(!rows.some(row=>row.itemId==='private'));
+  const open=projectConversation(value,new Set(),new Set([groups[0].key,'t:c']));assert.equal(open.filter(row=>row.kind==='activity').length,2);assert.equal(open.find(row=>row.key==='t:c').expanded,true);assert.equal(JSON.stringify(value),before);
+  assert.equal(projectConversation({turns:[{id:'stopped',status:'interrupted',items:[command('c','declined')]}]}).find(row=>row.kind==='activityGroup').notice,'含停止或拒绝的命令');
+});
+
+function nativeFixture(t,turns) {
+  const result=setup(t,turns),page=result.page;let top=200;const writes=[];
+  const apply=patch=>{for(const [key,value] of Object.entries(patch)){const match=/^messages\[(\d+)\]$/.exec(key);if(match)page.data.messages[Number(match[1])]=value;else page.data[key]=value;}if(Object.hasOwn(patch,'scrollTop'))top=patch.scrollTop;};
+  page.setData=(patch,callback)=>{writes.push(patch);apply(patch);if(callback)queueMicrotask(callback);};
+  const rects=()=>page.data.messages.map((row,index)=>({id:row.domId,top:index*80-top,bottom:(index+1)*80-top}));
+  global.wx={nextTick:callback=>queueMicrotask(callback),createSelectorQuery:()=>{
+    const requests=[],query={in:()=>query,select:selector=>{query.selector=selector;return query;},selectAll:selector=>{query.selector=selector;return query;},boundingClientRect:()=>{requests.push([query.selector,false]);return query;},scrollOffset:()=>{requests.push([query.selector,true]);return query;},exec:callback=>queueMicrotask(()=>callback(requests.map(([selector,offset])=>offset?{scrollTop:top}:selector==='.cr-chat-scroll'?{top:0,bottom:400}:selector==='.cr-message'?rects():selector==='.cr-composer-area'?null:rects().find(row=>'#'+row.id===selector))))};return query;
+  }};t.after(()=>delete global.wx);
+  return {...result,writes,scroll:value=>{top=value;page.chatScroll({detail:{scrollTop:value}});},position:()=>top,rects};
+}
+test('慢历史请求结束后按最新阅读位置补偿，不跳回请求开始时的位置',async t=>{
+  const fixture=nativeFixture(t),{c,page}=fixture;c.setWindow(0);c.historyCursor='older';page.follow=false;
+  let release;c.connection.request=()=>new Promise(resolve=>release=resolve);const pending=page.earlier();await new Promise(resolve=>setImmediate(resolve));
+  fixture.scroll(40);const visible=fixture.rects().find(row=>row.bottom>0),anchor={...visible};
+  release({data:[turn('previous')],nextCursor:null});await pending;
+  assert.equal(fixture.rects().find(row=>row.id===anchor.id).top,anchor.top);assert.equal(fixture.position(),280);assert.equal(page.follow,false);
+});
+test('流式更新只传变化的消息行，状态刷新不重复传输历史',async t=>{
+  const {c,page,writes}=nativeFixture(t);await page.paint();writes.length=0;
+  await page.paint();assert.ok(writes.every(patch=>!Object.keys(patch).some(key=>key.startsWith('messages'))));
+  c.current.turns[0].items[1].text+=' 更多内容';await page.paint();const history=writes.filter(patch=>Object.keys(patch).some(key=>key.startsWith('messages')));
+  assert.equal(history.length,1);assert.deepEqual(Object.keys(history[0]),['messages[2]']);assert.ok(history[0]['messages[2]'].text.endsWith(' 更多内容'));
+});
+test('定位产生的原生滚动事件不触发后续页，折叠等待原生渲染完成',async t=>{
+  const {c,page,scroll}=nativeFixture(t,Array.from({length:60},(_,i)=>turn(String(i))));page.follow=false;c.setWindow(36);await page.paint();page.lastScrollTop=200;page.scrollIntent='earlier';
+  await page.earlier();const start=page.data.windowStart,end=page.data.windowEnd;scroll(page.expectedScrollTop);await page.reachedBottom();
+  assert.equal(page.scrollIntent,'earlier');assert.equal(page.data.windowStart,start);assert.equal(page.data.windowEnd,end);assert.equal(page.chatUpdating,null);
 });
 test('加载较大历史页保留原窗口的重叠内容，定位开头后自动加载后续页',async t=>{
   const {c}=setup(t,[turn('current')]);c.setWindow(0);c.historyCursor='older';c.connection.request=async()=>({data:Array.from({length:50},(_,i)=>turn('older'+i)),nextCursor:null});
@@ -48,6 +103,7 @@ test('加载较大历史页保留原窗口的重叠内容，定位开头后自�
 test('历史加载中切换会话，旧页和滚动定位不能覆盖新会话',async t=>{
   const {c,page}=setup(t);c.historyCursor='older';let release;c.connection.request=()=>new Promise(done=>release=done);
   const pending=page.earlier();await new Promise(resolve=>setImmediate(resolve));c.selection++;c.threadId='other';c.current={id:'other',cwd:'C:/Fixture/Project',turns:[turn('other')]};page.paint();
+  assert.ok(page.data.messages.some(row=>row.key==='other:u'),'新会话必须立即显示，不等待旧历史请求');assert.equal(page.chatUpdating,null);
   const target=page.data.scrollTarget;release({data:[turn('private-old')],nextCursor:null});await pending;
   assert.equal(c.current.turns[0].id,'other');assert.equal(page.data.scrollTarget,target);
 });

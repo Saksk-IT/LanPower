@@ -77,9 +77,17 @@ Page({
   },
   onHide() { this.visible = false; this.deviceListRun = (this.deviceListRun || 0) + 1; this.deviceLoading = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false, deviceLoading: false}); this.paint(); },
   onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },
-  schedulePaint() { if (this.unloaded || this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
+  schedulePaint() { if (this.unloaded) return; if (this.chatUpdating) { this.chatPaintPending = true; return; } if (this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
+  applyChatData(patch) {
+    if (!Object.keys(patch).length) return Promise.resolve();
+    if (typeof wx === 'undefined' || !wx.createSelectorQuery) { this.setData(patch); return Promise.resolve(); }
+    return new Promise(resolve => this.setData(patch, resolve));
+  },
   paint() {
     const c = this.controller; if (!c) return;
+    const update = this.chatUpdating;
+    if (update && (update.controller !== c || update.context !== c.key || update.epoch !== c.epoch || update.selection !== c.selection)) this.chatUpdating = null;
+    if (this.chatUpdating && !this.chatUpdating.rendering) { this.chatPaintPending = true; return; }
     const labels = STATES[c.state] || STATES.disconnected, library = c.libraryView(this.data.search), prefs = c.library.preferences;
     const rows = threads => threads.map(thread => ({id: thread.id, name: previewText(thread.name, 100), time: thread.time, running: !!thread.running, pending: Array.from(c.approvals.values()).some(request => request.params.threadId === thread.id), selected: thread.id === c.threadId}));
     const home = homeLibrary(library, {order: this.data.homeOrder}, this.data.libraryFilter, Array.from(c.approvals.values()).map(request => request.params.threadId), prefs.pinned);
@@ -121,15 +129,23 @@ Page({
       controlHint: c.threadArchived ? '已归档，恢复后可继续' : c.canControl ? c.desktopControl ? '原 Codex 窗口' : c.sharedControl ? '备用共享窗口' : '本机 Codex' : c.current && c.current.control === 'desktop' && !c.sharedControl ? '桌面占用 · 只读' : '',
       receiptState: receipt && receipt.state || '', receiptLabel: receipt ? {sending: '正在等待电脑回执', accepted: '原窗口已接受', failed: '发送失败，输入已恢复', uncertain: '发送结果待确认，请先查询回执'}[receipt.state] : '', queryingReceipt: c.queryingReceipt,
       queue, approvals, approval, responding: c.responding, sheet};
-    // Separate visible history from chrome, keeping each native bridge update comfortably below 1 MiB.
-    const messagePatch = {messages: value.messages}; delete value.messages;
-    const messageJson = JSON.stringify(messagePatch), changed = messageJson !== this.lastMessagesJson;
-    if (changed) { this.lastMessagesJson = messageJson; this.setData(messagePatch); }
-    this.setData(value);
+    // Streaming text and image loads update their own rows; unchanged history stays native.
+    const nextMessages = value.messages, previous = this.data.messages; delete value.messages;
+    const sameRows = typeof wx !== 'undefined' && wx.createSelectorQuery && nextMessages.length === previous.length && nextMessages.every((row, index) => row.key === previous[index].key), messagePatch = {};
+    if (sameRows) nextMessages.forEach((row, index) => { if (JSON.stringify(row) !== JSON.stringify(previous[index])) messagePatch[`messages[${index}]`] = row; });
+    else if (JSON.stringify(nextMessages) !== JSON.stringify(previous)) messagePatch.messages = nextMessages;
+    const changed = Object.keys(messagePatch).length > 0, chromePatch = {};
+    for (const key of Object.keys(value)) if (JSON.stringify(value[key]) !== JSON.stringify(this.data[key])) chromePatch[key] = value[key];
+    const identity = c.key + ':' + c.selection;
+    if (identity !== this.chatIdentity) { this.chatIdentity = identity; this.lastScrollTop = undefined; this.scrollIntent = ''; this.expectedScrollTop = undefined; Object.assign(chromePatch, {scrollTarget: '', scrollTop: 0}); }
+    const rendered = Promise.all([this.applyChatData(messagePatch), this.applyChatData(chromePatch)]);
     this.paintResources();
-    this.measureComposer();
-    if (changed && this.follow && !this.chatUpdating && this.data.view === 'chat' && c.beginningIndex < 0) this.scrollLatest();
     this.queueImagePreviews();
+    return rendered.then(() => {
+      if (c !== this.controller || identity !== this.chatIdentity || !this.visible) return;
+      this.measureComposer();
+      if (changed && this.follow && !this.chatUpdating && this.data.view === 'chat' && c.beginningIndex < 0) this.scrollLatest();
+    });
   },
   measureComposer() {
     if (this.composerMeasuring || this.data.view !== 'chat' || typeof wx === 'undefined' || !wx.createSelectorQuery) return;
@@ -278,18 +294,32 @@ Page({
   dismissFeedback() { this.controller.notify(''); },
   toggleProgress() { this.setData({progressOpen: !this.data.progressOpen}); },
   toggleRow(event) { const {key, turn} = dataOf(event); return this.updateChat(() => this.controller.toggleRow(key, turn), key); },
+  pauseFollow() {
+    if (this.follow) { this.follow = false; this.controller.holdWindow(); }
+    if (this.data.scrollTarget || !this.data.showJump) this.setData({scrollTarget: '', showJump: true});
+  },
+  chatTouchStart(event) { this.touchY = event.touches && event.touches[0] && event.touches[0].clientY; this.scrollIntent = ''; this.expectedScrollTop = undefined; this.pauseFollow(); },
+  chatTouchMove(event) {
+    const y = event.touches && event.touches[0] && event.touches[0].clientY;
+    if (y === undefined || this.touchY === undefined || Math.abs(y - this.touchY) < 2) return;
+    this.scrollIntent = y > this.touchY ? 'earlier' : 'later'; this.touchY = y; this.expectedScrollTop = undefined; this.pauseFollow();
+  },
+  chatTouchEnd() { this.touchY = undefined; },
   chatScroll(event) {
     const detail = event.detail || {}, previous = this.lastScrollTop; this.lastScrollTop = Number(detail.scrollTop) || 0;
     if (this.chatUpdating) return;
-    if (previous !== undefined && this.lastScrollTop < previous - 8) { this.follow = false; this.controller.holdWindow(); this.setData({scrollTarget: '', showJump: true}); }
-    if (previous !== undefined && this.lastScrollTop < previous && this.lastScrollTop <= 140) void this.earlier();
+    if (this.expectedScrollTop !== undefined) { const expected = this.expectedScrollTop; this.expectedScrollTop = undefined; if (Math.abs(this.lastScrollTop - expected) <= 2) return; }
+    if (previous !== undefined && this.lastScrollTop < previous) { this.scrollIntent = 'earlier'; this.pauseFollow(); }
+    else if (previous !== undefined && this.lastScrollTop > previous && !this.follow) this.scrollIntent = 'later';
+    if (this.scrollIntent === 'earlier' && this.lastScrollTop <= 140) void this.earlier();
   },
+  reachedTop() { if (this.scrollIntent === 'earlier') return this.earlier(); },
   reachedBottom() {
-    if (this.chatUpdating || this.controller.readingHistory) return;
+    if (this.chatUpdating || this.controller.readingHistory || this.scrollIntent !== 'later') return;
     if (this.data.hasWindowAfter || this.controller.beginningIndex > 0) return this.later();
     if (this.controller.beginningIndex < 0) { this.follow = true; this.controller.setWindow(null); this.setData({showJump: false}); }
   },
-  scrollLatest() { this.setData({scrollTarget: ''}); this.setData({scrollTarget: 'chat-end', showJump: false}); },
+  scrollLatest() { if (!this.follow || this.chatUpdating || !this.visible || this.data.view !== 'chat') return; this.scrollIntent = ''; this.setData({scrollTarget: ''}); this.setData({scrollTarget: 'chat-end', showJump: false}); },
   async jump() { this.chatUpdating = null; this.follow = true; if (this.controller.beginningIndex >= 0) await this.controller.latest(); else { this.controller.setWindow(null); this.controller.emit(); } this.paint(); this.scrollLatest(); },
   earlier() { if (!this.controller.ready || this.controller.readingHistory || !(this.data.hasWindowBefore || this.controller.historyCursor)) return; return this.updateChat(() => this.controller.earlier()); },
   later() { if (!this.controller.ready || this.controller.readingHistory) return; return this.updateChat(() => this.data.hasWindowAfter ? this.controller.laterWindow() : this.controller.loadLater()); },
@@ -316,21 +346,33 @@ Page({
       const query = wx.createSelectorQuery().in(this);
       query.select('.cr-chat-scroll').boundingClientRect(); query.select('.cr-chat-scroll').scrollOffset(); query.select('#' + anchor.id).boundingClientRect();
       query.exec(([viewport, offset, row]) => {
-        if (viewport && row && c === this.controller && context === c.key && epoch === c.epoch && selection === c.selection && this.visible) { const top = Math.max(0, (offset && offset.scrollTop || 0) + row.top - viewport.top - anchor.top); this.lastScrollTop = top; this.setData({scrollTarget: '', scrollTop: top}); }
+        if (viewport && row && c === this.controller && context === c.key && epoch === c.epoch && selection === c.selection && this.visible) {
+          const top = Math.max(0, (offset && offset.scrollTop || 0) + row.top - viewport.top - anchor.top);
+          if (Math.abs(top - (offset && offset.scrollTop || 0)) > 0.5) {
+            this.expectedScrollTop = top; this.lastScrollTop = top;
+            const restore = () => this.setData({scrollTarget: '', scrollTop: top}, resolve);
+            if (this.data.scrollTop === top) this.setData({scrollTop: offset.scrollTop}, restore); else restore();
+            return;
+          }
+        }
         resolve();
       });
     });
   },
   async updateChat(action, key) {
     if (this.chatUpdating || this.data.view !== 'chat') return;
-    const token = {}, c = this.controller, context = c.key, epoch = c.epoch, selection = c.selection; this.chatUpdating = token; this.follow = false;
+    const c = this.controller, context = c.key, epoch = c.epoch, selection = c.selection, token = {controller: c, context, epoch, selection}; this.chatUpdating = token; this.follow = false;
+    clearTimeout(this.paintTimer); this.paintTimer = null;
     try {
-      const anchor = await this.chatAnchor(key);
-      if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
       this.setData({scrollTarget: '', showJump: true}); await action();
       if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
-      this.paint(); await this.restoreChatAnchor(anchor);
-    } finally { if (this.chatUpdating === token) this.chatUpdating = null; }
+      // The user may keep scrolling during the request. Measure immediately before rendering, not before fetching.
+      const anchor = await this.chatAnchor(key);
+      if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
+      token.rendering = true; await this.paint();
+      if (this.chatUpdating !== token || c !== this.controller || context !== c.key || epoch !== c.epoch || selection !== c.selection || !this.visible) return;
+      await this.restoreChatAnchor(anchor);
+    } finally { if (this.chatUpdating === token) { this.chatUpdating = null; if (this.chatPaintPending) { this.chatPaintPending = false; this.schedulePaint(); } } }
   },
   cancelHistory() { this.controller.cancelHistory(); },
   resumeHistory() { return this.controller.jumpToBeginning(); },
