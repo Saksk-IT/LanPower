@@ -48,8 +48,14 @@ Windows PowerShell 5.1 启动、基础与局域网 Compose 配置、Caddy 配置
 
 本机实际通过正常证书校验访问两个 HTTPS 入口，并完成现有开发账号登录、四个授权页面访问和退出；直接 IP 访问的证书名称检查通过。从局域网路由器实际使用公开开发 CA 校验 HTTPS，健康接口返回 `1.15.2`。原登录文件、私有环境配置和开发 CA 逐字节保留，SQLite 完整性与外键检查通过，九张身份及配置表的主键与引用保留。手机浏览器及微信真机由用户继续验收。
 
-## 实现参考
+## 小程序 3.3.1 与本机 1.22.1 验证（2026-10-05）
 
 小程序 `3.3.1` 的自动检查覆盖手机回环地址拦截、旧授权保留、无凭据的健康检测、微信网络错误分类，以及编辑地址、切到后台或切换环境后的迟到响应。连接页通过微信 WCC/WCSC 编译与 320/390/430px 布局检查；Cloud 来源与版本相关 25 项检查通过。这些检查不等同于手机真机网络、扫码、WSS 或电源动作验收。
+
+本机 Cloud 镜像为 `codexdock-cloud:1.22.1-dev.1`，Cloud / Caddy 健康。本机与局域网 HTTPS 入口均完成正常证书校验、已有账号登录、授权页面地址与安全 Cookie 检查；从局域网路由器使用公开开发 CA 验证 IP 证书与健康接口，返回 `1.22.1`。Windows 四组件为 `1.22.1.0`，只读服务状态确认为已连接 Cloud。原数据卷和 CA 沿用；同机升级记录确认九张身份/配置表的既有编号保留，数据库完整性 `ok`、外键错误 0，Windows 设备身份与用户配置保留。
+
+本机导入包 `windows/out/CodexDock-mini-program-3.3.1.zip` 包含 38 个公开小程序文件及占位 AppID，正文与已验证提交一致；Git 导出采用 Windows 行尾。构建快照、导入包检查和本轮 HTTPS / 路由器 / 服务只读报告在忽略目录 `private/phone-lan-1.22.1`。手机真机与扫码仍需按上方步骤验收；本轮没有执行真实电源动作、上传微信平台、推送仓库或部署远程 Cloud。
+
+## 实现参考
 
 多个明确 HTTPS 站点及 IP 客户端的默认 TLS 名称按 [Caddy 配置说明](https://caddyserver.com/docs/caddyfile/concepts#addresses) 与 [default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni) 配置。端口只发布到选定宿主机地址，见 [Docker 端口发布说明](https://docs.docker.com/engine/network/port-publishing/)。Windows 规则使用明确的本机地址、远端网段和网卡范围，见 [New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)。
