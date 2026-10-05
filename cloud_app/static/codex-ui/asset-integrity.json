@@ -1,10 +1,10 @@
 {
   "format": 1,
-  "version": "1.24.6",
-  "builtVersion": "1.24.6",
+  "version": "1.24.7",
+  "builtVersion": "1.24.7",
   "files": {
     "assets/common-DzqqoZlq.js": "8cd35e1dd4e33791f6019ce37bf97b77c49177021953be8146344d4c744412f9",
     "codex.css": "666c99fc41c9a33fcb9aabfd41edd43d3323822ebed5b602d15ccd57e623b337",
-    "codex.js": "3e2e8d4d65fd6d3c6a09f753a69481787d787fbec9cc86519001ae7b347276fa"
+    "codex.js": "bb17a0f18da92f06a2cb7b1fa9479ddadf2af39ed292b2be5a33bc8e06e88ed6"
   }
 }

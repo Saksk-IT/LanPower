@@ -38,11 +38,11 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.24.6` |
-| 微信小程序 | `3.6.11` |
+| Windows 应用 / 安装器、Cloud、Web | `1.24.7` |
+| 微信小程序 | `3.6.12` |
 | Wake Gateway（配套组件） | `2.1.2` |
 
-小程序 `3.6.11` 将紧凑输入区恢复为原生 24px 单行文字布局，避免模拟器专用的额外下移；加号、上下文圆圈和模型仪表盘保持居中。配套 Windows / Cloud / Web 为 `1.24.6`。见 [输入区与会话状态](docs/codex-mini-composer-status.md)。
+小程序 `3.6.12` 将紧凑输入区的单行文字向上微调约 2px，同时保持输入框中心、加号、上下文圆圈和模型仪表盘对齐。配套 Windows / Cloud / Web 为 `1.24.7`。见 [输入区与会话状态](docs/codex-mini-composer-status.md)。
 
 小程序 `3.6.9` 对齐加号与输入文字，将跳到底部与文件更改气泡固定在输入区上方同一行，上下文圆圈显示当前会话的真实占用；旁边的模型仪表盘单独打开模型与强度设置，蓝色弧线随指针延伸并在指针方向结束。配套 Windows / Cloud / Web 为 `1.24.4`。见 [输入区与会话状态](docs/codex-mini-composer-status.md)。
 
@@ -178,7 +178,7 @@ CodexDock 的主要用途是远程使用 Windows 电脑上的 Codex，电源管�
 
 ## 快速开始
 
-开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.6-dev.1`。
+开发测试在本机运行 `./deploy/docker/start-dev.ps1`，然后访问 **http://localhost:8080**。独立 Docker 环境支持源码自动重载和持久化测试数据；首次配置局域网防火墙需要管理员确认。脚本不再导入或要求开发证书。账号与操作说明见 [本机开发指南](docs/local-development.md)，本地镜像为 `codexdock-cloud:1.24.7-dev.1`。
 
 1. 从 [发布页](https://github.com/Saksk-IT/LanPower/releases/tag/v1.6.1) 下载并运行 `LanPowerSetup-x64.exe`。安装后，局域网控制无需 Cloud。
 2. 按 [Cloud 部署说明](cloud_app/README.md) 部署 HTTPS Cloud。只有 Windows 与浏览器时，无需配置网关。

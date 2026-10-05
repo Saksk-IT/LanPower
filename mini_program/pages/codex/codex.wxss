@@ -267,7 +267,7 @@
 .cr-stop-square { width:13px;height:13px;border-radius:2px;background:currentColor; }
 .cr-chat-page button.cr-stop-secondary { background:transparent;color:var(--cr-muted);border:1px solid var(--cr-line);width:32px;height:32px;min-height:32px; }
 .cr-chat-page .cr-composer-compact { display:flex;align-items:center;padding:8px 128px 8px 45px;border-radius:32px;min-height:56px; }
-.cr-chat-page .cr-composer-compact .cr-textarea { flex:1;min-width:0;height:24px;min-height:24px;max-height:24px;padding:0;line-height:24px; }
+.cr-chat-page .cr-composer-compact .cr-textarea { flex:1;min-width:0;height:28px;min-height:28px;max-height:28px;padding:0 0 4px;line-height:24px; }
 .cr-composer-compact .cr-composer-toolbar { position:absolute;left:7px;right:7px;top:0;bottom:0;pointer-events:none; }
 .cr-composer-compact .cr-composer-toolbar button { pointer-events:auto; }
 .cr-composer-compact .cr-permission-button { display:none; }
