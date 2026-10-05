@@ -46,6 +46,7 @@ describe('deep review input and public tool contracts',() => {
 })
 
 describe('actual image component and bounded cache lifecycle',() => {
+  // Ten original 7 MiB images need more time on shared CI runners.
   it('evicts by the 64 MiB byte budget before reaching 32 pictures',async () => {
     vi.stubGlobal('location',{origin:'https://local.example'})
     const bytes = Buffer.alloc(7 * 1024 * 1024)
@@ -56,7 +57,7 @@ describe('actual image component and bounded cache lifecycle',() => {
     for (let i = 0; i < 10; i++) await resolveRemoteImage(`D:/Images/large-${i}.png`,'chat','')
     expect(revoke).toHaveBeenCalledWith('blob:large-1')
     expect(revoke).not.toHaveBeenCalledWith('blob:large-10')
-  })
+  }, 30000)
   it.each(['image/png','image/gif','image/webp'])('keeps the original small %s bytes without rasterizing',async type => {
     const expected = `data:${type};base64,YW5pbWF0ZWQ=`
     vi.stubGlobal('FileReader',class {result=expected;onload?:()=>void;readAsDataURL() {this.onload?.()} })
