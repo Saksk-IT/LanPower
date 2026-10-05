@@ -2,11 +2,13 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.24.1`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
+Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入口为 `/remote` 网页工作台；电脑状态、电源操作与唤醒网关是配套功能。当前 Cloud / Web 源码版本为 `1.24.2`。首次使用见 [Codex Remote 指南](../docs/codex-remote.md)，项目名称与技术标识见 [名称约定](../docs/project-identity.md)。
 
 网页 `1.23.3` 直接恢复历史提交 `352d580` 的整套原版资源，修复脚本与样式混用造成的聊天排版异常；没有重新编译网页，CI 和 Docker 打包增加资源校验。见 [原版恢复说明](../docs/codex-web-style-recovery.md)。
 
 ## 更新与兼容记录
+
+`1.24.2` 修复微信开发者工具模拟器 HTTP 登录的来源误判。仅显式本机 HTTP 配置、已登记入口、官方 DevTools Referer、无 Origin / Cookie 的 JSON 请求兼容浏览器附带的跨站标记；密码、连接密钥与网页来源校验继续执行。见 [本机联调说明](../docs/local-lan-access.md#开发者工具模拟器登录-403)。
 
 `1.24.0` 本机开发入口改为 HTTP 8080，Codex 使用 WS。只有显式设置 `LANPOWER_ALLOW_LOCAL_HTTP=true` 才允许 localhost、回环与私有 IPv4 的 HTTP 来源；默认正式配置仍使用 HTTPS。本机 HTTP 登录保留 HttpOnly / SameSite Cookie、CSRF 与来源白名单，二维码使用当前允许的入口。部署和微信联调见 [局域网指南](../docs/local-lan-access.md)。
 

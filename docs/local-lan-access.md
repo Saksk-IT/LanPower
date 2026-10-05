@@ -1,6 +1,6 @@
 # 本机 Cloud 的局域网访问
 
-局域网部署配置版本：`1.1.0`。本机 Cloud `1.24.0` 使用 **HTTP / WS**。在仓库根目录运行 `./deploy/docker/start-dev.ps1`，电脑访问 **http://localhost:8080**；脚本输出的 **http://电脑局域网IP:8080** 供同一网段手机和其他电脑使用。无需导入或信任开发证书。
+局域网部署配置版本：`1.1.0`。本机 Cloud `1.24.2` 使用 **HTTP / WS**。在仓库根目录运行 `./deploy/docker/start-dev.ps1`，电脑访问 **http://localhost:8080**；脚本输出的 **http://电脑局域网IP:8080** 供同一网段手机和其他电脑使用。无需导入或信任开发证书。
 
 Docker 只绑定回环和选定物理网卡的私有 IPv4，不监听所有网络地址。Windows 防火墙规则 `LanPower-Dev-HTTP-LAN` 仅允许该网卡、该地址与同一 IPv4 网段的 TCP 8080；首次配置或地址变更需 Windows 管理员权限。旧 HTTPS 8443 映射撤下，原数据库、账号、设备授权、登录密码及证书卷保留。
 
@@ -8,11 +8,19 @@ Docker 只绑定回环和选定物理网卡的私有 IPv4，不监听所有网�
 
 1. 运行 `./deploy/docker/start-dev.ps1`，电脑和手机连接同一 Wi-Fi。手机使用脚本输出的 `http://<电脑局域网IP>:8080`；手机上的 `localhost`、`127.0.0.1` 和 `::1` 指向手机自身。
 2. 先在手机浏览器打开同一 HTTP 地址。无法打开时检查本地网络权限、VPN、访客 Wi-Fi、路由器客户端隔离与电脑防火墙。
-3. 微信开发者工具导入完整 `mini_program` 或本机 `windows/out/CodexDock-mini-program-3.6.5.zip`，在「详情 → 本地设置」确认已开启「不校验合法域名、web-view、TLS 版本及 HTTPS 证书」。新版本机导入包带有最小 URL 校验设置，不包含用户原私有配置；正式源码的公开配置继续开启校验。手机开发预览在右上角菜单开启调试，退出后重新进入；手机调试开关需单独开启。
-4. 小程序 `3.6.5` 的「我的 → 开发版 Cloud 地址」填写局域网 HTTP 地址，点击「测试连接」，再保存；保存会同步下方账号登录地址。此操作只读取 `/healthz`，不使用账号或授权码。统一账号输入框在开发版显示 HTTP 提示；仍显示旧 HTTPS 提示时，请检查导入目录、重新编译并确认「我的」页底部版本为 `3.6.5`。
+3. 微信开发者工具导入完整 `mini_program` 或本机 `windows/out/CodexDock-mini-program-3.6.7.zip`，在「详情 → 本地设置」确认已开启「不校验合法域名、web-view、TLS 版本及 HTTPS 证书」。新版本机导入包带有最小 URL 校验设置，不包含用户原私有配置；正式源码的公开配置继续开启校验。手机开发预览在右上角菜单开启调试，退出后重新进入；手机调试开关需单独开启。
+4. 小程序 `3.6.7` 的「我的 → 开发版 Cloud 地址」填写局域网 HTTP 地址，点击「测试连接」，再保存；保存会同步下方账号登录地址。此操作只读取 `/healthz`，不使用账号或授权码。统一账号输入框在开发版显示 HTTP 提示；仍显示旧 HTTPS 提示时，请检查导入目录、重新编译并确认「我的」页底部版本为 `3.6.7`。
 5. 在账号登录区域填写同一 HTTP 地址并登录电脑使用的同一账号，手机会自动发现已连接电脑。原扫码方式继续可用：在电脑浏览器打开**同一局域网 HTTP 地址**并登录，进入「已授权客户端」生成新的手机二维码；不要扫描 `localhost` 或旧 HTTPS 网页生成的码。
 
 开发版按完整 Cloud 地址隔离授权。改用 HTTP 后可重新登录原账号，原 HTTPS 地址对应的手机凭据和正式版状态继续保留。HTTP / WS 用于本机开发联调；体验版和正式版继续使用 HTTPS / WSS。微信网络和调试要求见 [微信网络说明](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)。手机真机连通、扫码与 Codex 控制需实际验收。
+
+## 开发者工具模拟器登录 403
+
+Windows 微信开发者工具模拟器可以填写 `http://localhost:8080`，手机预览填写电脑局域网的 HTTP 地址。若请求已到达 `/api/v2/account/login`，却返回 403 和“请求来源不可用”，更新本机 Cloud 至 `1.24.2`，随后在模拟器直接重试登录。无需更换密码或清除手机授权。
+
+实际模拟器请求不携带 Origin 与 Cookie，但附带官方 `https://servicewechat.com/{appid}/devtools/page-frame.html` Referer，以及 `Sec-Fetch-Site: cross-site`、`Sec-Fetch-Mode: cors`、`Sec-Fetch-Dest: empty`。旧 Cloud 将该标记当作网页跨站登录而拒绝。兼容仅适用于 `LANPOWER_ALLOW_LOCAL_HTTP=true` 下明确登记的 HTTP 入口和这组 JSON 请求信息；未知来源、Cookie 请求、网页表单与正式 HTTPS 来源继续按原规则检查，密码与连接密钥仍需验证。
+
+修复前已通过当前真实开发者工具复现该 403；手机预览连接成功由用户确认。本轮模拟器与部署验证记录见 [本机开发环境](local-development.md)。
 
 ## Windows 已有本机连接迁移
 

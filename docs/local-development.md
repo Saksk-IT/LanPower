@@ -1,6 +1,6 @@
 # 本机 Docker 开发环境
 
-Windows / Cloud / Web `1.24.1`，小程序 `3.6.6`，本机镜像 `codexdock-cloud:1.24.1-dev.1`。本机与局域网入口已改为 HTTP / WS，局域网配置 `1.1.0`。使用原 `lanpower-dev` 项目与数据卷，账号、设备身份和授权继续保留。
+Windows / Cloud / Web `1.24.2`，小程序 `3.6.7`，本机镜像 `codexdock-cloud:1.24.2-dev.1`。本机与局域网入口已改为 HTTP / WS，局域网配置 `1.1.0`。使用原 `lanpower-dev` 项目与数据卷，账号、设备身份和授权继续保留。
 
 ```powershell
 ./deploy/docker/start-dev.ps1
@@ -24,6 +24,16 @@ Windows 更新至 `1.24.0` 后，管理员运行 `./deploy/docker/switch-windows
 Windows 在原目录从 `1.24.0.0` 就地更新到 `1.24.1.0`，安装器退出码 0，Service、Desktop、Host 和版本化备用服务四组件与构建哈希一致；配置、Cloud 地址、设备身份、用户设置、官方 Codex 及已有共享服务保留，Service 运行并恢复 Cloud 连接。安装包为 `windows/out/CodexDockSetup-1.24.1-web-search.exe`，小程序导入包为 `windows/out/CodexDock-mini-program-3.6.6.zip`。备份、构建及检查报告位于忽略目录 `private/codex-web-search-1.24.1`。
 
 本轮只提交搜索展示、聊天正文宽度、版本及相关文档，其他工作区修改保留；不推送仓库、不部署正式云端。
+
+## 本机模拟器 HTTP 登录修复 1.24.2（2026-10-06）
+
+真实 Windows 微信开发者工具 `2.02.2609231` / 基础库 `3.17.2` 的请求不携带 Origin / Cookie，但从模拟器回环入口访问 `http://localhost:8080` 时附带 `Sec-Fetch-Site: cross-site`。修复前 `/api/v2/account/login` 返回 403 和“请求来源不可用”。本机 Cloud `1.24.2` 仅为已登记的本机 HTTP 入口兼容官方 DevTools Referer 与这组无 Cookie 的 JSON 请求；其他来源、网页表单、密码和连接密钥检查继续执行。
+
+Cloud 账号与来源相关 71 项检查、小程序账号、开发环境、既有 v2 与网络错误检查通过，网页与 Windows 安装包构建通过。本机 Cloud / Caddy 健康，SQLite backup API 升级前后完整性 `ok`、外键错误 0，24 张有主键表的已有标识保留，原数据卷和私有配置沿用。
+
+通过当前真实微信开发者工具运行编译后的 CloudClient / CodexConnection，小程序 `3.6.7` 在 `http://localhost:8080` 完成账号登录、授权续期、自动发现电脑、原生 SocketTask 的 WS 连接和原 Codex 窗口模型列表读取。测试使用独立内存授权，既有模拟器账号状态未变，临时测试客户端已撤销，没有发送真实任务。手机预览已连接成功由用户确认，本轮没有另行执行手机或公网测试。原小程序 `3.6.5` 及之后版本可直接重试登录。
+
+Windows 安装包 `windows/out/CodexDockSetup-1.24.2-wechat-http.exe` 已构建，当前安装版维持 `1.24.1.0`；本轮以管理员权限更新 Windows 的操作被自动审批拒绝，仅返回“blocked by policy”，因此未安装新版本。现有 Windows 继续为模拟器提供 Codex 连接。小程序本机导入包 `windows/out/CodexDock-mini-program-3.6.7.zip` 使用占位 AppID 与最小 URL 校验设置。证据与数据库备份位于忽略目录 `private/wechat-http-403`。未推送仓库或部署远程 Cloud。
 
 ## 本机 HTTP 1.24.0（2026-10-06）
 

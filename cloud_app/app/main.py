@@ -31,6 +31,7 @@ from cloud_app.app.database import make_engine, migrate, session_factory
 from cloud_app.app.identity import BootstrapCode, Identity
 from cloud_app.app.enrollment import EnrollmentError
 from cloud_app.app.models import AuditLog, Device, NotificationConfig, Passkey, User
+from cloud_app.app.native_origin import require_native_origin
 from cloud_app.app.clients import CLIENT_ACTIONS
 from cloud_app.app.events import device_events
 from cloud_app.app.notify import Notifier
@@ -40,7 +41,7 @@ from cloud_app.app.settings import Settings
 from cloud_app.app.remote import CodexRelay
 from cloud_app.password import verify_password
 
-VERSION = "1.24.1"
+VERSION = "1.24.2"
 PROTOCOL_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
@@ -508,11 +509,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return session_response(request, "/dashboard", owner.id, auth_method="password")
 
     def native_origin(request: Request) -> None:
-        # Native applications do not send browser cookies. Reject browser
-        # cross-origin attempts even when a valid account password is supplied.
-        origin = request.headers.get("origin")
-        if (origin is not None and origin not in settings.browser_origins) or request.headers.get("sec-fetch-site") == "cross-site":
-            raise HTTPException(403, "请求来源不可用")
+        require_native_origin(request, settings)
 
     @app.post("/api/v2/account/register")
     async def register_native(request: Request):

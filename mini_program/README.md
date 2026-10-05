@@ -2,11 +2,13 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-当前小程序版本 **3.6.6**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.6.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+当前小程序版本 **3.6.7**，协议版本 **2**，兼容 Windows / Cloud / Web **1.23.2 及以上**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.7.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+
+`3.6.7` 配套本机 Cloud `1.24.2`：开发者工具模拟器可使用 `http://localhost:8080` 登录；手机继续使用电脑的局域网 HTTP 地址。此次来源兼容由 Cloud 实现，原小程序 `3.6.5` 及之后版本也可直接重试登录，无需清除已有授权。见 [模拟器 403 说明](../docs/local-lan-access.md#开发者工具模拟器登录-403)。
 
 `3.6.5` 支持开发版本机 HTTP 账号登录，测试地址与统一账号输入框均提示 `http://电脑局域网IP:8080`，保存测试地址时同步账号登录地址，Codex 自动使用 WS。本机导入包带有重新生成的最小开发设置，关闭开发者工具的 URL 校验，不复制用户原私有配置或真实 AppID。手机预览仍需开启调试，无需安装本机证书。详见 [局域网联调](../docs/local-lan-access.md)。
 
-在仓库根目录运行 `python scripts/package-mini-program-local.py` 可重新生成本机 HTTP 导入包。导入后在「我的」页底部确认版本 `3.6.6`；开发版统一账号地址应显示 HTTP 提示。
+在仓库根目录运行 `python scripts/package-mini-program-local.py` 可重新生成本机 HTTP 导入包。导入后在「我的」页底部确认版本 `3.6.7`；开发版统一账号地址应显示 HTTP 提示。
 
 `3.6.6` 的搜索与命令共同使用原生 Codex 活动组，地球图标、单行网页摘要和内部滚动列表替代独立搜索卡片。按搜索开始/完成事件更新状态，历史缺少单项状态时不套用整轮运行状态；完整详情保留。同时修复聊天容器超出屏幕而遮挡正文两侧的问题，长路径、代码、列表与表格在阅读宽度内换行。见 [网页搜索与阅读宽度](../docs/codex-web-search-ui.md)。
 
