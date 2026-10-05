@@ -1,10 +1,22 @@
 # 本机 Docker 开发环境
 
-当前产品名称为 **CodexDock**，以 Codex Remote 远程开发与会话控制为主，电源管理和唤醒为配套能力。Windows / Cloud / Web `1.22.1`、小程序 `3.3.1`，本机镜像 `codexdock-cloud:1.22.1-dev.1`；名称与兼容标识见 [项目定位](project-identity.md)。历史功能与各轮真实验证见下方记录。
+当前产品名称为 **CodexDock**，以 Codex Remote 远程开发与会话控制为主，电源管理和唤醒为配套能力。Windows / Cloud / Web `1.22.2`、小程序 `3.4.0`，本机镜像 `codexdock-cloud:1.22.2-dev.1`；名称与兼容标识见 [项目定位](project-identity.md)。历史功能与各轮真实验证见下方记录。
 
 默认启动脚本现在支持同一网段访问，自动增加物理网卡的局域网 HTTPS 地址；仅本机模式使用 `-LocalOnly`。证书安装、地址变化及局域网联调见 [局域网访问指南](local-lan-access.md)（部署配置 `1.0.0`）。下文的 `localhost` 仍用于当前电脑与原有 Passkey。
 
-应用源码版本为 `1.22.1`，小程序 `3.3.1`，本地部署配置版本为 `1.22.1-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+应用源码版本为 `1.22.2`，小程序 `3.4.0`，本地部署配置版本为 `1.22.2-dev.1`。使用独立的 `lanpower-dev` Compose 项目，在本机提供 **https://localhost:8443**；其他同网段设备使用已配置的局域网 HTTPS 地址。Cloud、登录身份与测试设备保存在独立开发卷中。
+
+## 本机 1.22.2 小程序导航重构（2026-10-05）
+
+小程序 `3.4.0` 将 Codex 设为默认首页，导航为「Codex / 电脑与电源 / 连接与设置」。电源、设置、帮助分别使用独立路径，旧 Cloud 路径保留跳转兼容；扫码后直接返回 Codex，辅助页返回复用原聊天与草稿，三个页面共享环境隔离的电脑选择。页面路径和人工检查流程见 [小程序导航](mini-program-navigation.md)。
+
+8 项新增导航检查及现有 LAN / Cloud / Codex、环境、连接检测、状态与多页面检查通过；微信 WCC/WCSC 编译、320/390/430px 首页引导与列表、聊天、浅深色、键盘、设置、电源和帮助布局检查通过。Cloud 来源、客户端版本与 Windows 续期 34 项检查、网页正式构建与 Windows 安装包构建通过。
+
+本机 Docker 已更新为 `codexdock-cloud:1.22.2-dev.1`，Cloud/Caddy 健康，本机与局域网 HTTPS 正常。SQLite backup API 的升级前后备份比较确认 23 张有主键表的既有标识保留，完整性 `ok`、外键错误 0；原数据卷沿用。
+
+同机 Windows 已从 `1.22.1.0` 就地更新为 `1.22.2.0`，安装器退出码 0，四组件与本轮构建哈希一致，配置、用户设置、Cloud 地址和设备身份保留，原 Codex 与既有共享服务进程继续运行。安装后后台服务已自动连接 Cloud。
+
+检查报告和保护备份位于忽略目录 `private/mini-navigation`。小程序导入包为 `windows/out/CodexDock-mini-program-3.4.0.zip`，Windows 安装包为 `windows/out/CodexDockSetup-1.22.2.exe`。未上传微信平台、推送仓库或部署远程 Cloud；微信真机扫码、5G、附件返回和电源动作待人工验收。
 
 ## 本机 1.22.1 小程序局域网连接检测（2026-10-05）
 

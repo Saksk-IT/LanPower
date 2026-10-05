@@ -15,7 +15,7 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 1. 安装当前源码构建的 [Windows 应用](windows/README.md)，并启动自己的 [Cloud](cloud_app/README.md)。公开旧版安装包尚不包含当前 Codex Remote 功能。
 2. 在当前 Windows 用户下打开并登录 Codex，在应用的「远程连接」连接 Cloud、启用 Codex Remote 并保存项目授权。
 3. 点击「连接原 Codex 窗口」，在 Cloud 的「Codex Remote」选择同一电脑和聊天。若本机连接接口尚未开启，按应用提示手动开启。
-4. 使用微信小程序时，先在 Cloud「手机授权」开启这部手机的 Codex Remote 权限，再进入小程序的 **Codex** 页面。电源权限与开发权限分别授权。
+4. 使用微信小程序时，先在 Cloud「手机授权」开启这部手机的 Codex Remote 权限，打开小程序默认进入的 **Codex** 工作台，扫码授权后选择开发电脑。电源权限与开发权限分别授权。
 
 电脑需要保持在线且 Windows 用户已经登录。局域网 HTTPS、手机证书信任与详细连接步骤见 [使用与验收指南](docs/codex-remote.md)。
 
@@ -35,9 +35,11 @@ CodexDock 是以 **Codex 远程开发与会话控制**为主、附带电脑电�
 
 | 组件 | 源码版本 |
 |---|---|
-| Windows 应用 / 安装器、Cloud、Web | `1.22.1` |
-| 微信小程序 | `3.3.1` |
+| Windows 应用 / 安装器、Cloud、Web | `1.22.2` |
+| 微信小程序 | `3.4.0` |
 | Wake Gateway（配套组件） | `2.1.2` |
+
+小程序 `3.4.0` 默认进入 Codex 工作台，主导航依次为 **Codex / 电脑与电源 / 连接与设置**。电脑选择在三页同步，授权完成直接回到 Codex，辅助页面返回保留聊天与未发送内容；局域网与旧版入口收进辅助页。Windows / Cloud / Web 同步版本为 `1.22.2`。路径与使用流程见 [小程序页面结构](docs/mini-program-navigation.md)。
 
 Windows / Cloud `1.22.1` 修复启动、休眠恢复和网络中断后偶发需要重新配对：续期支持安全重试，访问凭据过期时自动续期，保留原设备身份与授权。完整修复需两端同时更新；原因、兼容与验证见 [自动恢复连接](docs/windows-cloud-recovery.md)。
 

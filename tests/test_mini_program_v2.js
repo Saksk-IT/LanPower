@@ -138,7 +138,7 @@ async function main() {
   assert.equal(rejectedCalls, 1);
 
   global.Page = definition => {global.definition = definition;};
-  require('../mini_program/pages/cloud/cloud');
+  require('../mini_program/pages/power/power');
   const stored = () => ({[CLIENT_KEY]: {...session}, [LOCAL_KEY]: {[`${session.url}|a`]: {...local}},
     [CACHE_KEY]: {url: session.url, client_id: session.client_id, devices: [pc('a'), pc('b')], selectedId: 'a'}});
   const localCalls = [];
@@ -363,14 +363,6 @@ async function main() {
   await reauthorize.refresh();
   assert.equal(reauthorize.data.canControl, true, 'Invalid Cloud authorization must not disable local control');
   assert.equal(reauthorize.data.needsReauthorize, true);
-  let scroll;
-  global.wx.pageScrollTo = opts => {scroll = opts.scrollTop;};
-  reauthorize.switchTab({currentTarget: {dataset: {tab: 'help'}}});
-  assert.equal(reauthorize.data.activeTab, 'help'); assert.equal(scroll, 0);
-  reauthorize.toggleFaq({currentTarget: {dataset: {faq: 'auth'}}});
-  assert.equal(reauthorize.data.faqOpen, 'auth');
-  reauthorize.toggleFaq({currentTarget: {dataset: {faq: 'auth'}}});
-  assert.equal(reauthorize.data.faqOpen, '');
   console.log('mini program v2 page registration, authorization, LAN/Cloud routing, refresh, wake settings and guidance: PASS');
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});

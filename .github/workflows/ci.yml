@@ -98,6 +98,10 @@ jobs:
         run: node tests/test_mini_program_v2.js
       - name: Mini program environment tests
         run: node tests/test_mini_program_environments.js
+      - name: Mini program navigation and computer selection
+        run: node --test tests/test_mini_program_navigation.js
+      - name: Mini program development connectivity
+        run: node tests/test_mini_program_cloud_connectivity.js
       - name: Mini program Codex Remote tests
         run: node tests/test_mini_program_codex.js
       - name: Mini program Codex state and native features

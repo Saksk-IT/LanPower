@@ -4,7 +4,7 @@ const {CloudClient, CLIENT_KEY, parseCloudPairing} = require('../mini_program/ut
 const {testDevelopmentCloud, cloudConnectionError} = require('../mini_program/utils/cloud-connectivity');
 
 global.Page = definition => {global.cloudPage = definition;};
-require('../mini_program/pages/cloud/cloud');
+require('../mini_program/pages/settings/settings');
 const lan = 'https://192.168.1.100:8443', code = 'c'.repeat(43);
 function runtime(platform = 'ios', env = 'develop') {
   const storage = {}, calls = [];
@@ -109,9 +109,10 @@ async function main() {
   const formalProbe = model.testCloudConnection();
   pendingApi.getAccountInfoSync = () => ({miniProgram: {envVersion: 'release'}});
   model.loadConnection();
+  assert.equal(model.data.feedback, '', '切换环境后清除旧连接提示');
   complete({statusCode: 200, data: {ok: true, version: '1.22.1', protocol_version: '2'}});
   await formalProbe;
-  assert.equal(model.data.feedback, 'new feedback');
+  assert.equal(model.data.feedback, '');
   assert.equal(model.data.testingCloud, false);
   assert.deepEqual(pendingApi.storage, {});
   console.log('手机回环地址、只读连接检测、微信错误分类、授权保留和迟到响应检查通过');

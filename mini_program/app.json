@@ -1,5 +1,5 @@
 {
-  "pages": ["pages/cloud/cloud", "pages/index/index", "pages/codex/codex"],
+  "pages": ["pages/codex/codex", "pages/settings/settings", "pages/power/power", "pages/help/help", "pages/index/index", "pages/cloud/cloud"],
   "darkmode": true,
   "themeLocation": "theme.json",
   "window": {

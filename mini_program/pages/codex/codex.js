@@ -10,15 +10,17 @@ const {ImageCache} = require('../../utils/codex/resources');
 const {capabilityStatus} = require('../../utils/codex/native-status');
 const {projectName} = require('../../utils/codex-format');
 const {homePreferences, homeLibrary, quotaSummary} = require('../../utils/codex/home');
+const {selectedDevice, saveDeviceSelection} = require('../../utils/device-selection');
+const {openPage} = require('../../utils/navigation');
 const HOME_KEY = 'lanpower_codex_home';
-const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2', CACHE_KEY = 'lanpower_device_cache_v2';
+const THEME_KEY = 'lanpower_codex_theme_v1', INPUT_KEY = 'lanpower_codex_input_v2';
 const dataOf = event => event.currentTarget.dataset;
 const modal = options => new Promise(resolve => wx.showModal({...options, success: result => resolve(!!result.confirm), fail: () => resolve(false)}));
 const effortNames = {none: '关闭', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '超高', max: 'Max', ultra: 'Ultra'};
 const modelName = row => (row && (row.displayName || modelId(row)) || '').replace(/^gpt-/i, '').replace(/-(sol|astra|luna)$/i, (_, name) => ' ' + name[0].toUpperCase() + name.slice(1));
 
 Page({
-  data: {version: VERSION, theme: 'light', themeMode: 'system', authorized: false, view: 'library', sheet: '', devices: [], deviceId: '', deviceName: '选择开发电脑', deviceIndex: 0,
+  data: {version: VERSION, theme: 'light', themeMode: 'system', authorized: false, devicesLoaded: false, deviceLoading: false, view: 'library', sheet: '', devices: [], deviceId: '', deviceName: '选择开发电脑', deviceIndex: 0,
     state: 'idle', stateTitle: '选择开发电脑', stateHint: '选择电脑后读取原窗口的项目和聊天', ready: false, recovering: false, loading: false, busy: false, feedback: '',
     search: '', searchOpen: false, homeMenu: false, homeOrder: 'project', recentFirst: true, libraryFilter: 'all', recent: [], recentTotal: 0, recentCollapsed: false, recentTimeline: false, recentHasPrevious: false, recentHasNext: false, quotaSummary: [], groups: [], chats: [], pinned: [], hiddenProjects: [], hasMore: false, archived: false, chatSupported: false, projects: [], libraryHasPrevious: false, libraryHasNext: false, chatsFirst: false, sections: {}, sort: 'updated',
     title: '新聊天', project: '', cwd: '', messages: [], totalMessages: 0, windowStart: 0, windowEnd: 0, hasWindowBefore: false, hasWindowAfter: false, historyCursor: '', readingHistory: false, historyProgress: '', historyResume: false, beginningIndex: -1,
@@ -45,7 +47,7 @@ Page({
     if (this.controller) this.controller.dispose(); if (this.images) this.images.clear(); if (this.client) this.client.close();
     this.client = client; this.imagePaths.clear(); this.deviceLoading = false; this.themeKey = storageKey(wx, THEME_KEY); this.inputKey = storageKey(wx, INPUT_KEY);
     const input = wx.getStorageSync(this.inputKey) || {}; this.themeMode = wx.getStorageSync(this.themeKey) || 'system';
-    this.setData({authorized: !!client, devices: [], deviceId: '', deviceName: '选择开发电脑', view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', prompt: '', messages: [], draftImages: [], draftSkills: [], draftFiles: [],
+    this.setData({authorized: !!client, devices: [], devicesLoaded: false, deviceLoading: false, deviceId: '', deviceName: '选择开发电脑', view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', prompt: '', messages: [], draftImages: [], draftSkills: [], draftFiles: [],
       themeMode: ['light', 'dark', 'system'].includes(this.themeMode) ? this.themeMode : 'system', sendMode: input.mode === 'steer' ? 'steer' : 'queue', sendWithEnter: !!input.enter});
     this.loadHomePreferences();
     this.connection = new CodexConnection({wxApi: wx, cloud: client, state: state => { this.controller.onState(state); if (state !== 'runtime_ready') { this.images.clear(); this.imagePaths.clear(); } }, event: event => this.controller.onEvent(event)});
@@ -54,7 +56,7 @@ Page({
   onShow() {
     this.visible = true; this.clearTimers();
     const latest = CloudClient.load(wx);
-    if (!latest || !this.client || latest.storageKey !== this.client.storageKey || latest.session.client_id !== this.client.session.client_id) { this.installClient(latest); this.applyTheme(); }
+    if (!latest || !this.client || latest.storageKey !== this.client.storageKey || latest.session.client_id !== this.client.session.client_id || latest.session.refresh_token !== this.client.session.refresh_token) { this.preferredDevice = ''; this.installClient(latest); this.applyTheme(); }
     else this.client.session = latest.session;
     if (this.client) void this.loadDevices();
     this.poll = setInterval(() => { if (!this.visible || !this.controller.ready) return; void this.controller.refreshCurrent(); void this.controller.refreshStatus(); void this.controller.loadThreads(); void this.controller.queryReceipt(); void this.loadDevices(false); }, 30000);
@@ -62,7 +64,7 @@ Page({
     this.paint();
   },
   clearTimers() { clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer); clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer); },
-  onHide() { this.visible = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false}); this.paint(); },
+  onHide() { this.visible = false; this.deviceListRun = (this.deviceListRun || 0) + 1; this.deviceLoading = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false, deviceLoading: false}); this.paint(); },
   onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },
   schedulePaint() { if (this.unloaded || this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },
   paint() {
@@ -131,22 +133,29 @@ Page({
   },
   async loadDevices(connect = true) {
     if (!this.client || this.deviceLoading) return; const client = this.client; this.deviceLoading = true;
+    const run = this.deviceListRun = (this.deviceListRun || 0) + 1;
+    this.setData({deviceLoading: true});
     try {
-      const list = await client.call('/api/v2/devices'); if (client !== this.client || !this.visible) return;
-      const devices = (list || []).filter(device => device.device_type === 'windows').map(device => ({device_id: device.device_id, name: device.name || '开发电脑', state: device.state || '', wake_available: !!device.wake_available}));
-      this.setData({devices}); const selected = devices.find(device => device.device_id === this.controller.deviceId);
-      if (connect && !selected) this.chooseDevice(devices.find(device => device.device_id === this.preferredDevice) || devices[0]);
+      const list = await client.call('/api/v2/devices'); if (client !== this.client || run !== this.deviceListRun || !this.visible) return;
+      if (!Array.isArray(list)) throw new Error('电脑列表暂时无法读取，请稍后重试');
+      const devices = list.filter(device => device.device_type === 'windows').map(device => ({device_id: device.device_id, name: device.name || '开发电脑', state: device.state || '', wake_available: !!device.wake_available}));
+      this.setData({devices, devicesLoaded: true});
+      const preferred = connect ? this.preferredDevice || selectedDevice(wx, client) || this.controller.deviceId : this.controller.deviceId;
+      const selected = devices.find(device => device.device_id === preferred) || devices[0];
+      if ((selected ? selected.device_id : '') !== this.controller.deviceId) this.chooseDevice(selected);
       else if (connect && selected && !this.connection.opened) this.reconnect();
-      if (selected) this.showDevice(selected); else if (!devices.length && this.controller.deviceId) this.chooseDevice();
-    } catch (failure) { if (client === this.client) { if (['REAUTHORIZE', 'CLOUD_CHANGED'].includes(failure.code)) { this.controller.onState('reauthorize'); this.connection.stop(); this.images.clear(); } this.controller.notify(failure.message); } }
-    finally { if (client === this.client) this.deviceLoading = false; }
+      if (selected) this.showDevice(selected);
+      this.preferredDevice = '';
+      saveDeviceSelection(wx, client, devices, selected && selected.device_id);
+    } catch (failure) { if (client === this.client && run === this.deviceListRun) { if (['REAUTHORIZE', 'CLOUD_CHANGED'].includes(failure.code)) { this.controller.onState('reauthorize'); this.connection.stop(); this.images.clear(); } this.controller.notify(failure.message); } }
+    finally { if (client === this.client && run === this.deviceListRun) { this.deviceLoading = false; this.setData({deviceLoading: false}); } }
   },
-  showDevice(device) { this.setData({deviceId: device.device_id, deviceName: device.name, deviceIndex: Math.max(0, this.data.devices.findIndex(row => row.device_id === device.device_id)), wakeAvailable: device.wake_available, powerText: ({online: 'Windows 在线', offline: 'Windows 离线', transitioning: '正在执行电源操作'})[device.state] || '电脑状态未知'}); },
-  chooseDevice(device) { this.detailText = ''; this.detailIndex = 0; this.images.clear(); this.imagePaths.clear(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.controller.chooseDevice(device ? device.device_id : ''); this.setData({view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', detailText: '', approval: null, keyboardHeight: 0, deviceId: device ? device.device_id : '', deviceName: device ? device.name : '选择开发电脑', wakeAvailable: false}); this.loadHomePreferences(); if (device) this.showDevice(device); this.paint(); },
+  showDevice(device) { this.setData({deviceId: device.device_id, deviceName: device.name, deviceIndex: Math.max(0, this.data.devices.findIndex(row => row.device_id === device.device_id)), wakeAvailable: device.state === 'offline' && device.wake_available, powerText: ({online: 'Windows 在线', offline: 'Windows 离线', transitioning: '正在执行电源操作'})[device.state] || '电脑状态未知'}); },
+  chooseDevice(device) { this.detailText = ''; this.detailIndex = 0; this.images.clear(); this.imagePaths.clear(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; clearTimeout(this.librarySearchTimer); this.controller.chooseDevice(device ? device.device_id : ''); this.setData({view: 'library', sheet: '', homeMenu: false, search: '', searchOpen: false, libraryFilter: 'all', detailText: '', approval: null, keyboardHeight: 0, deviceId: device ? device.device_id : '', deviceName: device ? device.name : '选择开发电脑', wakeAvailable: false}); saveDeviceSelection(wx, this.client, this.data.devices, device && device.device_id); this.loadHomePreferences(); if (device) this.showDevice(device); this.paint(); },
   selectDevice(event) { this.chooseDevice(this.data.devices[Number(event.detail.value)]); },
   reconnect() { if (this.controller.deviceId) this.connection.connect(this.controller.deviceId); },
-  async wake() { if (!this.client || this.data.waking) return; const client = this.client, id = this.controller.deviceId; this.setData({waking: true}); try { await client.call(`/api/v2/devices/${encodeURIComponent(id)}/commands`, 'POST', {action: 'wake'}); if (client === this.client && id === this.controller.deviceId) this.controller.notify('唤醒请求已发送，电脑登录后会自动连接。'); } catch (error) { this.controller.notify(error.message); } finally { this.setData({waking: false}); } },
-  navigate(event) { const page = dataOf(event).page; if (page === 'codex') return; wx.redirectTo({url: page === 'lan' ? '/pages/index/index' : '/pages/cloud/cloud?tab=' + page}); },
+  async wake() { if (!this.client || this.data.waking || !this.data.wakeAvailable) return; const client = this.client, id = this.controller.deviceId; if (!await modal({title: '唤醒开发电脑', content: `尝试唤醒“${this.data.deviceName}”，电脑上线且 Windows 用户登录后才能继续 Codex。`}) || client !== this.client || id !== this.controller.deviceId || !this.visible || this.data.waking || !this.data.wakeAvailable) return; this.setData({waking: true}); try { await client.call(`/api/v2/devices/${encodeURIComponent(id)}/commands`, 'POST', {action: 'wake'}); if (client === this.client && id === this.controller.deviceId) this.controller.notify('唤醒请求已发送，电脑登录后会自动连接。'); } catch (error) { this.controller.notify(error.message); } finally { this.setData({waking: false}); } },
+  navigate(event) { const page = dataOf(event).page; this.setData({homeMenu: false, sheet: '', keyboardHeight: 0}); openPage(wx, ({home: 'power', connect: 'settings'})[page] || page, this.data.deviceId); },
   back() { this.setData({view: this.auxReturn || 'library', sheet: '', keyboardHeight: 0}); this.auxReturn = ''; this.paint(); },
   backLibrary() { this.setData({view: 'library', sheet: '', keyboardHeight: 0}); this.paint(); },
   async selectThread(event) { this.follow = true; this.changeOffset = 0; this.setData({view: 'chat', sheet: '', progressOpen: false, inputFocused: false}); await this.controller.selectThread(dataOf(event).id); this.paint(); },

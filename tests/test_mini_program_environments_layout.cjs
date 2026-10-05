@@ -4,16 +4,17 @@ const {execFileSync} = require('node:child_process');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const root = path.resolve(__dirname, '..'), mini = path.join(root, 'mini_program');
 const compiler = process.env.WECHAT_COMPILER_DIR || 'D:/Soft/微信web开发者工具/resources/app.asar.unpacked/node_modules/wcc-exec';
-const output = path.join(root, 'private/mini-environments-20261003/layout');
+const output = path.join(root, 'private/mini-navigation/layout');
 fs.mkdirSync(output, {recursive: true});
 const routes = JSON.parse(fs.readFileSync(path.join(mini, 'app.json'), 'utf8')).pages;
 execFileSync(path.join(compiler, 'wcc.exe'), ['-o', path.join(output, 'wxml.js'), ...routes.map(route => route + '.wxml')], {cwd: mini});
 const styles = ['app.wxss', ...routes.map(route => route + '.wxss')];
 for (const [index, file] of styles.entries()) {
-  execFileSync(path.join(compiler, 'wcsc.exe'), ['-js', '-o', path.join(output, 'style-' + index + '.js'), file], {cwd: mini});
+  const imports = /pages\/(settings|power|help)\//.test(file) ? ['styles/device.wxss'] : [];
+  execFileSync(path.join(compiler, 'wcsc.exe'), ['-js', '-o', path.join(output, 'style-' + index + '.js'), file, ...imports], {cwd: mini});
 }
 const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/pairing.js',
-  'utils/wol.js', 'pages/cloud/cloud.js'].map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
+  'utils/wol.js', 'utils/navigation.js', 'utils/device-selection.js', 'utils/device-page.js', 'pages/settings/settings.js', 'pages/power/power.js', 'pages/help/help.js'].map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
 
 (async () => {
   const browser = await chromium.launch({headless: true});
@@ -22,10 +23,10 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 
       const context = await browser.newContext({viewport: {width, height: 780}, screen: {width, height: 780}, deviceScaleFactor: 1});
       const page = await context.newPage(), errors = [];
       page.on('pageerror', error => errors.push(error.message));
-      await page.setContent('<style>html,body{margin:0}wx-page,wx-view,wx-input{display:block}wx-button{display:block;box-sizing:border-box;border:0;font-family:inherit;text-align:center}wx-button:not([size=mini]){width:184px;margin-left:auto;margin-right:auto}wx-text,wx-input{font-family:inherit}input{display:block;box-sizing:border-box;width:100%;border:0;outline:0;background:transparent;color:inherit;font:inherit}</style><div id="preview"></div>');
+      await page.setContent('<style>html,body{margin:0}wx-page,wx-view,wx-input{display:block}wx-button{display:block;box-sizing:border-box;border:0;font-family:inherit;text-align:center}wx-button:not([size=mini]){width:184px;margin-left:auto;margin-right:auto}wx-text,wx-input{font-family:inherit}input{display:block;box-sizing:border-box;width:100%;border:0;outline:0;background:transparent;color:inherit;font:inherit}</style><wx-page><div id="preview"></div></wx-page>');
       await page.addScriptTag({content: fs.readFileSync(path.join(output, 'wxml.js'), 'utf8')});
       await page.evaluate(() => {window.__COMMON_STYLESHEETS__ = {}; window.__transformRpx__ = value => value * innerWidth / 750;});
-      for (const index of [0, styles.indexOf('pages/cloud/cloud.wxss')]) {
+      for (const index of [0, styles.indexOf('pages/settings/settings.wxss')]) {
         await page.addScriptTag({content: fs.readFileSync(path.join(output, 'style-' + index + '.js'), 'utf8')});
       }
       await page.evaluate(({sources}) => {
@@ -45,7 +46,7 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 
         window.wx = {getAccountInfoSync: () => ({miniProgram: {envVersion}}),
           getStorageSync: key => storage[key], setStorageSync: (key, value) => {storage[key] = value;}, removeStorageSync: key => delete storage[key]};
         window.Page = definition => {window.connectionPage = {...definition, data: structuredClone(definition.data)};};
-        load('pages/cloud/cloud.js'); const model = window.connectionPage;
+        load('pages/settings/settings.js'); let model = window.connectionPage;
         function node(value) {
           if (typeof value === 'string') return document.createTextNode(value);
           if (value.tag === 'virtual') {const fragment = document.createDocumentFragment(); for (const child of value.children || []) fragment.append(node(child)); return fragment;}
@@ -66,10 +67,15 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 
           } else for (const child of value.children || []) element.append(node(child));
           return element;
         }
-        const render = $gwx('pages/cloud/cloud.wxml');
+        let render = $gwx('pages/settings/settings.wxml');
         window.renderConnection = () => document.querySelector('#preview').replaceChildren(node(render(model.data, {})));
         model.setData = changes => {Object.assign(model.data, changes); renderConnection();};
         model.onLoad({tab: 'connect'});
+        window.showAuxiliary = (route, patch) => {
+          load(route + '.js'); model = window.connectionPage; render = $gwx(route + '.wxml');
+          model.setData = changes => {Object.assign(model.data, changes); renderConnection();};
+          model.onLoad(); model.setData(patch);
+        };
       }, {sources});
       assert.equal(await page.locator('.development-settings').count(), 1);
       assert.equal(await page.locator('wx-button').filter({hasText: /^测试连接$/}).count(), 1);
@@ -94,8 +100,18 @@ const sources = Object.fromEntries(['utils/version.js', 'utils/environment.js', 
         assert.equal(await page.evaluate(() => connectionPage.data.cloudUrlDraft), '');
       }
       await page.screenshot({path: path.join(output, 'release-' + width + '.png'), fullPage: true});
+      await page.evaluate(() => showAuxiliary('pages/power/power', {connected:true,devices:[{device_id:'fixture',name:'开发电脑'}],selectedId:'fixture',device:'开发电脑',stateText:'在线 · Cloud',statusClass:'online',canControl:true,canWake:false,modeText:'云端直连',detail:'开发电脑在线',controlHint:'可执行睡眠、休眠、重启和关机'}));
+      assert.equal(await page.locator('.page-title').textContent(), '电脑与电源');
+      assert.equal(await page.locator('.power-grid .power-button').count(), 4);
+      assert.equal(await page.locator('.tabbar').count(), 0);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1));
+      await page.screenshot({path: path.join(output, 'power-' + width + '.png'), fullPage: true});
+      await page.evaluate(() => showAuxiliary('pages/help/help', {}));
+      assert.ok((await page.locator('.help-card-title').textContent()).includes('Codex'));
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth <= 1));
+      await page.screenshot({path: path.join(output, 'help-' + width + '.png'), fullPage: true});
       assert.deepEqual(errors, []); await context.close();
     }
-    console.log('微信 WCC/WCSC 编译和 320/390/430px 开发版表单、正式/体验版入口隔离检查通过');
+    console.log('微信 WCC/WCSC 编译和 320/390/430px 连接设置、电源与帮助布局、开发/正式/体验版入口隔离检查通过');
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

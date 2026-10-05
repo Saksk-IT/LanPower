@@ -2,6 +2,7 @@ const {broadcastWake, makeMagicPacket, PC_MAC, BROADCAST} = require('../../utils
 const {parsePairingLink} = require('../../utils/pairing');
 const {parseRemotePairing} = require('../../utils/remote');
 const {storageKey} = require('../../utils/environment');
+const {openPage} = require('../../utils/navigation');
 
 const LOCAL_KEY = 'lanpower_pairing_v1';
 const REMOTE_KEY = 'lanpower_remote_v1';
@@ -52,8 +53,7 @@ Page({
   onUnload() { this.stopTimers(); },
 
   goCloud() {
-    if (typeof getCurrentPages === 'function' && getCurrentPages().length > 1) wx.navigateBack();
-    else wx.reLaunch({url: '/pages/cloud/cloud'});
+    openPage(wx, 'codex');
   },
   localWakeTarget() {
     if (!this.pairing) return null;

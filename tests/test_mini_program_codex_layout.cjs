@@ -8,7 +8,7 @@ const output = path.join(root, 'private/mini-codex-3.0'); fs.mkdirSync(output, {
 for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pages/codex/codex.wxml']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'app-wxss.js'), 'app.wxss']],
   ['wcsc.exe', ['-js', '-o', path.join(output, 'codex-wxss.js'), 'pages/codex/codex.wxss']]]) execFileSync(path.join(compiler, file), args, {cwd: mini});
-const modules = ['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'utils/codex-fragments.js', 'pages/codex/codex.js', ...fs.readdirSync(path.join(mini, 'utils/codex')).filter(file => file.endsWith('.js')).map(file => 'utils/codex/' + file)];
+const modules = ['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'utils/codex-fragments.js', 'utils/navigation.js', 'utils/device-selection.js', 'pages/codex/codex.js', ...fs.readdirSync(path.join(mini, 'utils/codex')).filter(file => file.endsWith('.js')).map(file => 'utils/codex/' + file)];
 const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
 
 (async () => {
@@ -115,6 +115,14 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         for (const button of measurements.buttons) assert.ok(button.height >= 32, JSON.stringify(measurements));
       }
       await page.screenshot({path: path.join(output, 'white-list-' + width + '.png')}); await geometry();
+      assert.deepEqual(await page.locator('.cr-bottom-nav .cr-nav wx-text:last-child').allTextContents(), ['Codex','电脑与电源','连接与设置']);
+      await page.evaluate(() => {window.savedHome = structuredClone(crPage.data);crPage.setData({authorized:false,devices:[],feedback:'',homeMenu:false});});
+      assert.equal(await page.locator('.cr-empty-title').textContent(), '随时继续你的 Codex');
+      assert.equal(await page.locator('.cr-primary[data-page="settings"]').textContent(), '连接 Codex');
+      await geometry();await page.screenshot({path:path.join(output,'home-onboarding-'+width+'.png')});
+      await page.evaluate(() => crPage.setData({authorized:true,devicesLoaded:true}));
+      assert.equal(await page.locator('.cr-empty-title').textContent(), '添加你的开发电脑');await geometry();
+      await page.evaluate(() => crPage.setData(savedHome));
       assert.ok(await page.locator('.cr-project-group').count() >= 2); assert.ok((await page.locator('.cr-thread').allTextContents()).some(text=>text.includes('规划下一个想法')));
       assert.deepEqual(await page.locator('.cr-recent-section .cr-thread-name').allTextContents(), ['优化小程序布局','规划下一个想法','检查连接状态','整理项目文档'], '最近包含项目内和独立会话，并按原生更新时间倒序');
       await page.evaluate(() => {crPage.controller.nativeUsage.state={loading:false,reason:'',snapshots:[{limitId:'codex',primary:{windowDurationMins:300,usedPercent:49},secondary:{windowDurationMins:10080,usedPercent:65}}]};crPage.paint();});

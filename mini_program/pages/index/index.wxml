@@ -7,7 +7,7 @@
     <view class="status-copy"><view class="status-title {{state}}">{{stateText}}</view><view class="status-detail">{{detail}}</view><view class="connection-line">{{modeText}}</view></view>
   </view>
 
-  <view class="notice-card"><view class="notice-icon">i</view><view><view class="notice-title">无需 Cloud，也能在家控制</view><view class="notice-copy">扫描电脑配对码即可局域网直连。本页也兼容已有的 v1 远程配对；新建远程连接请使用首页的手机授权。</view></view></view>
+  <view class="notice-card"><view class="notice-icon">i</view><view><view class="notice-title">无需 Cloud，也能在家控制</view><view class="notice-copy">扫描电脑配对码即可局域网直连。本页也兼容已有的 v1 远程配对；新建远程连接请使用“连接与设置”的手机授权。</view></view></view>
 
   <view wx:if="{{!paired}}" class="section-card"><view class="section-title">连接这台电脑</view><view class="section-copy">在电脑上打开 CodexDock 配对页，用微信扫描一次即可保存局域网凭据。</view><button class="primary-button" bindtap="scanPairing">扫描电脑配对码</button></view>
   <view wx:else class="section-card"><view class="section-title-row"><view><view class="section-title">局域网配对</view><view class="section-copy">已保存这台电脑的局域网凭据</view></view><text class="status-text">已配对</text></view><view class="setting-row"><text>电脑地址</text><text class="setting-value">{{host}}</text></view><button class="outline-button" bindtap="scanPairing">重新扫描配对码</button></view>
@@ -27,7 +27,7 @@
     </view>
   </view>
 
-  <view class="section-card"><view class="section-title">旧版远程连接（v1）</view><view class="section-copy">{{remotePaired ? '已保存 v1 远程配对，局域网不可达时尝试通过 Cloud 和网关控制。' : '已有 v1 网关可扫描旧版远程配对码。Cloud v2 的手机授权码请在首页扫描。'}}</view><button wx:if="{{!remotePaired}}" class="outline-button" bindtap="scanRemotePairing">扫描旧版远程配对码</button><view wx:else class="setting-row setting-action" bindtap="clearRemotePairing"><text class="danger-text">清除远程配对</text><text class="chevron">›</text></view></view>
+  <view class="section-card"><view class="section-title">旧版远程连接（v1）</view><view class="section-copy">{{remotePaired ? '已保存 v1 远程配对，局域网不可达时尝试通过 Cloud 和网关控制。' : '已有 v1 网关可扫描旧版远程配对码。Cloud v2 的手机授权码请在“连接与设置”扫描。'}}</view><button wx:if="{{!remotePaired}}" class="outline-button" bindtap="scanRemotePairing">扫描旧版远程配对码</button><view wx:else class="setting-row setting-action" bindtap="clearRemotePairing"><text class="danger-text">清除远程配对</text><text class="chevron">›</text></view></view>
 
   <view wx:if="{{paired || remotePaired}}">
   <view class="section-title-row power-heading"><view><view class="section-title">电源控制</view><view class="section-copy">{{modeText}} · {{canControl ? '在线操作可用' : '等待电脑在线'}}</view></view><text class="refresh-link" bindtap="refresh">刷新</text></view>
@@ -40,5 +40,5 @@
   </view>
   </view>
   <view class="legacy-footer"><text bindtap="refresh">刷新状态</text><text wx:if="{{paired}}" bindtap="clearPairing">清除局域网配对</text></view>
-  <button class="outline-button" bindtap="goCloud">返回我的电脑</button>
+  <button class="outline-button" bindtap="goCloud">返回 Codex 工作台</button>
 </view>

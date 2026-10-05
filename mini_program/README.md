@@ -1,8 +1,12 @@
 # CodexDock 微信小程序
 
-小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。连接页负责设备选择与授权，电脑电源控制和局域网旧版入口作为配套功能。当前小程序源码版本为 `3.3.1`，配套 Windows / Cloud / Web 为 `1.22.1`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
+小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。启动即进入 Codex；电脑与电源、连接与设置为独立辅助页面，帮助与旧版局域网入口收在设置中。当前小程序源码版本为 `3.4.0`，配套 Windows / Cloud / Web 为 `1.22.2`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
+
+页面路径、授权回流和电脑选择规则见 [页面结构与导航](../docs/mini-program-navigation.md)。本机导入包为 `windows/out/CodexDock-mini-program-3.4.0.zip`。
 
 ## 更新与兼容记录
+
+小程序 `3.4.0` 将 Codex 设为首页并拆分电源、设置、帮助页面；辅助页通过页面栈返回，保留 Codex 聊天与草稿。扫码授权后回到工作台，三个页面共享电脑选择；旧 Cloud 页面只负责兼容跳转。设置与帮助不启动电源状态轮询，开发/体验/正式环境和原有授权继续隔离。
 
 小程序 `3.3.1` 增加开发版「测试连接」，扫码前可读取 Cloud 健康信息，并区分微信域名拦截、HTTPS 证书、网络权限和超时。手机拒绝 `localhost`、回环 IP 的测试地址和授权二维码，模拟器仍可使用；已有开发、正式授权与缓存保留。连接本机 Docker 的完整步骤见 [局域网小程序联调](../docs/local-lan-access.md#微信小程序连接本机-docker)。本机导入包为 `windows/out/CodexDock-mini-program-3.3.1.zip`。
 
@@ -26,7 +30,7 @@
 
 Codex Remote 已解除单控制页面限制：多个网页和小程序可同时连接同一电脑，任务与审批状态同步，关闭一个页面不影响其他页面。版本与验证见 [多页面控制](../docs/codex-multiple-pages.md)。
 
-开发版与正式版独立保存授权和连接配置。开发版可在「连接 → 开发版 Cloud 地址」修改测试地址，正式版通过 HTTPS 授权二维码连接。环境切换和本机测试步骤见 [开发版与正式版](../docs/mini-program-environments.md)。
+开发版与正式版独立保存授权和连接配置。开发版可在「连接与设置 → 开发版 Cloud 地址」修改测试地址，正式版通过 HTTPS 授权二维码连接。环境切换和本机测试步骤见 [开发版与正式版](../docs/mini-program-environments.md)。
 
 该轮源码版本：`3.1.3`，Windows / Cloud / Web `1.20.1`。Codex 控制已完全重构为原生小程序工作台，使用 WXML、WXSS、原生输入/文件/图片控件与 SocketTask。项目与独立聊天、会话管理、完整历史、模型/思考强度/计划模式、内存草稿与发送回执、排队与引导、审批、目标电脑文件和能力目录均与网页使用相同接口；额度、上下文和能力缺失时显示原生原因，不推测“可用”。功能对照、架构和状态规则见 [Codex 小程序 3.0](../docs/codex-remote-mini-program.md) 与 [原生状态说明](../docs/codex-native-status.md)。
 

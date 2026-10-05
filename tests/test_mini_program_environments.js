@@ -14,7 +14,7 @@ function runtime(storage, env = 'develop', request = () => assert.fail('Unexpect
     removeStorageSync: key => delete storage[key], request, showModal: options => options.success({confirm: true})};
 }
 global.Page = definition => {global.cloudPage = definition;};
-require('../mini_program/pages/cloud/cloud');
+require('../mini_program/pages/settings/settings');
 global.Page = definition => {global.lanPage = definition;};
 require('../mini_program/pages/index/index');
 function page(wxApi, definition = global.cloudPage) {

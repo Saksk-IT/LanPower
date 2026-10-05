@@ -1,0 +1,41 @@
+<view class="app-shell">
+  <view class="page-content">
+    <view class="page-heading"><view class="page-title">使用帮助</view><view class="page-subtitle">选一个场景，按步骤开始</view></view>
+    <view class="topic-tabs">
+      <button class="topic-tab {{helpTopic == 'remote' ? 'active' : ''}}" data-topic="remote" bindtap="selectHelpTopic">Codex Remote</button>
+      <button class="topic-tab {{helpTopic == 'lan' ? 'active' : ''}}" data-topic="lan" bindtap="selectHelpTopic">局域网</button>
+      <button class="topic-tab {{helpTopic == 'wake' ? 'active' : ''}}" data-topic="wake" bindtap="selectHelpTopic">开机 / 唤醒</button>
+    </view>
+    <view wx:if="{{helpTopic == 'remote'}}" class="help-card">
+      <view class="help-card-title">在微信里继续 Codex</view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">电脑连接 Cloud</view><view class="step-copy">在 Windows 版 CodexDock 中连接 Cloud，启用 Codex Remote 并授权项目，再连接已登录的原 Codex 窗口。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">为手机生成授权码</view><view class="step-copy">在同一个 Cloud 网页的“已授权客户端”中添加手机，并开启 Codex Remote 权限。二维码十分钟有效，只能使用一次。</view></view></view>
+      <view class="help-step"><view class="help-number">3</view><view><view class="step-title">扫码后选择电脑</view><view class="step-copy">在“连接与设置”扫码，授权完成后返回 Codex 首页。选择开发电脑与项目或聊天，即可继续原窗口中的任务。电脑需在线且 Windows 用户已登录。</view></view></view>
+      <button class="primary-button" bindtap="openSettings">去授权手机</button>
+    </view>
+    <view wx:if="{{helpTopic == 'lan'}}" class="help-card">
+      <view class="help-card-title">在家优先使用局域网</view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">让手机和电脑处于同一局域网</view><view class="step-copy">手机连接家中 Wi-Fi，电脑可连接同一路由器的网线或 Wi-Fi。允许微信访问本地网络。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">为当前电脑扫码关联</view><view class="step-copy">在“电脑与电源”选择目标，向下找到“电脑局域网直连”，扫描该电脑的配对码并核对名称。局域网直连用于电源管理，Codex 继续通过 Cloud 连接。</view></view></view>
+      <view class="help-step"><view class="help-number">3</view><view><view class="step-title">自动选择可用连接</view><view class="step-copy">局域网可达时直接控制；离开家中网络后尝试 Cloud。配对凭据只保存在手机。</view></view></view>
+      <button class="primary-button" bindtap="openPower">去关联局域网</button>
+      <button class="text-button centered-button" bindtap="openLocal">没有 Cloud？使用独立局域网模式</button>
+    </view>
+    <view wx:if="{{helpTopic == 'wake'}}" class="help-card">
+      <view class="help-card-title">电脑离线，也能尝试唤醒</view>
+      <view class="help-step"><view class="help-number">1</view><view><view class="step-title">先准备好电脑</view><view class="step-copy">启用电脑和网卡的网络唤醒功能，保持供电与网线连接。能否从睡眠、休眠或关机唤醒取决于电脑配置。</view></view></view>
+      <view class="help-step"><view class="help-number">2</view><view><view class="step-title">在家用 Wi-Fi，在外用网关</view><view class="step-copy">在家直连：关联局域网并保存 MAC 和广播地址。在外唤醒：在新版 Windows 应用中点击“配置远程唤醒”，网页选择网关后自动配置。首次配置时请让电脑和网关在同一局域网保持在线。</view></view></view>
+      <view class="help-step"><view class="help-number">3</view><view><view class="step-title">发送后等待电脑上线</view><view class="step-copy">在“电脑与电源”点击“开机 / 唤醒”。页面会定期更新状态；唤醒包发出或指令送达，都不代表电脑已经开机。</view></view></view>
+      <button class="primary-button" bindtap="openPower">去查看唤醒设置</button>
+    </view>
+    <view class="faq-title">常见问题</view>
+    <view class="faq-card">
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="codex"><text>手机已授权，为什么 Codex 仍不可用？</text><text class="chevron">{{faqOpen == 'codex' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'codex'}}" class="faq-answer">电源权限与 Codex Remote 权限分开授权。在 Cloud 的“已授权客户端”为当前手机开启 Codex Remote 权限；电脑端也需启用 Codex Remote、授权项目，并连接已登录的原 Codex 窗口。已有手机授权通常无需重新扫码。</view></view>
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="offline"><text>电脑离线时可以做什么？</text><text class="chevron">{{faqOpen == 'offline' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'offline'}}" class="faq-answer">有可用唤醒方式时，可以尝试开机。睡眠、休眠、重启和关机需要电脑在线且控制通道可用。离线也可能是服务停止或网络中断，请结合电脑实际情况判断。</view></view>
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="sleep"><text>睡眠和休眠有什么区别？</text><text class="chevron">{{faqOpen == 'sleep' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'sleep'}}" class="faq-answer">睡眠把当前状态保留在内存，耗电较低、恢复较快；休眠先把状态写入磁盘，再进入低功耗或断电状态，恢复通常更慢。操作前仍建议保存文件；休眠需要 Windows 已启用此功能。</view></view>
+      <view class="faq-item"><button class="faq-row" bindtap="toggleFaq" data-faq="auth"><text>授权失效后怎么办？</text><text class="chevron">{{faqOpen == 'auth' ? '−' : '+'}}</text></button><view wx:if="{{faqOpen == 'auth'}}" class="faq-answer">新版 Cloud 与小程序支持一次扫码长期授权，断网或退出微信后会自动恢复。主动撤销授权、清除小程序数据，或旧版已丢失有效凭据时，需在 Cloud 生成新码再扫描。重新授权同一 Cloud 后，已保存的局域网关联会保留。</view></view>
+    </view>
+    <view class="about-copy">CodexDock · {{environmentLabel}} · 小程序 v{{version}}<view>远程继续 Codex，随手管理电脑</view></view>
+  </view>
+
+</view>

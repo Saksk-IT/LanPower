@@ -123,9 +123,16 @@ async function main() {
     await page.interrupt();page.paint();assert.equal(page.data.running,false);
     page.changeTheme({currentTarget:{dataset:{value:'dark'}}});assert.equal(page.data.theme,'dark');assert.equal(storage.lanpower_codex_theme_v1,'dark');
     const full='长中文🎨'.repeat(60000);page.controller.current.turns.push({id:'huge',status:'completed',items:[{id:'huge-ai',type:'agentMessage',text:full,phase:'final_answer'}]});page.paint();assert.equal(page.controller.rows.at(-1).text,full);assert.ok(page.data.messages.some(row=>row.hasMoreText));page.openDetail({currentTarget:{dataset:{key:'huge:huge-ai'}}});assert.equal(page.detailText,full);assert.ok(page.data.detailPages>1);
-    const starts=calls.filter(call=>call.method==='turn/start').length;page.onHide();assert.equal(page.connection.opened,false);assert.equal(page.controller.draft.text,'A 未发的内容');page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
+    const starts=calls.filter(call=>call.method==='turn/start').length, originalController=page.controller;
+    let auxiliary;wx.navigateTo=options=>{auxiliary=options.url;};
+    page.setData({view:'chat'});page.navigate({currentTarget:{dataset:{page:'settings'}}});
+    assert.equal(auxiliary,'/pages/settings/settings?computer=pc-a');assert.equal(page.controller,originalController);assert.equal(page.controller.threadId,'a');
+    page.onHide();assert.equal(page.connection.opened,false);assert.equal(page.controller.draft.text,'A 未发的内容');page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);assert.equal(page.data.view,'chat');assert.equal(page.controller.threadId,'a');
     let stale;readDelay=(s,frame)=>{stale=()=>s.frame(frame);};const oldRead=page.controller.refreshCurrent();await until(()=>stale);
     page.chooseDevice(page.data.devices[1]);stale();await oldRead;readDelay=null;assert.equal(page.controller.current,null);assert.equal(page.data.messages.length,0);
+    const {saveDeviceSelection,selectedDevice}=require('../mini_program/utils/device-selection');
+    assert.equal(selectedDevice(wx,page.client),'pc-b');page.onHide();saveDeviceSelection(wx,page.client,page.data.devices,'pc-a');page.onShow();await until(()=>page.controller.deviceId==='pc-a'&&page.controller.ready&&!page.controller.recovering);
+    assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.controller.current,null);await page.readThread('a');assert.equal(page.controller.draft.text,'A 未发的内容');assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
     assert.equal(Object.keys(storage).filter(key=>/thread|prompt|approval|history/.test(key)).length,0);assert.ok(maxPayload<1048576);
   }finally{page.onUnload();}
   console.log('小程序原生页面与传输：授权、回执、草稿、队列/引导/停止、单次审批、长内容、后台恢复及电脑隔离检查通过');
