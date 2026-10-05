@@ -1,10 +1,12 @@
 # CodexDock 微信小程序
 
-小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。启动即进入 Codex；电脑与电源、连接与设置为独立辅助页面，帮助与旧版局域网入口收在设置中。当前小程序源码版本为 `3.4.0`，配套 Windows / Cloud / Web 为 `1.22.2`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
+小程序以 **Codex** 页面为远程开发工作台：选择电脑与聊天，发送消息，跟进任务、队列和审批。启动即进入 Codex；电脑与电源、连接与设置为独立辅助页面，帮助与旧版局域网入口收在设置中。当前小程序源码版本为 `3.4.2`，配套 Windows / Cloud / Web 为 `1.22.2`。首次使用见 [小程序工作台](../docs/codex-remote-mini-program.md)，新旧名称见 [名称约定](../docs/project-identity.md)。
 
-页面路径、授权回流和电脑选择规则见 [页面结构与导航](../docs/mini-program-navigation.md)。本机导入包为 `windows/out/CodexDock-mini-program-3.4.0.zip`。
+页面路径、授权回流和电脑选择规则见 [页面结构与导航](../docs/mini-program-navigation.md)。本机导入包为 `windows/out/CodexDock-mini-program-3.4.2.zip`。
 
 ## 更新与兼容记录
+
+小程序 `3.4.2` 去掉 Codex 首页和会话页上方重复的「Codex Remote」标题栏，使用页面现有工具栏作为顶部导航。菜单、搜索、返回、新建与聊天操作按状态栏和微信胶囊位置布局，支持尺寸变化、窄屏标题截断和深色外观；顶部弹出菜单跟随新的导航位置。说明和验证见 [顶部导航](../docs/codex-mini-navigation.md)。
 
 小程序 `3.4.0` 将 Codex 设为首页并拆分电源、设置、帮助页面；辅助页通过页面栈返回，保留 Codex 聊天与草稿。扫码授权后回到工作台，三个页面共享电脑选择；旧 Cloud 页面只负责兼容跳转。设置与帮助不启动电源状态轮询，开发/体验/正式环境和原有授权继续隔离。
 

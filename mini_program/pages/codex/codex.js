@@ -10,6 +10,7 @@ const {ImageCache} = require('../../utils/codex/resources');
 const {capabilityStatus} = require('../../utils/codex/native-status');
 const {projectName} = require('../../utils/codex-format');
 const {homePreferences, homeLibrary, quotaSummary} = require('../../utils/codex/home');
+const {DEFAULT_NAVIGATION, navigationLayout} = require('../../utils/codex/navigation-layout');
 const {selectedDevice, saveDeviceSelection} = require('../../utils/device-selection');
 const {openPage} = require('../../utils/navigation');
 const HOME_KEY = 'lanpower_codex_home';
@@ -20,7 +21,7 @@ const effortNames = {none: '关闭', minimal: '最低', low: '低', medium: '中
 const modelName = row => (row && (row.displayName || modelId(row)) || '').replace(/^gpt-/i, '').replace(/-(sol|astra|luna)$/i, (_, name) => ' ' + name[0].toUpperCase() + name.slice(1));
 
 Page({
-  data: {version: VERSION, theme: 'light', themeMode: 'system', authorized: false, devicesLoaded: false, deviceLoading: false, view: 'library', sheet: '', devices: [], deviceId: '', deviceName: '选择开发电脑', deviceIndex: 0,
+  data: {version: VERSION, navigation: DEFAULT_NAVIGATION, theme: 'light', themeMode: 'system', authorized: false, devicesLoaded: false, deviceLoading: false, view: 'library', sheet: '', devices: [], deviceId: '', deviceName: '选择开发电脑', deviceIndex: 0,
     state: 'idle', stateTitle: '选择开发电脑', stateHint: '选择电脑后读取原窗口的项目和聊天', ready: false, recovering: false, loading: false, busy: false, feedback: '',
     search: '', searchOpen: false, homeMenu: false, homeOrder: 'project', recentFirst: true, libraryFilter: 'all', recent: [], recentTotal: 0, recentCollapsed: false, recentTimeline: false, recentHasPrevious: false, recentHasNext: false, quotaSummary: [], groups: [], chats: [], pinned: [], hiddenProjects: [], hasMore: false, archived: false, chatSupported: false, projects: [], libraryHasPrevious: false, libraryHasNext: false, chatsFirst: false, sections: {}, sort: 'updated',
     title: '新聊天', project: '', cwd: '', messages: [], totalMessages: 0, windowStart: 0, windowEnd: 0, hasWindowBefore: false, hasWindowAfter: false, historyCursor: '', readingHistory: false, historyProgress: '', historyResume: false, beginningIndex: -1,
@@ -35,6 +36,7 @@ Page({
     fileState: {files: [], cwd: '', directory: '.', cursor: '', selected: null, breadcrumbs: []}, fileHasPrevious: false, fileHasNext: false,
     detailTitle: '', detailText: '', detailPage: 1, detailPages: 1, detailKind: '', sendWithEnter: false, wakeAvailable: false, powerText: '', waking: false},
   onLoad(options = {}) {
+    this.updateNavigation();
     this.visible = false; this.unloaded = false; this.follow = true; this.imagePaths = new Map(); this.libraryOffset = 0; this.groupOffsets = {}; this.chatOffset = 0; this.recentOffset = 0; this.catalogLimit = 30; this.fileOffset = 0;
     this.preferredDevice = options.computer || ''; this.systemTheme = (wx.getAppBaseInfo && wx.getAppBaseInfo().theme) || 'light';
     this.installClient(CloudClient.load(wx));
@@ -54,6 +56,7 @@ Page({
     this.controller = new CodexController(this.connection, () => this.schedulePaint()); this.images = new ImageCache(wx, this.connection);
   },
   onShow() {
+    this.updateNavigation();
     this.visible = true; this.clearTimers();
     const latest = CloudClient.load(wx);
     if (!latest || !this.client || latest.storageKey !== this.client.storageKey || latest.session.client_id !== this.client.session.client_id || latest.session.refresh_token !== this.client.session.refresh_token) { this.preferredDevice = ''; this.installClient(latest); this.applyTheme(); }
@@ -63,6 +66,8 @@ Page({
     this.clockTimer = setInterval(() => { if (this.visible && this.controller.activeTurn) this.setData({elapsed: this.controller.duration()}); }, 1000);
     this.paint();
   },
+  updateNavigation() { this.setData({navigation: navigationLayout(wx)}); },
+  onResize() { this.updateNavigation(); },
   clearTimers() { clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer); clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer); },
   onHide() { this.visible = false; this.deviceListRun = (this.deviceListRun || 0) + 1; this.deviceLoading = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false, deviceLoading: false}); this.paint(); },
   onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },

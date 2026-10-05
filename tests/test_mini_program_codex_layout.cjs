@@ -10,6 +10,10 @@ for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pa
   ['wcsc.exe', ['-js', '-o', path.join(output, 'codex-wxss.js'), 'pages/codex/codex.wxss']]]) execFileSync(path.join(compiler, file), args, {cwd: mini});
 const modules = ['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'utils/codex-fragments.js', 'utils/navigation.js', 'utils/device-selection.js', 'pages/codex/codex.js', ...fs.readdirSync(path.join(mini, 'utils/codex')).filter(file => file.endsWith('.js')).map(file => 'utils/codex/' + file)];
 const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
+const navigationOnly = process.argv.includes('--navigation-only');
+const navigationConfig = JSON.parse(fs.readFileSync(path.join(mini, 'pages/codex/codex.json'), 'utf8'));
+assert.equal(navigationConfig.navigationStyle, 'custom', 'Codex 使用现有工具栏作为顶部导航');
+assert.equal(navigationConfig.navigationBarTitleText, undefined, '不再配置重复的 Codex Remote 标题');
 
 (async () => {
   const browser = await chromium.launch({headless: true});
@@ -38,7 +42,15 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         window.Page = definition => {window.crPage = {...definition, data: structuredClone(definition.data)};};
         const root = 'C:\\Fixture\\LanPower';
         const storage = new Map();
+        const statusTop = innerWidth === 320 ? 20 : innerWidth === 390 ? 47 : 59;
+        window.crWindowInfo = {windowWidth: innerWidth, windowHeight: innerHeight, statusBarHeight: statusTop};
+        window.crCapsule = {left: innerWidth - 95, right: innerWidth - 8, width: 87, height: 32, top: statusTop + 6, bottom: statusTop + 38};
+        const status = document.createElement('aside'), capsule = document.createElement('aside');
+        status.id = 'wechat-status'; capsule.id = 'wechat-capsule';
+        status.innerHTML = '<span style="position:absolute;left:18px;top:8px;font:12px sans-serif">19:42</span>' + (statusTop > 40 ? '<span style="position:absolute;left:50%;top:7px;transform:translateX(-50%);width:95px;height:29px;background:#000;border-radius:20px"></span>' : '');
+        capsule.textContent = '···　◉'; document.body.append(status, capsule);
         window.wx = {getStorageSync: key => storage.get(key) || '', setStorageSync: (key, value) => storage.set(key, value), getAppBaseInfo: () => ({theme: 'light'}), setNavigationBarColor: () => {},
+          getWindowInfo: () => crWindowInfo, getSystemInfoSync: () => crWindowInfo, getMenuButtonBoundingClientRect: () => crCapsule,
           redirectTo: () => {}, setClipboardData: options => options.success()};
         load('pages/codex/codex.js'); const model = window.crPage;
         function makeNode(node) {
@@ -69,7 +81,12 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
           return element;
         }
         const render = $gwx('pages/codex/codex.wxml');
-        window.crRender = () => document.querySelector('#preview').replaceChildren(makeNode(render(model.data, {})));
+        window.crRender = () => {
+          document.querySelector('#preview').replaceChildren(makeNode(render(model.data, {})));
+          const color = model.data.theme === 'dark' ? '#eceef1' : '#111111';
+          Object.assign(status.style, {position: 'fixed', top: '0', left: '0', right: '0', height: crWindowInfo.statusBarHeight + 'px', color, zIndex: '100', pointerEvents: 'none'});
+          Object.assign(capsule.style, {position: 'fixed', left: crCapsule.left + 'px', top: crCapsule.top + 'px', width: crCapsule.width + 'px', height: crCapsule.height + 'px', border: '1px solid ' + color, borderRadius: '20px', boxSizing: 'border-box', textAlign: 'center', lineHeight: (crCapsule.height - 2) + 'px', font: '18px sans-serif', color, zIndex: '100', pointerEvents: 'none'});
+        };
         model.setData = changes => {
           if (new TextEncoder().encode(JSON.stringify(changes)).length >= 1048576) throw new Error('setData 超过 1 MiB');
           for (const [key, value] of Object.entries(changes)) {
@@ -108,13 +125,74 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
           page: document.querySelector('.codex-page').getBoundingClientRect().height,
           buttons: Array.from(document.querySelectorAll('.cr-primary,.cr-send,.cr-outline')).map(e => ({class: e.className, width: e.getBoundingClientRect().width, height: e.getBoundingClientRect().height})),
           scroll: document.querySelector('.cr-chat-scroll,.cr-library-scroll,.cr-feature-scroll').getBoundingClientRect().height,
-          outOfBounds:Array.from(document.querySelectorAll('wx-button')).filter(e=>{const r=e.getBoundingClientRect();return r.width && (r.left < -1 || r.right > innerWidth+1)}).map(e=>e.className)}));
+          outOfBounds:Array.from(document.querySelectorAll('wx-button')).filter(e=>{const r=e.getBoundingClientRect();return r.width && (r.left < -1 || r.right > innerWidth+1)}).map(e=>e.className),
+          navigation: (() => {
+            const rect = element => {const {top, bottom, left, right, width, height} = element.getBoundingClientRect(); return {top, bottom, left, right, width, height};};
+            const toolbar = document.querySelector('.cr-home-toolbar,.cr-header');
+            return {toolbar: rect(toolbar), buttons: [...toolbar.querySelectorAll('wx-button')].map(rect), capsule: crCapsule, status: crWindowInfo.statusBarHeight, height: crPage.data.navigation.height,
+              contentTop: document.querySelector('.cr-chat-scroll,.cr-library-scroll,.cr-feature-scroll').getBoundingClientRect().top};
+          })()}));
         assert.ok(measurements.overflow <= 1, JSON.stringify(measurements)); assert.ok(measurements.scroll > 60, JSON.stringify(measurements));
         assert.ok(measurements.font.includes('sans-serif'), 'compiled page font must inherit through wx-page');
         assert.deepEqual(measurements.outOfBounds, [], JSON.stringify(measurements));
         for (const button of measurements.buttons) assert.ok(button.height >= 32, JSON.stringify(measurements));
+        const nav = measurements.navigation;
+        assert.ok(Math.abs(nav.toolbar.top - nav.status) <= 1, JSON.stringify(nav));
+        assert.ok(Math.abs(nav.toolbar.height - nav.height) <= 1, JSON.stringify(nav));
+        assert.ok(nav.contentTop >= nav.toolbar.bottom - 1, JSON.stringify(nav));
+        for (const button of nav.buttons) {
+          assert.ok(button.width >= 32 && button.height >= 32, JSON.stringify(nav));
+          assert.ok(button.top >= nav.status && button.bottom <= nav.toolbar.bottom + 1, JSON.stringify(nav));
+          assert.ok(button.right <= nav.capsule.left - 7, '顶部按钮必须避让微信胶囊：' + JSON.stringify(nav));
+        }
+      }
+      async function chatNavigation() {
+        await page.locator('.cr-header-actions wx-button[aria-label="聊天操作"]').click();
+        assert.equal(await page.locator('.cr-sheet-menu').count(), 1);
+        assert.ok((await page.locator('.cr-sheet-menu').boundingBox()).y >= await page.locator('.cr-header').evaluate(e => e.getBoundingClientRect().bottom), '聊天菜单在顶部导航下展开');
+        await page.evaluate(() => {crPage.closeSheet(); crPage.setData({title: '非常长的会话标题用于检查顶部导航不会挤压返回搜索和微信胶囊', project: '非常长的项目名称', deviceName: '非常长的开发电脑名称'});});
+        await geometry();
+        assert.ok(await page.locator('.cr-title').evaluate(e => e.scrollWidth > e.clientWidth && getComputedStyle(e).textOverflow === 'ellipsis'));
+        await page.screenshot({path: path.join(output, 'navigation-long-title-' + width + '.png')});
+        await page.locator('.cr-back').click(); assert.equal(await page.evaluate(() => crPage.data.view), 'library');
+        await page.evaluate(() => {crPage.setData({deviceName: '开发电脑'}); crShowChat();}); await geometry();
       }
       await page.screenshot({path: path.join(output, 'white-list-' + width + '.png')}); await geometry();
+      await page.evaluate(() => {
+        window.crOriginalNavigation = {window: {...crWindowInfo}, capsule: {...crCapsule}};
+        crWindowInfo.statusBarHeight += 4; crCapsule.top = crWindowInfo.statusBarHeight + 8; crCapsule.height = 36;
+        crPage.onResize();
+      });
+      await geometry(); assert.equal(await page.evaluate(() => crPage.data.navigation.height), 52);
+      await page.evaluate(() => {
+        wx.getWindowInfo = () => {throw new Error('窗口信息暂不可读');};
+        wx.getMenuButtonBoundingClientRect = () => ({left: 0, right: 0, top: 0, height: 0});
+        crPage.onResize();
+      });
+      await geometry(); assert.equal(await page.evaluate(() => crPage.data.navigation.height), 44);
+      await page.evaluate(() => {
+        crWindowInfo = crOriginalNavigation.window; crCapsule = crOriginalNavigation.capsule;
+        wx.getWindowInfo = () => crWindowInfo; wx.getMenuButtonBoundingClientRect = () => crCapsule; crPage.onResize();
+      });
+      await geometry();
+      if (navigationOnly) {
+        await page.locator('.cr-home-circle[aria-label="打开菜单"]').click(); await geometry();
+        assert.equal(await page.locator('.cr-home-menu').count(), 1);
+        assert.ok((await page.locator('.cr-home-menu').boundingBox()).y >= await page.locator('.cr-home-toolbar').evaluate(e => e.getBoundingClientRect().bottom));
+        await page.evaluate(() => crPage.closeHomeMenu());
+        await page.locator('.cr-home-circle[aria-label="搜索会话和项目"]').click();
+        await page.locator('.cr-home-search input').fill('优化');
+        assert.deepEqual(await page.locator('.cr-recent-section .cr-thread-name').allTextContents(), ['优化小程序布局']);
+        await page.locator('.cr-home-search wx-button').click(); await geometry();
+        await page.evaluate(() => crShowChat()); await geometry();
+        await page.screenshot({path: path.join(output, 'white-chat-' + width + '.png')});
+        await chatNavigation();
+        await page.evaluate(() => crPage.changeTheme({currentTarget: {dataset: {value: 'dark'}}})); await geometry();
+        await page.screenshot({path: path.join(output, 'navigation-dark-chat-' + width + '.png')});
+        await page.evaluate(() => crPage.keyboard({detail: {height: 260}})); await geometry();
+        const composer = await page.locator('.cr-composer').boundingBox(); assert.ok(composer.y + composer.height <= height - 260 + 1);
+        assert.deepEqual(errors, []); await context.close(); continue;
+      }
       assert.deepEqual(await page.locator('.cr-bottom-nav .cr-nav wx-text:last-child').allTextContents(), ['Codex','电脑与电源','连接与设置']);
       await page.evaluate(() => {window.savedHome = structuredClone(crPage.data);crPage.setData({authorized:false,devices:[],feedback:'',homeMenu:false});});
       assert.equal(await page.locator('.cr-empty-title').textContent(), '随时继续你的 Codex');
@@ -128,6 +206,7 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       await page.evaluate(() => {crPage.controller.nativeUsage.state={loading:false,reason:'',snapshots:[{limitId:'codex',primary:{windowDurationMins:300,usedPercent:49},secondary:{windowDurationMins:10080,usedPercent:65}}]};crPage.paint();});
       await page.locator('.cr-home-title').click(); await geometry();
       assert.equal(await page.locator('.cr-home-menu').count(),1);assert.ok((await page.locator('.cr-home-quota').textContent()).includes('5 小时 51%'));assert.ok((await page.locator('.cr-home-quota').textContent()).includes('每周 35%'));
+      assert.ok((await page.locator('.cr-home-menu').boundingBox()).y >= await page.locator('.cr-home-toolbar').evaluate(e => e.getBoundingClientRect().bottom), '首页菜单在顶部导航下展开');
       await page.screenshot({path:path.join(output,'home-menu-'+width+'.png')});
       await page.locator('.cr-home-menu-row[data-order="updated"]').click(); assert.equal(await page.locator('.cr-project-group').count(),0);assert.equal(await page.locator('.cr-home-menu').count(),0);assert.equal(await page.locator('.cr-recent-section .cr-thread').count(),4);
       await page.evaluate(()=>{crPage.controller.approvals.set('pending-home',{id:'pending-home',method:'item/fileChange/requestApproval',params:{threadId:'c'}});crPage.controller.activeTurns.set('a','running-home');crPage.paint();});
@@ -153,13 +232,14 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       await page.locator('.cr-home-menu-row[data-kind="settings"]').click();assert.equal(await page.evaluate(()=>crPage.data.view),'settings');assert.equal(await page.evaluate(()=>crPage.data.homeMenu),false);await page.evaluate(()=>{crPage.controller.state='runtime_ready';crPage.setData({view:'library',deviceName:'开发电脑'});crPage.paint();});
       await page.evaluate(()=>{crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.toggleHomeMenu();});await geometry();await page.screenshot({path:path.join(output,'home-dark-menu-'+width+'.png')});await page.evaluate(()=>{crPage.closeHomeMenu();crPage.changeTheme({currentTarget:{dataset:{value:'light'}}});});
       await page.evaluate(() => crShowChat()); await geometry(); await page.screenshot({path: path.join(output, 'white-chat-' + width + '.png')});
+      await chatNavigation();
       assert.equal(await page.locator('.cr-message-activity').count(),0); await page.locator('.cr-work-row').click(); assert.equal(await page.locator('.cr-activity-group').count(),1); await page.locator('.cr-activity-group').click(); assert.equal(await page.locator('.cr-message-activity').count(),2);
       await page.evaluate(()=>{crPage.controller.expandedTurns.clear();crShowImages();});assert.equal(await page.locator('.cr-image-toggle').count(),1,'viewed image stays inside completed process');assert.equal(await page.locator('.cr-image-previews').count(),0);
       await page.locator('.cr-work-row').click();assert.equal(await page.locator('.cr-image-toggle').count(),2,'process expansion restores viewed image');
       assert.equal(await page.evaluate(()=>crImageReads),0);assert.ok((await page.locator('.cr-image-toggle').allTextContents()).some(text=>text.includes('已查看 1 张图像')));
       await page.locator('.cr-image-toggle').first().click();await page.waitForFunction(()=>document.querySelector('.cr-image-previews wx-image')?.getAttribute('src')==='/fixture/portrait.png');
       await page.locator('.cr-image-previews .cr-image-button').waitFor({state:'visible'});
-      const imageBox=await page.locator('.cr-image-previews .cr-image-button').evaluate(element=>({width:element.getBoundingClientRect().width,height:element.getBoundingClientRect().height}));assert.ok(imageBox.width>0&&imageBox.width<=141&&imageBox.height>0&&imageBox.height<=141);assert.equal(await page.locator('.cr-image-previews wx-image').getAttribute('mode'),'aspectFit');
+      const imageBox=await page.locator('.cr-image-previews .cr-image-button').evaluate(element=>({width:element.getBoundingClientRect().width,height:element.getBoundingClientRect().height}));assert.ok(imageBox.width>0&&imageBox.width<=141&&imageBox.height>0&&imageBox.height<=141, JSON.stringify(imageBox));assert.equal(await page.locator('.cr-image-previews wx-image').getAttribute('mode'),'aspectFit');
       await geometry();await page.screenshot({path:path.join(output,'image-preview-'+width+'.png')});
       await page.locator('.cr-image-previews .cr-image-button').click();assert.equal(await page.evaluate(()=>crImageOpened.length),1);
       await page.evaluate(()=>crPage.paint());assert.equal(await page.locator('.cr-image-previews').count(),1);await page.locator('.cr-image-toggle').first().click();assert.equal(await page.locator('.cr-image-previews').count(),0);
@@ -179,6 +259,6 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       await page.evaluate(()=>{crPage.setData({view:'settings'});crPage.paint();});await geometry();await page.screenshot({path:path.join(output,'settings-'+width+'.png')});
       assert.deepEqual(errors, []); await context.close();
     }
-    console.log('微信编译页面：320/390/430px 首页最近/项目/优先级、菜单用量、筛选搜索、显示偏好、完整分页、断线与深色布局，以及聊天、图片、队列、审批、键盘、技能、文件和设置检查通过');
+    console.log(navigationOnly ? '微信编译页面：320/390/430px 顶部导航、胶囊避让、尺寸变化与回退、菜单、搜索、返回、长标题、浅深色和键盘检查通过' : '微信编译页面：320/390/430px 自定义顶部导航、状态栏/胶囊避让、尺寸变化/旧接口回退、长标题、菜单搜索和返回，以及首页、聊天、图片、队列、审批、浅深色、键盘、技能、文件和设置检查通过');
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});
