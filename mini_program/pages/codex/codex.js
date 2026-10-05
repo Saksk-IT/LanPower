@@ -4,6 +4,7 @@ const {CodexConnection, STATES} = require('../../utils/codex-remote');
 const {VERSION} = require('../../utils/version');
 const {CodexController} = require('../../utils/codex/controller');
 const {modelId, effectiveSettings, validEfforts} = require('../../utils/codex/model');
+const {orderedEfforts, effortGauge, contextIndicator} = require('../../utils/codex/composer-status');
 const {previewText, changesSummary} = require('../../utils/codex/conversation');
 const {permissionOptions, permissionLabels, permissionMode} = require('../../utils/codex/permissions');
 const {ImageCache} = require('../../utils/codex/resources');
@@ -26,8 +27,8 @@ Page({
     search: '', searchOpen: false, homeMenu: false, homeOrder: 'project', recentFirst: true, libraryFilter: 'all', recent: [], recentTotal: 0, recentCollapsed: false, recentTimeline: false, recentHasPrevious: false, recentHasNext: false, quotaSummary: [], groups: [], chats: [], pinned: [], hiddenProjects: [], hasMore: false, archived: false, chatSupported: false, projects: [], libraryHasPrevious: false, libraryHasNext: false, chatsFirst: false, sections: {}, sort: 'updated',
     title: '新聊天', project: '', cwd: '', messages: [], totalMessages: 0, windowStart: 0, windowEnd: 0, hasWindowBefore: false, hasWindowAfter: false, historyCursor: '', readingHistory: false, historyProgress: '', historyResume: false, beginningIndex: -1,
     prompt: '', draftImages: [], draftSkills: [], draftFiles: [], canSend: false, canControl: false, canInterrupt: false, canRelease: false, activeTurnId: '', running: false, interrupting: false, sendLabel: '发送', sendMode: 'queue', queueSupported: false,
-    selectedModel: '', selectedModelName: '', selectedEffort: '', selectedEffortName: '', selectedMode: 'default', models: [], efforts: [], effortChoices: [], effortIndex: -1, effortPercent: 0, planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
-    selectedPermission: 'unknown', permissionLabel: '批准状态待确认', permissionChoices: permissionOptions, permissionsSupported: false, changingPermissions: false, contextPercent: null,
+    selectedModel: '', selectedModelName: '', selectedEffort: '', selectedEffortName: '', selectedMode: 'default', models: [], efforts: [], effortChoices: [], effortIndex: -1, effortPercent: 0, ...effortGauge(''), planSupported: false, settingsHint: '', taskState: '', syncLabel: '', controlHint: '', elapsed: '', plan: [], progressOpen: false,
+    selectedPermission: 'unknown', permissionLabel: '批准状态待确认', permissionChoices: permissionOptions, permissionsSupported: false, changingPermissions: false, ...contextIndicator(null),
     inputFocused: false, uploadingAttachment: false, composerInset: 160, changes: {count: 0, added: 0, removed: 0, files: []}, changesPage: 1, changesPages: 1,
     receiptState: '', receiptLabel: '', queryingReceipt: false, queue: [], editingQueue: '', approvals: [], approval: null, responding: false, keyboardHeight: 0, scrollTarget: '', scrollTop: 0, showJump: false,
     renameTitle: '', renameDraft: '', newProjects: [], newProjectQuery: '', projectMenu: null, threadMenuPinned: false,
@@ -95,7 +96,7 @@ Page({
     const recentSize = home.timeline ? 15 : 6;
     this.recentOffset = home.timeline ? Math.min(this.recentOffset, Math.max(0, Math.ceil(home.recent.length / recentSize) - 1) * recentSize) : 0;
     const options = effectiveSettings(c.threadSettings), model = c.models.find(row => modelId(row) === options.model), draft = c.draft, receipt = c.receipt;
-    const efforts = validEfforts(model), effortIndex = efforts.indexOf(options.effort), permission = c.ready ? permissionMode(c.threadSettings.permissions, c.current && c.current.cwd || '') : 'unknown';
+    const efforts = orderedEfforts(validEfforts(model)), effortIndex = efforts.indexOf(options.effort), permission = c.ready ? permissionMode(c.threadSettings.permissions, c.current && c.current.cwd || '') : 'unknown';
     const usage = c.nativeUsage.context(c.threadId).usage, changes = changesSummary(c.current);
     const changesPages = Math.max(1, Math.ceil(changes.files.length / 40)); this.changeOffset = Math.min(this.changeOffset || 0, (changesPages - 1) * 40);
     const messages = c.messages((key, index) => this.imagePaths.get(key + ':img:' + index) || '');
@@ -119,10 +120,11 @@ Page({
       canControl: c.canControl, canSend, canInterrupt: c.canControl && !!c.activeTurn && !c.interrupting, canRelease: c.canControl && !c.sharedControl && c.handoff && !c.activeTurn, activeTurnId: c.activeTurn, running: !!c.activeTurn, interrupting: c.interrupting,
       sendLabel: draft.editingQueue ? '保存修改' : c.activeTurn ? this.data.sendMode === 'queue' && c.queueSupported ? '加入队列' : '引导任务' : '发送', queueSupported: c.queueSupported,
       selectedModel: options.model, selectedModelName: modelName(model) || options.model || '原窗口模型', selectedEffort: options.effort, selectedEffortName: effortNames[options.effort] || options.effort || '默认', selectedMode: options.mode,
+      ...effortGauge(options.effort, model, this.data.theme),
       models: c.models.map(row => ({value: modelId(row), name: modelName(row), description: row.description || ''})), efforts, effortIndex, effortMax: Math.max(1, efforts.length - 1), sliderEffortIndex: Math.max(0, effortIndex), effortPercent: effortIndex < 0 || efforts.length < 2 ? 0 : effortIndex / (efforts.length - 1) * 100,
       effortChoices: efforts.map((value, index) => ({value, index, name: effortNames[value] || value})), planSupported: c.planSupported,
       selectedPermission: permission, permissionLabel: permissionLabels[permission], permissionsSupported: c.permissionsSupported, changingPermissions: c.changingPermissions,
-      contextPercent: usage && Number.isFinite(usage.remainingContextPercent) ? Math.max(0, Math.min(100, usage.remainingContextPercent)) : null,
+      ...contextIndicator(usage, this.data.theme),
       changes: {...changes, files: changes.files.slice(this.changeOffset, this.changeOffset + 40).map((file, index) => ({path: file.path, kind: file.kind, added: file.added, removed: file.removed, index: this.changeOffset + index}))}, changesPages, changesPage: this.changeOffset / 40 + 1,
       settingsHint: Object.keys(c.threadSettings.overrides).length ? '已选择下次新任务参数；排队和引导沿用当前任务。' : '', taskState: c.liveLabel(), elapsed: c.duration(), plan: c.overlay.plan,
       syncLabel: c.recovering || c.loadingThread ? '正在恢复原窗口状态' : !c.ready ? '显示历史缓存' : c.syncFailed ? '同步未完成 · 显示缓存' : c.lastSync ? '最近同步 ' + new Date(c.lastSync).toLocaleTimeString('zh-CN', {hour12: false}) : '',
@@ -499,5 +501,5 @@ Page({
   chatsFirst(event) { this.controller.changeLibrary('chatsFirst', '', !!event.detail.value); },
   unhideProject(event) { this.controller.changeLibrary('hidden', dataOf(event).id); },
   changeTheme(event) { const mode = dataOf(event).value; if (!['light', 'dark', 'system'].includes(mode)) return; this.setData({themeMode: mode}); wx.setStorageSync(this.themeKey, mode); this.applyTheme(); },
-  applyTheme() { const mode = this.data.themeMode, theme = mode === 'system' ? this.systemTheme : mode; this.setData({theme: theme === 'dark' ? 'dark' : 'light'}); if (wx.setNavigationBarColor) wx.setNavigationBarColor({frontColor: theme === 'dark' ? '#ffffff' : '#000000', backgroundColor: theme === 'dark' ? '#17181a' : '#ffffff', animation: {duration: 0}}); },
+  applyTheme() { const mode = this.data.themeMode, theme = (mode === 'system' ? this.systemTheme : mode) === 'dark' ? 'dark' : 'light'; const model = this.controller && this.controller.models.find(row => modelId(row) === this.data.selectedModel); this.setData({theme, ...contextIndicator(this.controller && this.controller.nativeUsage.context(this.controller.threadId).usage, theme), ...effortGauge(this.data.selectedEffort, model, theme)}); if (wx.setNavigationBarColor) wx.setNavigationBarColor({frontColor: theme === 'dark' ? '#ffffff' : '#000000', backgroundColor: theme === 'dark' ? '#17181a' : '#ffffff', animation: {duration: 0}}); },
 });

@@ -10,6 +10,7 @@ for (const [file, args] of [['wcc.exe', ['-o', path.join(output, 'wxml.js'), 'pa
   ['wcsc.exe', ['-js', '-o', path.join(output, 'codex-wxss.js'), 'pages/codex/codex.wxss']]]) execFileSync(path.join(compiler, file), args, {cwd: mini});
 const modules = ['utils/version.js', 'utils/environment.js', 'utils/cloud-connectivity.js', 'utils/cloud.js', 'utils/codex-remote.js', 'utils/codex-format.js', 'utils/codex-fragments.js', 'utils/navigation.js', 'utils/device-selection.js', 'pages/codex/codex.js', ...fs.readdirSync(path.join(mini, 'utils/codex')).filter(file => file.endsWith('.js')).map(file => 'utils/codex/' + file)];
 const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(path.join(mini, file), 'utf8')]));
+const composerOnly = process.argv.includes('--composer-only');
 
 (async () => {
   const browser = await chromium.launch({headless: true});
@@ -164,9 +165,10 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
         await page.screenshot({path:path.join(output,name+'-'+width+'.png')});
         const measure=await page.evaluate(()=>{
           const bounds=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
-          return {overflow:document.documentElement.scrollWidth-innerWidth,page:bounds(document.querySelector('.codex-page')),composer:bounds(document.querySelector('.cr-composer')),panel:document.querySelector('.cr-sheet')?bounds(document.querySelector('.cr-sheet')):null,scroll:bounds(document.querySelector('.cr-chat-scroll')),buttons:[...document.querySelectorAll('wx-button')].map(e=>({name:e.className,...bounds(e)})).filter(r=>r.width>0&&r.height>0&&(r.left< -1||r.right>innerWidth+1))};
+          return {overflow:document.documentElement.scrollWidth-innerWidth,page:bounds(document.querySelector('.codex-page')),composer:bounds(document.querySelector('.cr-composer')),floats:document.querySelector('.cr-composer-floats')?bounds(document.querySelector('.cr-composer-floats')):null,panel:document.querySelector('.cr-sheet')?bounds(document.querySelector('.cr-sheet')):null,scroll:bounds(document.querySelector('.cr-chat-scroll')),buttons:[...document.querySelectorAll('wx-button')].map(e=>({name:e.className,...bounds(e)})).filter(r=>r.width>0&&r.height>0&&(r.left< -1||r.right>innerWidth+1))};
         });
         assert.ok(measure.overflow<=1,name+JSON.stringify(measure));assert.ok(measure.scroll.height>60,name+JSON.stringify(measure));assert.deepEqual(measure.buttons,[],name+JSON.stringify(measure));assert.ok(measure.composer.bottom<=measure.page.bottom+1,name+JSON.stringify(measure));
+        if(measure.floats)assert.ok(measure.floats.bottom<=measure.composer.top-7,'悬浮按钮必须完整位于输入框上方：'+name+JSON.stringify(measure));
         if(measure.panel){assert.ok(measure.panel.top>=measure.page.top-1,name+JSON.stringify(measure));assert.ok(measure.panel.bottom<=measure.page.bottom+1,name+JSON.stringify(measure));}
       }
       await geometry('conversation');
@@ -175,11 +177,37 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       assert.equal(await page.locator('.cr-model-pill').count(),0,'输入框上方不应再显示模型与强度');
       const bubble=await page.evaluate(()=>{const area=document.querySelector('.cr-composer-area'),pill=document.querySelector('.cr-changes-pill'),scroll=document.querySelector('.cr-chat-scroll');return {background:getComputedStyle(area).backgroundColor,pointerEvents:getComputedStyle(area).pointerEvents,overlaps:scroll.getBoundingClientRect().bottom>pill.getBoundingClientRect().bottom};});
       assert.equal(bubble.background,'rgba(0, 0, 0, 0)','文件气泡外层必须透明');assert.equal(bubble.pointerEvents,'none','气泡外围应允许正文触摸滚动');assert.equal(bubble.overlaps,true,'正文应延伸至悬浮气泡后方');
+      await page.evaluate(()=>crPage.setData({showJump:true}));await geometry('composer-jump-row');
+      const sameRow=await page.evaluate(()=>{const a=document.querySelector('.cr-jump').getBoundingClientRect(),b=document.querySelector('.cr-changes-pill').getBoundingClientRect();return {jump:(a.top+a.bottom)/2,pill:(b.top+b.bottom)/2};});
+      assert.ok(Math.abs(sameRow.jump-sameRow.pill)<=1,'跳到底部与文件气泡应位于同一行');
+      await page.evaluate(async()=>{const c=crPage.controller;const count=totalTokens=>({totalTokens,inputTokens:totalTokens,cachedInputTokens:0,outputTokens:0,reasoningOutputTokens:0});window.crFixtureUsage=tokens=>c.onEvent({method:'thread/tokenUsage/updated',params:{threadId:c.threadId,tokenUsage:{total:count(9000),last:count(tokens),modelContextWindow:100}}});crFixtureUsage(25);await crPage.paint();});
+      assert.match(await page.locator('.cr-context-button').getAttribute('aria-label'),/已用 25%.*剩余 75%/);
+      const ringStyle=await page.locator('.cr-context-ring').getAttribute('style');
+      assert.ok(await page.locator('.cr-context-ring').evaluate(e=>getComputedStyle(e).backgroundImage.startsWith('url(')),'上下文圆圈必须渲染实际用量弧线');
+      await page.locator('.cr-context-button').click();assert.equal(await page.evaluate(()=>crPage.data.sheet),'status');await page.evaluate(async()=>{crPage.closeSheet();crFixtureUsage(80);await crPage.paint();});
+      assert.notEqual(await page.locator('.cr-context-ring').getAttribute('style'),ringStyle);
+      await page.evaluate(async()=>{crPage.controller.chooseSetting('effort','low');await crPage.paint();});const lowAngle=await page.evaluate(()=>crPage.data.effortAngle),lowArc=await page.locator('.cr-effort-gauge-arc').getAttribute('style');await geometry('composer-gauge-low');
+      await page.evaluate(async()=>{crPage.controller.chooseSetting('effort','max');await crPage.paint();});assert.ok(await page.evaluate(()=>crPage.data.effortAngle)>lowAngle);assert.notEqual(await page.locator('.cr-effort-gauge-arc').getAttribute('style'),lowArc);assert.equal(await page.evaluate(()=>crPage.data.effortArcDegrees),await page.evaluate(()=>crPage.data.effortAngle+110));await geometry('composer-context-gauge');
+      await page.evaluate(async()=>{crPage.controller.input('多行草稿\n继续跟进\n检查输入区');crPage.controller.queue=[{id:'composer-queue',input:[{type:'text',text:'排队任务'}]}];crPage.setData({inputFocused:true,keyboardHeight:290,showJump:true});await crPage.paint();document.querySelector('.cr-textarea').style.height='150px';});await geometry('composer-tall-keyboard-queue');
+      await page.evaluate(async()=>{crPage.controller.draft.files=[{path:'C:/Fixture/example.md',label:'example.md'}];crPage.setData({keyboardHeight:0,showJump:true});await crPage.paint();});await geometry('composer-attachments-jump');
+      await page.evaluate(async()=>{crPage.controller.queue=[];crPage.controller.draft.files=[];crPage.controller.input('');crPage.setData({inputFocused:false,showJump:false});crResetConversation();await crPage.paint();});
+      if(composerOnly){
+        await page.locator('.cr-model-gauge').click();assert.equal(await page.evaluate(()=>crPage.data.sheet),'options');
+        await page.locator('.cr-effort-slider input').evaluate(input=>{input.value='0';input.dispatchEvent(new Event('input',{bubbles:true}));});const left=await page.evaluate(()=>crPage.data.effortAngle);
+        await page.locator('.cr-effort-slider input').evaluate(input=>{input.value=input.max;input.dispatchEvent(new Event('input',{bubbles:true}));});assert.ok(await page.evaluate(()=>crPage.data.effortAngle)>left);
+        await page.evaluate(()=>{crPage.closeSheet();crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.setData({showJump:true});});await geometry('composer-dark');
+        await page.evaluate(async()=>{const c=crPage.controller;c.current.turns=[];c.activeTurns.clear();c.nativeUsage.reset();crPage.changeTheme({currentTarget:{dataset:{value:'light'}}});await crPage.paint();crPage.setData({showJump:true});});await geometry('composer-empty');
+        assert.equal(await page.locator('.cr-effort-gauge').count(),1);assert.equal(await page.locator('.cr-context-ring.has-context').count(),0);
+        const empty=await page.evaluate(()=>{const input=document.querySelector('.cr-textarea').getBoundingClientRect(),button=document.querySelector('.cr-context-button').getBoundingClientRect(),jump=document.querySelector('.cr-jump').getBoundingClientRect(),plus=document.querySelector('.cr-composer-tools .cr-icon').getBoundingClientRect(),gauge=document.querySelector('.cr-model-gauge').getBoundingClientRect();return {inputRight:input.right,buttonLeft:button.left,jumpCenter:(jump.left+jump.right)/2,inputCenter:(input.top+input.bottom)/2,plusCenter:(plus.top+plus.bottom)/2,gaugeCenter:(gauge.top+gauge.bottom)/2,contextCenter:(button.top+button.bottom)/2};});
+        assert.ok(empty.inputRight<=empty.buttonLeft-3,'紧凑输入框为两个状态图标预留空间');assert.ok(Math.abs(empty.jumpCenter-width/2)<=1,'无文件更改时跳到底部应居中');
+        for(const center of [empty.plusCenter,empty.gaugeCenter,empty.contextCenter])assert.ok(Math.abs(center-empty.inputCenter)<=1,'加号、输入文字与右侧图标必须水平对齐：'+JSON.stringify(empty));
+        assert.deepEqual(errors,[]);await context.close();continue;
+      }
       assert.equal(await page.locator('.cr-activity-detail').count(),0);assert.equal(await page.locator('.cr-reasoning-detail').count(),0);assert.equal(await page.locator('.cr-image-previews').count(),0);
       await page.locator('.cr-activity-group').first().click();assert.equal(await page.locator('.cr-message-activity').count(),3);await page.locator('.cr-activity-toggle').first().click();assert.equal(await page.locator('.cr-activity-detail').count(),1);assert.ok((await page.locator('.cr-activity-detail').textContent()).includes('文件内容已读取'));await geometry('command-expanded');
       await page.locator('.cr-reasoning-toggle').click();assert.equal(await page.locator('.cr-reasoning-detail').count(),1);await page.locator('.cr-image-toggle').click();assert.equal(await page.evaluate(()=>crImageReads),1);await page.locator('.cr-image-button').click();assert.equal(await page.evaluate(()=>crImageOpened.length),1);
       await page.locator('.cr-live').click();assert.equal(await page.locator('.cr-live-work .cr-plan').count(),1);await geometry('work-expanded');
-      await page.evaluate(()=>crResetConversation());await page.locator('.cr-context-button').click();await geometry('advanced');
+      await page.evaluate(()=>crResetConversation());await page.locator('.cr-model-gauge').click();await geometry('advanced');
       await page.locator('.cr-advanced-row[data-kind=models]').click();assert.equal(await page.locator('.cr-model-option').count(),2);await geometry('models');
       await page.locator('.cr-model-option[data-value="gpt-6-astra"]').click();assert.equal(await page.evaluate(()=>crPage.data.selectedEffort),'high');assert.equal(await page.evaluate(()=>crPage.data.efforts.length),2);
       await page.locator('.cr-advanced-row[data-kind=models]').click();await page.locator('.cr-model-option[data-value="gpt-6.1-sol"]').click();await page.locator('.cr-advanced-row[data-kind=effort]').click();assert.equal(await page.locator('.cr-effort-dot').count(),6);await page.locator('.cr-effort-dot[data-value=high]').click();assert.equal(await page.evaluate(()=>crPage.data.selectedEffort),'high');await geometry('effort');
@@ -201,7 +229,10 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       const thumbnails=await page.locator('.cr-message-user .cr-image-button').evaluateAll(elements=>elements.map(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,fit:e.querySelector('wx-image')?.getAttribute('mode')})));
       assert.ok(thumbnails.every(image=>image.width<=140.5&&image.height<=140.5&&image.fit==='aspectFit'));await geometry('user-thumbnails');
       await page.locator('.cr-message-user .cr-image-button').nth(1).click();assert.equal(await page.evaluate(()=>crImageOpened.at(-1).urls.length),4);
-      await page.locator('.cr-context-button').click();assert.equal(await page.evaluate(()=>crPage.data.sheet),'options');
+      const alignment=await page.locator('.cr-user-content').evaluate(element=>{const images=element.querySelector('.cr-image-previews').getBoundingClientRect(),body=element.querySelector('.cr-message-text').getBoundingClientRect();return Math.abs(images.right-body.right);});assert.ok(alignment<=1,'图片缩略图与正文右对齐');
+      await page.evaluate(()=>{const c=crPage.controller;c.current.turns[0].items[0].content=[{type:'text',text:'\n# Files mentioned by the user:\n\n## one.png:\nC:/Fixture/one.png\nImage attachment: true\n\n## My request:\n'}];crPage.paint();});
+      await page.waitForFunction(()=>crPage.data.messages.find(row=>row.kind==='user').images.every(image=>image.src));assert.equal(await page.locator('.cr-message-user .cr-message-text').count(),0);assert.equal(await page.locator('.cr-message-user .cr-image-button').count(),1);await geometry('user-image-only');
+      await page.locator('.cr-model-gauge').click();assert.equal(await page.evaluate(()=>crPage.data.sheet),'options');
       await page.locator('.cr-effort-slider input').evaluate(input=>{input.value='3';input.dispatchEvent(new Event('input',{bubbles:true}));});assert.equal(await page.evaluate(()=>crPage.data.selectedEffort),'high');await geometry('ring-model-strength');
       await page.evaluate(()=>{crPage.closeSheet();crResetConversation();});
       const group=page.locator('.cr-activity-group').first();await group.scrollIntoViewIfNeeded();const groupTop=await group.evaluate(e=>e.getBoundingClientRect().top);
@@ -264,6 +295,6 @@ const sources = Object.fromEntries(modules.map(file => [file, fs.readFileSync(pa
       for(const sheet of ['options','permissions','attachments','menu','files']){await page.evaluate(sheet=>{crPage.changeTheme({currentTarget:{dataset:{value:'dark'}}});crPage.setData({sheet});},sheet);await geometry('dark-'+sheet);}
       assert.deepEqual(errors,[]);await context.close();
     }
-    console.log('iOS 会话对齐：320/390/430px 活动逐项折叠、思考/图片/工作状态、模型与强度、批准菜单、相机/照片/文件、聊天菜单、文件预览、Diff、键盘与深色检查通过');
+    console.log(composerOnly ? '输入区检查通过：320/390/430px 浮动按钮、真实上下文、仪表盘指针与蓝色弧线、强度选择、键盘、附件、排队和深色显示' : 'iOS 会话对齐：320/390/430px 活动逐项折叠、思考/图片/工作状态、模型与强度、批准菜单、相机/照片/文件、聊天菜单、文件预览、Diff、键盘与深色检查通过');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
