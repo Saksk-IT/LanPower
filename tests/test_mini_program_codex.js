@@ -104,7 +104,10 @@ async function main() {
   page.setData=changes=>{const size=Buffer.byteLength(JSON.stringify(changes));maxPayload=Math.max(size,maxPayload);assert.ok(size<1048576,'native setData exceeds 1 MiB');Object.assign(page.data,changes);};
   try{
     page.onLoad();page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering&&page.controller.threads.length===2);
-    page.paint();assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.data.ready,true);
+    await until(()=>page.data.ready&&page.data.recent.length===2&&page.data.groups.length===1);
+    assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.data.homeOrder,'project');assert.equal(page.data.homeMenu,false);
+    assert.deepEqual(page.data.recent.map(row=>row.id),['a','b']);assert.equal(page.data.groups[0].threads.length,2);
+    assert.equal(calls.filter(call=>call.method==='thread/list').length,1,'首次进入自动读取列表，无需切换排序');
     await page.readThread('a');page.paint();assert.equal(page.data.selectedModel,'m-a');assert.equal(page.data.canControl,true);
     const albumBytes=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXdwAAAAASUVORK5CYII=','base64')).buffer;
     wx.getFileSystemManager=()=>({unlink:()=>{},readFile:options=>options.success({data:albumBytes})});
@@ -127,7 +130,13 @@ async function main() {
     let auxiliary;wx.navigateTo=options=>{auxiliary=options.url;};
     page.setData({view:'chat'});page.navigate({currentTarget:{dataset:{page:'power'}}});
     assert.equal(auxiliary,'/pages/power/power?computer=pc-a');assert.equal(page.controller,originalController);assert.equal(page.controller.threadId,'a');
-    page.onHide();assert.equal(page.connection.opened,false);assert.equal(page.controller.draft.text,'A 未发的内容');page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);assert.equal(page.data.view,'chat');assert.equal(page.controller.threadId,'a');
+    page.controller.notify('等待返回刷新');
+    page.onHide();assert.equal(page.connection.opened,false);assert.equal(page.controller.draft.text,'A 未发的内容');
+    threads[0].name='返回后自动更新的聊天';page.onShow();await until(()=>page.controller.ready&&!page.controller.recovering);
+    await until(()=>page.data.ready&&page.data.title===threads[0].name&&page.data.recent.some(row=>row.name===threads[0].name));
+    page.input({detail:{value:'返回后继续编辑草稿'}});await until(()=>page.data.prompt==='返回后继续编辑草稿');
+    page.input({detail:{value:'A 未发的内容'}});
+    assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);assert.equal(page.data.view,'chat');assert.equal(page.controller.threadId,'a');
     let stale;readDelay=(s,frame)=>{stale=()=>s.frame(frame);};const oldRead=page.controller.refreshCurrent();await until(()=>stale);
     page.chooseDevice(page.data.devices[1]);stale();await oldRead;readDelay=null;assert.equal(page.controller.current,null);assert.equal(page.data.messages.length,0);
     const {saveDeviceSelection,selectedDevice}=require('../mini_program/utils/device-selection');
@@ -135,6 +144,6 @@ async function main() {
     assert.equal(page.data.deviceName,'开发电脑');assert.equal(page.controller.current,null);await page.readThread('a');assert.equal(page.controller.draft.text,'A 未发的内容');assert.equal(calls.filter(call=>call.method==='turn/start').length,starts);
     assert.equal(Object.keys(storage).filter(key=>/thread|prompt|approval|history/.test(key)).length,0);assert.ok(maxPayload<1048576);
   }finally{page.onUnload();}
-  console.log('小程序原生页面与传输：授权、回执、草稿、队列/引导/停止、单次审批、长内容、后台恢复及电脑隔离检查通过');
+  console.log('小程序原生页面与传输：首次列表自动显示、返回后自动刷新、授权、回执、草稿、队列/引导/停止、单次审批、长内容、后台恢复及电脑隔离检查通过');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

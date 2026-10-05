@@ -70,7 +70,11 @@ Page({
   },
   updateNavigation() { this.setData({navigation: navigationLayout(wx)}); },
   onResize() { this.updateNavigation(); },
-  clearTimers() { clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer); clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer); },
+  clearTimers() {
+    clearInterval(this.poll); clearInterval(this.clockTimer); clearTimeout(this.paintTimer);
+    this.paintTimer = null;
+    clearTimeout(this.searchTimer); clearTimeout(this.librarySearchTimer);
+  },
   onHide() { this.visible = false; this.deviceListRun = (this.deviceListRun || 0) + 1; this.deviceLoading = false; this.clearTimers(); this.controller.onState('disconnected'); this.connection.stop(); this.images.clear(); this.imagePaths.clear(); this.setData({keyboardHeight: 0, sheet: '', homeMenu: false, deviceLoading: false}); this.paint(); },
   onUnload() { this.onHide(); this.unloaded = true; this.controller.dispose(); if (this.client) this.client.close(); if (wx.offThemeChange) wx.offThemeChange(this.themeChanged); if (wx.offNetworkStatusChange) wx.offNetworkStatusChange(this.networkChanged); this.detailText = ''; this.setData({detailText: '', messages: [], prompt: '', draftImages: [], draftSkills: [], draftFiles: []}); },
   schedulePaint() { if (this.unloaded || this.paintTimer) return; this.paintTimer = setTimeout(() => { this.paintTimer = null; if (!this.unloaded) this.paint(); }, 70); },

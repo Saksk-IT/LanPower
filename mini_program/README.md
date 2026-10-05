@@ -2,7 +2,7 @@
 
 统一账号登录：电脑登录后自动加入账号，手机登录同一 Cloud 的同一账号即可选择电脑；已有 Passkey 用户先在网页「设置 → 统一账号」设置密码。原扫码授权和局域网直连继续兼容，见 [三端账号登录](../docs/account-login.md)。
 
-当前小程序版本 **3.6.0**，协议版本 **2**，配套 Windows / Cloud / Web **1.23.2**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.0.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
+当前小程序版本 **3.6.1**，协议版本 **2**，配套 Windows / Cloud / Web **1.23.2**。导入完整 `mini_program` 目录，或本机生成的 `windows/out/CodexDock-mini-program-3.6.1.zip`。页面路径与兼容说明见 [小程序导航](../docs/mini-program-navigation.md)。
 
 ## 页面与入口
 
@@ -16,6 +16,8 @@
 Codex 控制保留项目、最近聊天、完整历史、模型与强度、权限、附件、队列和审批功能。控制页没有底部主导航，也不在当前设备内切换到另一台电脑；更换设备请返回“我的设备”。原始电脑选择缓存、长期授权和开发 / 体验 / 正式环境隔离继续使用，无需因导航更新重新扫码。
 
 Codex 沿用已有的自定义顶部导航，避让状态栏和微信胶囊；设备内的工作台顶部提供“返回设备详情”，聊天中的返回先回到工作台。菜单、搜索、文件与能力目录保持原有操作。
+
+`3.6.1` 修复 Codex 首次进入和后台返回后列表没有自动显示的问题。连接就绪后自动显示最近聊天和项目，无需打开顶部菜单或切换排序；返回聊天后仍可自动同步并保留未发送草稿。原因与回归检查见 [首页加载修复](../docs/codex-mini-home.md#361-自动加载修复2026-10-06)。
 
 ## 第一次连接
 
@@ -53,6 +55,7 @@ node --test tests/test_mini_program_navigation.js
 node tests/test_mini_program.js
 node tests/test_mini_program_v2.js
 node tests/test_mini_program_codex.js
+node --test tests/test_mini_program_codex_home.js tests/test_mini_program_codex_state.js
 node tests/test_mini_program_environments.js
 node tests/test_mini_program_cloud_connectivity.js
 ```
