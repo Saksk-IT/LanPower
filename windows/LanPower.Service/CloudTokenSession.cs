@@ -9,9 +9,9 @@ public sealed class CloudReconnectRequiredException() : UnauthorizedAccessExcept
 public sealed record CloudAccess(CloudCredentials Credentials, string Token);
 public sealed record CloudDisconnected(CloudCredentials? Credentials, string? AccessToken);
 
-// Refresh tokens are single-use. Persist an intent before sending one, and never
-// repeat the exchange after a lost response or a process restart. If only the
-// final local write failed, retain the response and retry that write in memory.
+// Prefer retryable renewal, which preserves the long-lived authorization even
+// when the response is lost. Legacy rotation remains single-use: persist intent
+// before sending it and never replay an ambiguous exchange.
 public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore store, TimeProvider? clock = null)
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -21,7 +21,7 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
     private long _expires;
     private PendingTokens? _pending;
 
-    private sealed record PendingTokens(CloudCredentials Previous, CloudCredentials Updated, string Access, long Expires);
+    private sealed record PendingTokens(CloudCredentials Expected, CloudCredentials Updated, string Access, long Expires);
 
     public static void ValidateCredentials(CloudCredentials saved)
     {
@@ -70,17 +70,37 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
             ValidateCredentials(saved);
             if (_pending is not null)
             {
-                if (saved == (_pending.Previous with { RefreshPending = true }))
+                if (saved == _pending.Expected)
                     return CommitPending();
                 _pending = null;
             }
-            if (saved.RefreshPending) throw new CloudReconnectRequiredException();
-            if (saved == _active && _access is not null && _expires > _clock.GetUtcNow().ToUnixTimeSeconds() + 60)
+            if (saved.ReconnectRequired) throw new CloudReconnectRequiredException();
+            if (!saved.RefreshPending && saved == _active && _access is not null && _expires > _clock.GetUtcNow().ToUnixTimeSeconds() + 60)
                 return new CloudAccess(saved, _access);
 
             token.ThrowIfCancellationRequested();
+            using var renewal = await client.PostAsJsonAsync(saved.CloudUrl + "/api/v2/windows/renew",
+                new { device_id = saved.DeviceId, refresh_token = saved.RefreshToken }, token);
+            if (renewal.StatusCode is not (HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed))
+            {
+                RejectInvalidAuthorization(renewal, saved);
+                renewal.EnsureSuccessStatusCode();
+                using var renewalData = await renewal.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
+                    ?? throw new InvalidDataException("Cloud 凭据响应无效");
+                var renewed = Parse(saved.CloudUrl, renewalData.RootElement);
+                if (renewed.Credentials.DeviceId != saved.DeviceId || renewed.Credentials.RefreshToken != saved.RefreshToken)
+                    throw new InvalidDataException("Cloud 续期响应无效");
+                _pending = new PendingTokens(saved, renewed.Credentials, renewed.Access, renewed.Expires);
+                return CommitPending();
+            }
+
+            // Only an explicit missing endpoint permits legacy rotation. A
+            // legacy interrupted exchange may already have consumed this token.
+            if (saved.RefreshPending) throw new CloudReconnectRequiredException();
+            token.ThrowIfCancellationRequested();
             // A failed intent write must prevent the HTTP exchange altogether.
-            store.Save(saved with { RefreshPending = true });
+            var intent = saved with { RefreshPending = true };
+            store.Save(intent);
             _active = null;
             _access = null;
             HttpResponseMessage exchanged;
@@ -97,17 +117,27 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
                 throw;
             }
             using var response = exchanged;
-            if (response.StatusCode == HttpStatusCode.Unauthorized) throw new CloudReconnectRequiredException();
+            RejectInvalidAuthorization(response, intent);
             response.EnsureSuccessStatusCode();
             using var data = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: token)
                 ?? throw new InvalidDataException("Cloud 凭据响应无效");
             var result = Parse(saved.CloudUrl, data.RootElement);
             if (result.Credentials.DeviceId != saved.DeviceId || result.Credentials.RefreshToken == saved.RefreshToken)
                 throw new InvalidDataException("Cloud 凭据响应无效");
-            _pending = new PendingTokens(saved, result.Credentials, result.Access, result.Expires);
+            _pending = new PendingTokens(intent, result.Credentials, result.Access, result.Expires);
             return CommitPending();
         }
         finally { _lock.Release(); }
+    }
+
+    private void RejectInvalidAuthorization(HttpResponseMessage response, CloudCredentials expected)
+    {
+        if (response.StatusCode is not (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)) return;
+        _pending = null;
+        _active = null;
+        _access = null;
+        store.Save(expected with { ReconnectRequired = true });
+        throw new CloudReconnectRequiredException();
     }
 
     private CloudAccess CommitPending()
@@ -121,17 +151,16 @@ public sealed class CloudTokenSession(HttpClient client, ICloudCredentialStore s
         return new CloudAccess(_active, _access);
     }
 
-    public async Task BlockAsync(CloudCredentials expected, CancellationToken token)
+    public async Task InvalidateAccessAsync(CloudAccess expected, CancellationToken token)
     {
         await _lock.WaitAsync(token);
         try
         {
-            // An old connection's 401 must not disable a newly paired identity.
-            if (store.Load() != expected) return;
-            _pending = null;
-            _active = null;
+            // A late 401 for an old access token must not discard a newer grant
+            // or disable an identity paired while the old request was in flight.
+            if (store.Load() != expected.Credentials || _active != expected.Credentials || _access != expected.Token) return;
             _access = null;
-            store.Save(expected with { RefreshPending = true });
+            _expires = 0;
         }
         finally { _lock.Release(); }
     }

@@ -29,15 +29,16 @@ Cloud 将 Windows 心跳作为直连在线信号。网页按设备显示可用�
 
 - `POST /api/v2/enroll/start`、`POST /api/v2/enroll/token`：设备发起配对，等待网页批准并兑换独立凭据。
 - `POST /api/v2/devices/token`：统一设备凭据轮换；`POST /api/v2/windows/token` 继续兼容 Windows。
+- `POST /api/v2/windows/renew`：Cloud / Windows `1.22.1` 的可重试续期；`POST /api/v2/devices/renew` 提供网关续期。长期凭据保持不变，只更新短效访问凭据并延长仍有效的授权。
 - `POST /api/v2/devices/revoke`：设备使用自身 Access Token 移除自身，不能指定其他目标；浏览器和手机客户端不能调用该设备入口。
 - `POST /api/v2/windows/enroll`：兼容旧版 Windows 的网页长配对码。
 - `POST /api/v2/windows/heartbeat`、`GET /api/v2/windows/commands`、`POST /api/v2/windows/results`：Windows Agent 上报状态、领取命令与回执。
 - `GET /api/v2/devices`、`GET /api/v2/devices/{id}`、`POST /api/v2/devices/{id}/commands`：Cloud Web 设备与控制接口。
 - `GET /api/v2/commands/{id}`：查询命令回执。网页控制需要登录会话和 CSRF 校验。
 
-设备 Access Token 有效期 15 分钟，Refresh Token 有效期 30 天并在使用时轮换；数据库仅保存摘要。旧刷新凭据再次出现会撤销该设备会话。Windows 将当前刷新凭据通过 DPAPI 加密保存在 `C:\ProgramData\LanPower\credentials.dat`，安装程序把数据目录限制为 SYSTEM 和管理员访问。Cloud 不保存 Windows 局域网凭据。
+设备 Access Token 有效期 15 分钟，Refresh Token 有效期 30 天；可重试续期保留长期凭据并延长仍有效的授权，数据库仅保存摘要。旧的一次性轮换接口仍消费凭据，已使用的刷新凭据再次请求轮换会撤销对应会话。Windows 将长期凭据通过 DPAPI 加密保存在 `C:\ProgramData\LanPower\credentials.dat`，安装程序把数据目录限制为 SYSTEM 和管理员访问。Cloud 不保存 Windows 局域网凭据。
 
-Windows 刷新前持久保存状态；响应丢失或进程中断后要求重新配对，不重发旧凭据。只在新响应写盘失败时重试本地保存。桌面断开 Cloud 时先停止当前连接并删除本机凭据，再尝试同步撤销原设备；Cloud 不可达时需在网页清理旧记录，LAN 继续工作。
+Windows `1.22.1` 优先使用可重试续期，响应丢失、网络中断或重启后可使用原授权恢复。访问凭据收到 401 时先续期再重试，只有长期授权明确被拒绝才要求重新配对。新接口明确返回 404/405 才降级至旧轮换接口；旧接口发送前仍持久保存状态，结果不明时不重放。恢复边界见 [自动恢复连接](windows-cloud-recovery.md)。桌面断开 Cloud 时先停止当前连接并删除本机凭据，再尝试同步撤销原设备；Cloud 不可达时需在网页清理旧记录，LAN 继续工作。
 
 ## 验收边界
 

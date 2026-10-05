@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace LanPower.Service;
 
-public sealed record CloudCredentials(string CloudUrl, string DeviceId, string RefreshToken, bool RefreshPending = false);
+public sealed record CloudCredentials(string CloudUrl, string DeviceId, string RefreshToken,
+    bool RefreshPending = false, bool ReconnectRequired = false);
 
 public interface ICloudCredentialStore
 {

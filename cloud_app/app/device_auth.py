@@ -113,7 +113,7 @@ class DeviceTokens:
     def renew(self, payload: dict, *, expected_type: str | None = None) -> dict:
         """Renew short-lived access without consuming the device authorization.
 
-        The retryable endpoint lets a gateway recover when Cloud committed a
+        The retryable endpoint lets a device recover when Cloud committed a
         renewal but the response or the local credential write was interrupted.
         The long-lived refresh token remains unchanged and is never recorded as
         used, so a restart can safely submit it again.

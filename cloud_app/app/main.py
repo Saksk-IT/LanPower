@@ -871,6 +871,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except PermissionError as error:
             raise HTTPException(401, str(error)) from error
 
+    @app.post("/api/v2/windows/renew")
+    async def windows_renew(request: Request):
+        try:
+            return platform.tokens.renew(await json_body(request), expected_type="windows")
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+
     @app.post("/api/v2/windows/heartbeat")
     async def windows_heartbeat(request: Request):
         owner_id, device_id = device_identity(request)

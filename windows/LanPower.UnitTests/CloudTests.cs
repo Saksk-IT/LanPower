@@ -135,8 +135,39 @@ public sealed class CloudTests
         finally { Directory.Delete(folder, true); }
     }
 
+    [TestMethod]
+    public async Task AgentRenewsRejectedAccessAndRestoresHeartbeatAndCommandsWithoutPairing()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "LanPowerResumeTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            using var handler = new FakeCloudHandler(Guid.NewGuid().ToString(), Guid.NewGuid(), "none", rejectOldAccess: true);
+            using var http = new HttpClient(handler);
+            var store = new CloudCredentialStore(folder);
+            var log = new ServiceLog(Path.Combine(folder, "service.log"));
+            using var agent = new CloudAgent(new LanConfig { Token = new string('a', 64) }, store,
+                new ReplayStore(folder), http, new PowerGate(), new PowerExecutor(true, log), log,
+                () => new LocalNetworkSnapshot("192.168.1.20", "", "已连接", "需检查", false));
+            await agent.EnrollAsync("https://cloud.example.test", new string('x', 24), CancellationToken.None);
+            var paired = store.Load();
+            await agent.StartAsync(CancellationToken.None);
+            try
+            {
+                await handler.ResultReported.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.AreEqual(1, handler.Renewals);
+                Assert.AreEqual("已连接", agent.State);
+                Assert.IsTrue(agent.CloudConnected);
+                Assert.AreEqual(paired, store.Load());
+                Assert.IsFalse(handler.Revoked);
+            }
+            finally { await agent.StopAsync(CancellationToken.None); }
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
     private sealed class FakeCloudHandler(string deviceId, Guid commandId, string gatewayState,
-        bool stalledPoll = false, bool legacyHeartbeat = false) : HttpMessageHandler
+        bool stalledPoll = false, bool legacyHeartbeat = false, bool rejectOldAccess = false) : HttpMessageHandler
     {
         private int _polls;
         private int _heartbeats;
@@ -144,6 +175,7 @@ public sealed class CloudTests
         public string? LastHeartbeatState;
         public int HeartbeatInterval;
         public int RejectedHeartbeats;
+        public int Renewals;
         public TaskCompletionSource SecondHeartbeat { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string? ReportedAction { get; private set; }
         public bool WolCapable { get; private set; }
@@ -153,10 +185,19 @@ public sealed class CloudTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
+            if (rejectOldAccess && (path is "/api/v2/windows/heartbeat" or "/api/v2/windows/commands" or "/api/v2/windows/results")
+                && request.Headers.Authorization?.Parameter == new string('a', 43))
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
             object result;
             if (path.EndsWith("/enroll"))
             {
                 result = new { device_id = deviceId, access_token = new string('a', 43),
+                    refresh_token = new string('r', 43), access_expires_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 900 };
+            }
+            else if (path.EndsWith("/renew"))
+            {
+                Interlocked.Increment(ref Renewals);
+                result = new { device_id = deviceId, access_token = new string('b', 43),
                     refresh_token = new string('r', 43), access_expires_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 900 };
             }
             else if (path.EndsWith("/heartbeat"))

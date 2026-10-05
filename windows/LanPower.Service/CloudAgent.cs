@@ -145,15 +145,18 @@ public sealed class CloudAgent(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { continue; }
-            catch (UnauthorizedAccessException)
+            catch (CloudReconnectRequiredException)
             {
                 if (token.IsCancellationRequested) continue;
+                ConnectionStatus.Reset();
+                if (State != "需要重新连接") log.Write("Cloud 长期授权不可用，请重新连接");
                 Volatile.Write(ref _state, "需要重新连接");
                 await Task.Delay(5000, stoppingToken);
             }
             catch (Exception error)
             {
                 if (token.IsCancellationRequested) continue;
+                ConnectionStatus.Reset();
                 Volatile.Write(ref _state, "连接中断");
                 log.WriteFailure("Cloud 连接失败", error);
                 await Task.Delay(5000, stoppingToken);
@@ -295,11 +298,15 @@ public sealed class CloudAgent(
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 response.Dispose();
-                var latest = await _tokens.GetCachedAccessAsync(token);
-                // The heartbeat worker may have rotated while a poll was sent.
-                if (attempt == 0 && latest?.Credentials.DeviceId == saved.DeviceId && latest.Token != granted.Token) continue;
-                await _tokens.BlockAsync(granted.Credentials, token);
-                throw new UnauthorizedAccessException();
+                // Sleep, clock correction, or concurrent renewal may make an
+                // access token stale. Only the renewal endpoint can reject the
+                // long-lived authorization and require another pairing.
+                if (attempt == 0)
+                {
+                    await _tokens.InvalidateAccessAsync(granted, token);
+                    continue;
+                }
+                throw new HttpRequestException("Cloud 访问授权暂不可用", null, HttpStatusCode.Unauthorized);
             }
             if (path == "/api/v2/windows/heartbeat" && response.StatusCode == HttpStatusCode.BadRequest) return response;
             try

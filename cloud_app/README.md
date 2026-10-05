@@ -4,6 +4,8 @@ Cloud 是 CodexDock 的身份、设备授权与远程开发中继平台，主入
 
 ## 更新与兼容记录
 
+Cloud / Windows `1.22.1` 增加 `POST /api/v2/windows/renew`：保留设备长期凭据与编号，只更新短效访问凭据，支持启动、休眠恢复、响应丢失和服务重启后的安全重试。撤销与过期检查保持生效；Windows 原一次性轮换接口继续兼容。行为、两端升级要求与验证见 [Windows 自动恢复连接](../docs/windows-cloud-recovery.md)。
+
 Cloud / Web `1.21.0` 为 Codex Remote 提供无内容总量上限的分块中继，原图不压缩；普通文件直接送达目标 Windows 用户的附件目录，Cloud 不落盘。详见 [完整输入](../docs/codex-image-submission.md)。
 
 该轮 Cloud / Web `1.20.1`：Codex 网页侧边栏改为中性浅灰白，悬停、选中、文字和分隔线配套采用中性灰。版本与本机部署记录见 [本机开发环境](../docs/local-development.md)。

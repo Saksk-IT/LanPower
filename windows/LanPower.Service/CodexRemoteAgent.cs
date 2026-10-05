@@ -67,7 +67,7 @@ public sealed class CodexRemoteAgent(CloudTokenSession tokens, CodexHostBridge b
                             else if (frame["type"]?.GetValue<string>() != "pong") await bridge.ForwardAsync(frame, connection.Token);
                         }
                     }
-                    // Rotation of the shared single-use token invalidates the old access token.
+                    // Shared access renewal invalidates the previous access token.
                     async Task CredentialWatch()
                     {
                         while (true)

@@ -11,6 +11,140 @@ namespace LanPower.UnitTests;
 public sealed class CloudTokenTests
 {
     [TestMethod]
+    public async Task ConcurrentRenewalsKeepThePairingAndShareOneAccessToken()
+    {
+        var store = new MemoryStore();
+        var identity = store.Saved;
+        using var handler = new RefreshHandler(store) { RenewalSupported = true };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        var grants = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => session.GetAccessAsync(CancellationToken.None)));
+        Assert.AreEqual(1, handler.Renewals);
+        Assert.AreEqual(0, handler.Requests);
+        Assert.AreEqual(identity, store.Load());
+        Assert.IsTrue(grants.All(grant => grant == grants[0]));
+    }
+
+    [TestMethod]
+    [DataRow("dns")]
+    [DataRow("lost")]
+    [DataRow("timeout")]
+    [DataRow("server")]
+    [DataRow("wrong_device")]
+    [DataRow("expired")]
+    [DataRow("rotated")]
+    public async Task InterruptedRenewalRecoversAfterRestartWithoutLegacyRotation(string failure)
+    {
+        var store = new MemoryStore();
+        var identity = store.Saved;
+        using var handler = new RefreshHandler(store) { RenewalSupported = true, Failure = failure };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        await Assert.ThrowsAsync<Exception>(() => session.GetAccessAsync(CancellationToken.None));
+        Assert.AreEqual(identity, store.Load());
+        handler.Failure = null;
+        var restarted = new CloudTokenSession(client, store);
+        var granted = await restarted.GetAccessAsync(CancellationToken.None);
+        Assert.AreEqual(identity, granted.Credentials);
+        Assert.AreEqual(2, handler.Renewals);
+        Assert.AreEqual(0, handler.Requests, "Ambiguous renewal must never fall back to single-use rotation");
+    }
+
+    [TestMethod]
+    public async Task CancellationDuringRenewalLeavesThePairingRetryable()
+    {
+        var store = new MemoryStore();
+        var identity = store.Saved;
+        using var handler = new RefreshHandler(store) { RenewalSupported = true, Failure = "pause" };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => session.GetAccessAsync(cancel.Token));
+        Assert.AreEqual(identity, store.Load());
+        handler.Failure = null;
+        await new CloudTokenSession(client, store).GetAccessAsync(CancellationToken.None);
+        Assert.AreEqual(0, handler.Requests);
+    }
+
+    [TestMethod]
+    public async Task ResumeAfterAccessExpiryRenewsTheOriginalPairing()
+    {
+        var store = new MemoryStore();
+        var identity = store.Saved;
+        var clock = new Clock();
+        using var handler = new RefreshHandler(store) { RenewalSupported = true, UtcNow = clock.GetUtcNow };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store, clock);
+        await session.GetAccessAsync(CancellationToken.None);
+        clock.Now += TimeSpan.FromHours(12);
+        await session.GetAccessAsync(CancellationToken.None);
+        Assert.AreEqual(identity, store.Load());
+        Assert.AreEqual(2, handler.Renewals);
+        Assert.AreEqual(0, handler.Requests);
+    }
+
+    [TestMethod]
+    public async Task LateAccessRejectionCannotInvalidateANewerGrant()
+    {
+        var store = new MemoryStore();
+        using var handler = new RefreshHandler(store) { RenewalSupported = true };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        var old = await session.GetAccessAsync(CancellationToken.None);
+        await session.InvalidateAccessAsync(old, CancellationToken.None);
+        handler.AccessToken = new string('z', 43);
+        var fresh = await session.GetAccessAsync(CancellationToken.None);
+        await session.InvalidateAccessAsync(old, CancellationToken.None);
+        Assert.AreEqual(fresh, await session.GetAccessAsync(CancellationToken.None));
+        Assert.AreEqual(2, handler.Renewals);
+        Assert.IsFalse(store.Saved!.ReconnectRequired);
+    }
+
+    [TestMethod]
+    public async Task PendingLegacyIntentUsesSafeRenewalWhenTheTokenIsStillValid()
+    {
+        var store = new MemoryStore();
+        store.Saved = store.Saved! with { RefreshPending = true };
+        var original = store.Saved!;
+        using var handler = new RefreshHandler(store) { RenewalSupported = true };
+        using var client = new HttpClient(handler);
+        var granted = await new CloudTokenSession(client, store).GetAccessAsync(CancellationToken.None);
+        Assert.AreEqual(original with { RefreshPending = false }, granted.Credentials);
+        Assert.AreEqual(0, handler.Requests);
+    }
+
+    [TestMethod]
+    public async Task FailedRenewalSaveRetriesOnlyTheLocalWrite()
+    {
+        var store = new MemoryStore { FailWrite = _ => true };
+        using var handler = new RefreshHandler(store) { RenewalSupported = true };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        await Assert.ThrowsExactlyAsync<IOException>(() => session.GetAccessAsync(CancellationToken.None));
+        Assert.IsFalse(store.Saved!.RefreshPending);
+        store.FailWrite = null;
+        await session.GetAccessAsync(CancellationToken.None);
+        Assert.AreEqual(1, handler.Renewals);
+        Assert.AreEqual(0, handler.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("unauthorized")]
+    [DataRow("forbidden")]
+    public async Task RejectedLongLivedAuthorizationRequiresPairingAndNeverFallsBack(string failure)
+    {
+        var store = new MemoryStore();
+        using var handler = new RefreshHandler(store) { RenewalSupported = true, Failure = failure };
+        using var client = new HttpClient(handler);
+        var session = new CloudTokenSession(client, store);
+        await Assert.ThrowsExactlyAsync<CloudReconnectRequiredException>(() => session.GetAccessAsync(CancellationToken.None));
+        Assert.IsTrue(store.Saved!.ReconnectRequired);
+        await Assert.ThrowsExactlyAsync<CloudReconnectRequiredException>(() => new CloudTokenSession(client, store).GetAccessAsync(CancellationToken.None));
+        Assert.AreEqual(1, handler.Renewals);
+        Assert.AreEqual(0, handler.Requests);
+    }
+
+    [TestMethod]
     public async Task DnsFailureBeforeSendingRefreshCanRetryWithoutReEnrollment()
     {
         var store = new MemoryStore();
@@ -41,10 +175,12 @@ public sealed class CloudTokenTests
     }
 
     [TestMethod]
-    public async Task ConcurrentRequestsRotateOnceAndUseTheNewIdentity()
+    [DataRow(404)]
+    [DataRow(405)]
+    public async Task ConcurrentRequestsRotateOnceAndUseTheNewIdentity(int missingEndpointStatus)
     {
         var store = new MemoryStore();
-        using var handler = new RefreshHandler(store);
+        using var handler = new RefreshHandler(store) { MissingEndpointStatus = (HttpStatusCode)missingEndpointStatus };
         using var client = new HttpClient(handler);
         var session = new CloudTokenSession(client, store);
         var grants = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => session.GetAccessAsync(CancellationToken.None)));
@@ -126,7 +262,7 @@ public sealed class CloudTokenTests
             RefreshPending = true, CloudUrl = "https://wrong.example.test"
         }));
         await session.SaveEnrollmentAsync("https://new.example.test", approved.RootElement, CancellationToken.None);
-        await session.BlockAsync(oldIdentity, CancellationToken.None);
+        await session.InvalidateAccessAsync(new CloudAccess(oldIdentity, new string('a', 43)), CancellationToken.None);
         var current = await session.GetAccessAsync(CancellationToken.None);
         Assert.AreEqual("https://new.example.test", current.Credentials.CloudUrl);
         Assert.AreEqual(newId, current.Credentials.DeviceId);
@@ -179,28 +315,53 @@ public sealed class CloudTokenTests
     private sealed class RefreshHandler(MemoryStore store) : HttpMessageHandler
     {
         public int Requests;
+        public int Renewals;
+        public bool RenewalSupported;
+        public HttpStatusCode MissingEndpointStatus = HttpStatusCode.NotFound;
         public string? Failure;
+        public string AccessToken = new('a', 43);
+        public Func<DateTimeOffset> UtcNow = () => DateTimeOffset.UtcNow;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
-            Interlocked.Increment(ref Requests);
-            Assert.IsTrue(store.Saved!.RefreshPending);
-            Assert.AreEqual("https://cloud.example.test/api/v2/windows/token", request.RequestUri!.AbsoluteUri);
+            var renewal = request.RequestUri!.AbsolutePath == "/api/v2/windows/renew";
+            if (renewal)
+            {
+                Interlocked.Increment(ref Renewals);
+                if (!RenewalSupported) return new HttpResponseMessage(MissingEndpointStatus);
+            }
+            else
+            {
+                Interlocked.Increment(ref Requests);
+                Assert.IsTrue(store.Saved!.RefreshPending);
+                Assert.AreEqual("https://cloud.example.test/api/v2/windows/token", request.RequestUri!.AbsoluteUri);
+            }
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             Assert.AreEqual(new string('r', 43), body.RootElement.GetProperty("refresh_token").GetString());
             await Task.Delay(20, token);
             if (Failure == "dns") throw new HttpRequestException(HttpRequestError.NameResolutionError, "test DNS failure");
             if (Failure == "lost") throw new HttpRequestException("test lost response");
+            if (Failure == "timeout") throw new TaskCanceledException("test timeout");
+            if (Failure == "pause") await Task.Delay(Timeout.Infinite, token);
+            if (Failure == "server") return new HttpResponseMessage(HttpStatusCode.BadGateway);
+            if (Failure == "unauthorized") return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            if (Failure == "forbidden") return new HttpResponseMessage(HttpStatusCode.Forbidden);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(JsonSerializer.Serialize(new
                 {
-                    device_id = Failure == "wrong_device" ? Guid.NewGuid().ToString() : store.Saved.DeviceId,
-                    access_token = new string('a', 43),
-                    refresh_token = new string(Failure == "not_rotated" ? 'r' : 'n', 43),
-                    access_expires_at = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + (Failure == "expired" ? -1 : 900)
+                    device_id = Failure == "wrong_device" ? Guid.NewGuid().ToString() : store.Saved!.DeviceId,
+                    access_token = AccessToken,
+                    refresh_token = new string(renewal ? (Failure == "rotated" ? 'n' : 'r') : (Failure == "not_rotated" ? 'r' : 'n'), 43),
+                    access_expires_at = UtcNow().ToUnixTimeSeconds() + (Failure == "expired" ? -1 : 900)
                 }), Encoding.UTF8, "application/json")
             };
         }
+    }
+
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 }
